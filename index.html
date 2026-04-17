@@ -369,8 +369,10 @@ async function callClaude(system, user, maxTokens = 2000) {
       messages: [{ role: "user", content: user }],
     }),
   });
-  if (!r.ok) throw new Error(`Claude ${r.status}`);
   const data = await r.json();
+  console.log("[Claude response]", JSON.stringify(data).slice(0, 300));
+  if (!r.ok) throw new Error(`Claude ${r.status}: ${JSON.stringify(data)}`);
+  if (data.error) throw new Error(`Claude error: ${data.error.message || JSON.stringify(data.error)}`);
   return (data.content || []).map(b => b.text || "").join("");
 }
 
@@ -383,8 +385,8 @@ function parseJSON(text) {
 
 async function fetchTickerData(ticker) {
   const [quote, ts, news, edgar] = await Promise.all([
-    proxyFetch(`/twelvedata/price?symbol=${encodeURIComponent(ticker)}`),
-    proxyFetch(`/twelvedata/timeseries?symbol=${encodeURIComponent(ticker)}&interval=1day&outputsize=252`),
+    proxyFetch(`/twelvedata/price?symbol=${encodeURIComponent(ticker)}${ticker.includes(".PA") ? "&exchange=XPAR" : ticker.includes(".BE") ? "&exchange=XBRU" : ""}`),
+    proxyFetch(`/twelvedata/timeseries?symbol=${encodeURIComponent(ticker)}&interval=1day&outputsize=252${ticker.includes(".PA") ? "&exchange=XPAR" : ticker.includes(".BE") ? "&exchange=XBRU" : ""}`),
     proxyFetch(`/news?query=${encodeURIComponent(ticker)}`),
     proxyFetch(`/edgar/thresholds?ticker=${encodeURIComponent(ticker)}`),
   ]);
@@ -447,7 +449,11 @@ JSON sans backticks:
     return (parsed.results || []).filter(r =>
       Object.values(r.criteria || {}).filter(Boolean).length >= minScore
     );
-  } catch { return []; }
+  } catch(e) {
+    console.error("[analyzeBatch error]", e.message);
+    setProgress(0, 0, 0, `⚠️ Erreur batch: ${e.message}`);
+    return [];
+  }
 }
 
 // ── Scan principal ────────────────────────────────────────
@@ -497,11 +503,13 @@ async function runScan() {
     );
     scanned += batch.length;
 
-    // Filtre drawdown
+    // Filtre drawdown — garde les vrais crashs ET les titres sans données TD
     const qualified = batchWithData.filter(({ data }) => {
-      if (!data.drawdown52w) return true;
-      return parseFloat(data.drawdown52w) <= -20;
+      if (!data.drawdown52w) return true; // pas de données TD → Claude évalue
+      const val = parseFloat(data.drawdown52w);
+      return val <= -20; // drawdown confirmé > 20%
     });
+    console.log(`[Batch ${b+1}] ${batchWithData.length} titres → ${qualified.length} qualifiés (drawdown filter)`);
 
     setProgress(scanned, total, signalCount, `🤖 Batch ${b+1}/${batches.length} — ${qualified.length} qualifiés → Claude...`);
 
