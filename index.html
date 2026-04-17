@@ -554,7 +554,14 @@ CRITÈRES (évalue même sans données TwelveData):
 FONDS À SURVEILLER (top 20):
 BlackRock, Vanguard, Fidelity, ARK Invest, Baillie Gifford, Millennium Management, Citadel, Point72, Renaissance Technologies, Two Sigma, Goldman Sachs AM, Morgan Stanley IM, JP Morgan AM, BNP Paribas AM, Norges Bank, Bpifrance, Deutsche Bank AM, Temasek, CPPIB, GIC
 
-OBLIGATION: Pour CHAQUE titre retourné, tu DOIS inclure le tableau institutionalMoves avec TOUS les fonds que tu connais sur ce titre (positions récentes, déclarations AMF/SEC connues). Si tu ne connais aucun fonds sur un titre, mets un tableau vide [].
+OBLIGATION: Pour CHAQUE titre retourné, inclure institutionalMoves avec TOUS les fonds connus.
+Pour le champ "source", utilise EXACTEMENT:
+- "13D SEC" = franchissement 5%+ déclaré à la SEC (source réelle ✓)
+- "13G SEC" = position passive 5%+ déclarée à la SEC (source réelle ✓)  
+- "13F SEC" = inventaire trimestriel portefeuille SEC (source réelle ✓)
+- "AMF" = déclaration franchissement AMF France (source réelle ✓)
+- "Estimé" = position estimée sans déclaration officielle connue (⚠️)
+Si tu ne connais pas de fonds sur un titre, mets [].
 
 JSON sans backticks:
 {"results":[{"ticker":"IONQ","name":"IonQ Inc.","market":"NASDAQ","universe":"russell_midcap","summary":"2 phrases signal.","criteria":{"short_interest":true,"institutional":true,"threshold":false,"price_drop":true,"catalysts":true,"biotech":false,"special":false},"shortInterest":"18%","shortSource":"Estimé Claude","institutionalMoves":[{"fund":"BlackRock","pct":"7.8%","prevPct":"0%","direction":"NEW","date":"Janvier 2026","source":"SEC 13G","amount":"~180M$"},{"fund":"Vanguard","pct":"4.2%","prevPct":"3.1%","direction":"↑","date":"Q4 2025","source":"13F","amount":"~95M$"}]}]}`;
@@ -724,7 +731,7 @@ function renderCard(r) {
   }).join("");
 
   return `<div class="card" style="background:linear-gradient(135deg,#0d1117,#161b22);border:1px solid ${tl ? '#00d2ff44' : '#30363d'};box-shadow:${tl ? '0 0 24px #00d2ff0d' : 'none'}">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:${tl ? '6px' : '8px'}">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
       ${tl ? `<div class="triple-lock-badge" style="margin-bottom:0">🔒 TRIPLE LOCK — SIGNAL FORT</div>` : '<div></div>'}
       <div style="display:inline-flex;align-items:center;gap:6px;padding:4px 12px;border-radius:20px;background:${scctInfo.bg};border:1px solid ${scctInfo.border}">
         <span style="color:${scctInfo.color};font-weight:700;font-size:11px;font-family:monospace">${scctInfo.label}</span>
@@ -732,6 +739,14 @@ function renderCard(r) {
         <span style="color:${scctInfo.color};font-size:9px;opacity:0.7">/100</span>
       </div>
     </div>
+    ${(r.conviction || r.targetPrice || r.squeezeScore) ? `
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;padding:8px 10px;background:#0d1117;border-radius:8px;border:1px solid #21262d">
+      ${r.conviction ? `<div style="display:flex;align-items:center;gap:4px"><span style="color:#484f58;font-size:9px;font-family:monospace">💎 CONVICTION</span><span style="color:#eccc68;font-weight:700;font-size:12px;font-family:monospace">${r.conviction}/10</span></div>` : ""}
+      ${r.targetPrice ? `<span style="color:#21262d">|</span><div style="display:flex;align-items:center;gap:4px"><span style="color:#484f58;font-size:9px;font-family:monospace">🎯 OBJECTIF</span><span style="color:#2ed573;font-weight:700;font-size:12px;font-family:monospace">${r.targetPrice}</span></div>` : ""}
+      ${r.stopLoss ? `<span style="color:#21262d">|</span><div style="display:flex;align-items:center;gap:4px"><span style="color:#484f58;font-size:9px;font-family:monospace">🛑 STOP</span><span style="color:#ff4757;font-weight:700;font-size:12px;font-family:monospace">${r.stopLoss}</span></div>` : ""}
+      ${r.squeezeScore ? `<span style="color:#21262d">|</span><div style="display:flex;align-items:center;gap:4px"><span style="color:#484f58;font-size:9px;font-family:monospace">🔥 SQUEEZE</span><span style="color:#ff6b3d;font-weight:700;font-size:12px;font-family:monospace">${r.squeezeScore}/10</span></div>` : ""}
+      ${r.squeezeProbability ? `<span style="color:#21262d">|</span><div style="display:flex;align-items:center;gap:4px"><span style="color:#484f58;font-size:9px;font-family:monospace">📊 PROBA</span><span style="color:#ffa502;font-weight:700;font-size:12px;font-family:monospace">${r.squeezeProbability}</span></div>` : ""}
+    </div>` : ""}
     <div class="card-header">
       <div onclick="toggleCard('${r.ticker}')" style="flex:1;cursor:pointer">
         <div class="card-tags">
@@ -772,38 +787,27 @@ function renderCard(r) {
             <td style="padding:4px 8px;text-align:center">Source</td>
             <td style="padding:4px 8px;text-align:right">Montant</td>
           </tr>
-          ${(r.institutionalMoves||[]).map(m => `<tr style="background:#21262d;border-bottom:1px solid #161b22">
-            <td style="padding:6px 8px;color:#e6edf3;font-weight:700">${m.fund}</td>
-            <td style="padding:6px 8px;text-align:center;color:#58a6ff;font-weight:700">${m.pct}</td>
-            <td style="padding:6px 8px;text-align:center;color:${m.direction==='↑'||m.direction==='NEW'?'#2ed573':'#ff4757'};font-weight:700">${m.direction==='NEW'?'🆕 NEW':m.direction+' '+m.prevPct}</td>
-            <td style="padding:6px 8px;text-align:center;color:#eccc68">${m.date}</td>
-            <td style="padding:6px 8px;text-align:center"><span style="background:${m.source==='AMF'?'#1f2937':'#1a2f1a'};color:${m.source==='AMF'?'#60a5fa':'#2ed573'};padding:2px 6px;border-radius:4px;font-size:9px">${m.source}</span></td>
-            <td style="padding:6px 8px;text-align:right;color:#8b949e">${m.amount||'—'}</td>
-          </tr>`).join("")}
-        </table>
-      </div>` : ""}
-      ${(r.edgarFilings||[]).length > 0 ? `<div style="margin-bottom:12px">
-        <div class="section-label" style="color:#ffa502;margin-bottom:8px">🔔 Franchissements de seuils — EDGAR SEC <span style="color:#484f58;font-size:8px">(données réelles)</span></div>
-        <table style="width:100%;border-collapse:collapse;font-size:11px;font-family:monospace">
-          <tr style="color:#484f58;font-size:9px;text-transform:uppercase;letter-spacing:1px">
-            <td style="padding:4px 8px">Déclarant</td>
-            <td style="padding:4px 8px;text-align:center">Formulaire</td>
-            <td style="padding:4px 8px;text-align:center">Date déclaration</td>
-            <td style="padding:4px 8px;text-align:right">Récence</td>
-          </tr>
-          ${(r.edgarFilings||[]).map(f => {
-            const daysAgo = f.date !== "—" ? Math.floor((new Date() - new Date(f.date)) / 86400000) : 999;
-            const recenceColor = daysAgo < 30 ? "#ff4757" : daysAgo < 90 ? "#ffa502" : daysAgo < 180 ? "#eccc68" : "#484f58";
-            const recenceLabel = daysAgo < 30 ? "🔥 " + daysAgo + "j" : daysAgo < 90 ? daysAgo + "j" : daysAgo < 365 ? Math.floor(daysAgo/30) + "mois" : Math.floor(daysAgo/365) + "an+";
+          ${(r.institutionalMoves||[]).map(m => {
+            const src = m.source || "";
+            const isReal = src.includes("13D") || src.includes("13G") || src.includes("AMF");
+            const isSemiReal = src.includes("13F");
+            const srcColor = isReal ? "#ff4757" : isSemiReal ? "#ffa502" : "#484f58";
+            const srcBg = isReal ? "#ff475722" : isSemiReal ? "#ffa50222" : "#21262d";
+            const srcLabel = isReal ? src + " ✓" : isSemiReal ? src + " ✓" : "Estimé ⚠️";
+            const daysAgo = m.date ? Math.floor((new Date() - new Date(m.date.replace(/[^0-9-]/g, '') || "")) / 86400000) : 999;
+            const recenceColor = daysAgo < 30 ? "#ff4757" : daysAgo < 90 ? "#ffa502" : daysAgo < 180 ? "#eccc68" : "#8b949e";
             return `<tr style="background:#21262d;border-bottom:1px solid #161b22">
-              <td style="padding:6px 8px;color:#e6edf3;font-weight:700">${f.entity}</td>
-              <td style="padding:6px 8px;text-align:center"><span style="background:#ffa50222;color:#ffa502;padding:2px 6px;border-radius:4px;font-size:9px">${f.form}</span></td>
-              <td style="padding:6px 8px;text-align:center;color:#eccc68">${f.date}</td>
-              <td style="padding:6px 8px;text-align:right;color:${recenceColor};font-weight:700">${recenceLabel}</td>
+              <td style="padding:6px 8px;color:#e6edf3;font-weight:700">${m.fund}</td>
+              <td style="padding:6px 8px;text-align:center;color:#58a6ff;font-weight:700">${m.pct}</td>
+              <td style="padding:6px 8px;text-align:center;color:${m.direction==='↑'||m.direction==='NEW'?'#2ed573':'#ff4757'};font-weight:700">${m.direction==='NEW'?'🆕 NEW':m.direction+' '+m.prevPct}</td>
+              <td style="padding:6px 8px;text-align:center;color:${recenceColor};font-weight:700">${m.date}</td>
+              <td style="padding:6px 8px;text-align:center"><span style="background:${srcBg};color:${srcColor};padding:2px 6px;border-radius:4px;font-size:9px;font-weight:700">${srcLabel}</span></td>
+              <td style="padding:6px 8px;text-align:right;color:#8b949e">${m.amount||'—'}</td>
             </tr>`;
           }).join("")}
         </table>
       </div>` : ""}
+
       <div class="expand-toggle" onclick="toggleCard('${r.ticker}')">▲ Réduire</div>
     </div>
     <div class="expand-toggle" id="expand-hint-${r.ticker}" onclick="toggleCard('${r.ticker}')">▼ Actualités & EDGAR</div>
@@ -837,6 +841,16 @@ JSON sans backticks:
 {"reco":{"signal":"FORT ACHAT","entryPrice":"XX€","tp1":"XX€","tp2":"XX€","stop":"XX€","tp1Upside":"35","tp2Upside":"65","horizon":"2-4 semaines","thesis":"3 phrases.","squeeze":{"score":7,"dtc":"8 jours","probability":"45%","analysis":"3 phrases.","trigger":"Déclencheur daté."}}}`;
     const text = await callClaude("Expert Smart Money. JSON uniquement.", prompt, 2000);
     const reco = parseJSON(text).reco;
+    // Save key metrics back to card for quick display
+    const idx = allResults.findIndex(r => r.ticker === ticker);
+    if (idx >= 0) {
+      allResults[idx].conviction = reco.squeeze?.score || null;
+      allResults[idx].targetPrice = reco.tp1 || null;
+      allResults[idx].stopLoss = reco.stop || null;
+      allResults[idx].squeezeScore = reco.squeeze?.score || null;
+      allResults[idx].squeezeProbability = reco.squeeze?.probability || null;
+      renderResults(); // refresh cards with new data
+    }
     const signalColor = reco.signal?.includes("FORT") ? "#2ed573" : reco.signal?.includes("ACHAT") ? "#58a6ff" : "#ffa502";
     const sim = (a) => ({ gain: Math.round(a * (parseFloat(reco.tp1Upside) / 100)), loss: Math.round(a * 0.2) });
     document.getElementById("modal-content").innerHTML = `
@@ -861,7 +875,11 @@ JSON sans backticks:
       <div class="info-box" style="background:linear-gradient(135deg,#ff475715,#ff6b3d15);border:1px solid #ff475744">
         <div class="info-label" style="color:#ff6b3d">🔥 Short Squeeze</div>
         <div class="grid-3" style="margin-bottom:10px">
-          ${[["Score",reco.squeeze?.score+"/10","#ff6b3d"],["DTC",reco.squeeze?.dtc,"#ffa502"],["Probabilité",reco.squeeze?.probability,"#eccc68"]].map(([l,v,c])=>`<div class="stat-box"><div class="stat-label">${l}</div><div class="stat-val" style="color:${c};font-size:13px">${v}</div></div>`).join("")}
+          ${[
+            ["Score Squeeze", reco.squeeze?.score+"/10", "#ff6b3d", "Intensité globale du setup. Combine VAD, DTC, CTB et catalyseur. 7+/10 = squeeze probable."],
+            ["DTC — Days To Cover", reco.squeeze?.dtc, "#ffa502", "Nb de jours pour que les shorts rachètent au volume quotidien moyen. DTC > 5j = forte pression."],
+            ["Probabilité Squeeze", reco.squeeze?.probability, "#eccc68", "Estimation de la probabilité qu'un catalyseur force les shorts à racheter en urgence sous 90 jours."]
+          ].map(([l,v,c,def])=>`<div class="stat-box"><div class="stat-label" style="font-size:9px">${l}</div><div class="stat-val" style="color:${c};font-size:15px;margin:4px 0">${v}</div><div style="color:#484f58;font-size:9px;line-height:1.4">${def}</div></div>`).join("")}
         </div>
         <div class="info-text">${reco.squeeze?.analysis || ""}</div>
         ${reco.squeeze?.trigger ? `<div style="margin-top:8px;padding:6px 10px;background:#ff475718;border-radius:6px"><span style="color:#ff4757;font-size:11px;font-weight:700">⚡ Déclencheur : </span><span style="color:#c9d1d9;font-size:11px">${reco.squeeze.trigger}</span></div>` : ""}
@@ -1021,7 +1039,11 @@ JSON sans backticks:
         </div>
       `).join("")}
       <div class="grid-3" style="margin-top:16px;padding-top:14px;border-top:1px solid #21262d">
-        ${[["🎯 Objectif",da?.targetPrice,"#2ed573"],["🛑 Stop",da?.stopLoss,"#ff4757"],["💎 Conviction",da?.conviction+"/10","#eccc68"]].map(([l,v,c])=>`<div class="stat-box"><div class="stat-label">${l}</div><div class="stat-val" style="color:${c}">${v}</div></div>`).join("")}
+        ${[
+          ["🎯 Objectif de cours", da?.targetPrice, "#2ed573", "Prix cible si la thèse se confirme. Niveau de prise de profits recommandé par Mark Elias."],
+          ["🛑 Stop mental", da?.stopLoss, "#ff4757", "Niveau d'invalidation de la thèse. En dessous = sortie de position. Ne jamais dépasser ce niveau."],
+          ["💎 Conviction", da?.conviction+"/10", "#eccc68", "9-10: Configuration exceptionnelle · 7-8: Signal fort · 5-6: À surveiller · <5: Signal faible"]
+        ].map(([l,v,c,def])=>`<div class="stat-box"><div class="stat-label" style="font-size:9px">${l}</div><div class="stat-val" style="color:${c};margin:6px 0">${v}</div><div style="color:#484f58;font-size:9px;line-height:1.4;text-align:left">${def}</div></div>`).join("")}
       </div>
     `;
     document.getElementById("modal").style.display = "flex";
