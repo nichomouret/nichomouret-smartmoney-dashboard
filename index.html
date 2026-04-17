@@ -482,21 +482,47 @@ async function fetchTickerData(ticker) {
     content: (a.description || "").slice(0, 100),
     source: a.source?.name || "—",
   }));
-  const edgarFilings = (edgar?.hits?.hits || []).slice(0, 3).map(h => {
+  // EDGAR: extraire le déclarant (fonds qui achète) pas l'émetteur
+  const edgarFilings = (edgar?.hits?.hits || []).slice(0, 5).map(h => {
     const src = h._source || {};
-    // Extract filer name from display_names or entity_name
-    const displayName = src.display_names?.[0] || "";
-    const entityName = src.entity_name || "";
-    // display_names format: "EntityName (TICKER) (CIK XXXXXXX)"
-    const fundMatch = displayName.match(/^([^(]+)/);
-    const fundName = fundMatch ? fundMatch[1].trim() : entityName || "Inconnu";
+    // Le champ "entity_name" = l'émetteur (ex: IonQ Inc.)
+    // Le champ "display_names" contient parfois le déclarant
+    // Pour 13D/13G: le déclarant est le fonds institutionnel
+    const displayNames = src.display_names || [];
+    const formType = src.form_type || "";
+    const fileDate = src.file_date || "—";
+    
+    // Cherche le nom du déclarant (pas l'émetteur) dans display_names
+    // Format typique: ["FundName (TICKER) (CIK XXXXXXX)", "IssuerName (TICKER) (CIK XXXXXXX)"]
+    let filerName = "—";
+    let pctInfo = src.percentage_of_class || src.percent || "";
+    
+    // Pour 13D/13G, le premier display_name qui n'est PAS l'émetteur = le fonds
+    const issuerName = src.entity_name || "";
+    for (const dn of displayNames) {
+      const nameMatch = dn.match(/^([^(]+)/);
+      if (nameMatch) {
+        const candidate = nameMatch[1].trim();
+        if (candidate !== issuerName) {
+          filerName = candidate;
+          break;
+        }
+      }
+    }
+    // Fallback: si tous les noms = émetteur, on affiche quand même la date et le formulaire
+    if (filerName === "—" && displayNames.length > 0) {
+      const m = displayNames[0].match(/^([^(]+)/);
+      if (m) filerName = m[1].trim();
+    }
+    
     return {
-      entity: fundName,
-      date: src.file_date || "—",
-      form: src.form_type || "—",
-      detail: displayName || entityName || "Dépôt SEC",
+      entity: filerName,
+      date: fileDate,
+      form: formType,
+      pct: pctInfo || "—",
+      detail: src.description || formType,
     };
-  });
+  }).filter(f => f.entity !== "—" && f.date !== "—");
   return { realPrice, drawdown52w, priceChange, hasRealData, newsItems, edgarFilings, shortInterestReal, daysTocover, borrowRate, ortexScore };
 }
 
@@ -756,7 +782,28 @@ function renderCard(r) {
           </tr>`).join("")}
         </table>
       </div>` : ""}
-      ${(r.edgarFilings||[]).length > 0 ? `<div style="margin-bottom:12px"><div class="section-label" style="color:#ffa502;margin-bottom:8px">🔔 Franchissements SEC (EDGAR)</div>${(r.edgarFilings||[]).map(f => `<div class="edgar-item"><div style="display:flex;justify-content:space-between;gap:8px"><span style="color:#e6edf3;font-size:11px;font-weight:600">${f.entity}</span><span style="color:#8b949e;font-size:10px;white-space:nowrap">${f.date}</span></div><div style="color:#ffa502;font-size:10px;margin-top:2px">${f.form} — ${f.detail}</div></div>`).join("")}</div>` : ""}
+      ${(r.edgarFilings||[]).length > 0 ? `<div style="margin-bottom:12px">
+        <div class="section-label" style="color:#ffa502;margin-bottom:8px">🔔 Franchissements de seuils — EDGAR SEC <span style="color:#484f58;font-size:8px">(données réelles)</span></div>
+        <table style="width:100%;border-collapse:collapse;font-size:11px;font-family:monospace">
+          <tr style="color:#484f58;font-size:9px;text-transform:uppercase;letter-spacing:1px">
+            <td style="padding:4px 8px">Déclarant</td>
+            <td style="padding:4px 8px;text-align:center">Formulaire</td>
+            <td style="padding:4px 8px;text-align:center">Date déclaration</td>
+            <td style="padding:4px 8px;text-align:right">Récence</td>
+          </tr>
+          ${(r.edgarFilings||[]).map(f => {
+            const daysAgo = f.date !== "—" ? Math.floor((new Date() - new Date(f.date)) / 86400000) : 999;
+            const recenceColor = daysAgo < 30 ? "#ff4757" : daysAgo < 90 ? "#ffa502" : daysAgo < 180 ? "#eccc68" : "#484f58";
+            const recenceLabel = daysAgo < 30 ? "🔥 " + daysAgo + "j" : daysAgo < 90 ? daysAgo + "j" : daysAgo < 365 ? Math.floor(daysAgo/30) + "mois" : Math.floor(daysAgo/365) + "an+";
+            return `<tr style="background:#21262d;border-bottom:1px solid #161b22">
+              <td style="padding:6px 8px;color:#e6edf3;font-weight:700">${f.entity}</td>
+              <td style="padding:6px 8px;text-align:center"><span style="background:#ffa50222;color:#ffa502;padding:2px 6px;border-radius:4px;font-size:9px">${f.form}</span></td>
+              <td style="padding:6px 8px;text-align:center;color:#eccc68">${f.date}</td>
+              <td style="padding:6px 8px;text-align:right;color:${recenceColor};font-weight:700">${recenceLabel}</td>
+            </tr>`;
+          }).join("")}
+        </table>
+      </div>` : ""}
       <div class="expand-toggle" onclick="toggleCard('${r.ticker}')">▲ Réduire</div>
     </div>
     <div class="expand-toggle" id="expand-hint-${r.ticker}" onclick="toggleCard('${r.ticker}')">▼ Actualités & EDGAR</div>
