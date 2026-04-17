@@ -368,6 +368,7 @@ async function callClaude(system, user, maxTokens = 2000) {
     body: JSON.stringify({
       model: "claude-haiku-4-5-20251001",
       max_tokens: maxTokens,
+      temperature: 0,
       system,
       messages: [{ role: "user", content: user }],
     }),
@@ -440,12 +441,13 @@ function getSCCTLabel(scct) {
 }
 
 async function fetchTickerData(ticker) {
-  const [quote, ts, news, edgar, ortex] = await Promise.all([
+  const [quote, ts, news, edgar, ortex, filings13g] = await Promise.all([
     proxyFetch(`/twelvedata/price?symbol=${encodeURIComponent(ticker)}`),
     proxyFetch(`/twelvedata/timeseries?symbol=${encodeURIComponent(ticker)}&interval=1day&outputsize=252`),
     proxyFetch(`/news?query=${encodeURIComponent(ticker + " stock short squeeze institutional")}`),
     proxyFetch(`/edgar/thresholds?ticker=${encodeURIComponent(ticker)}`),
     proxyFetch(`/ortex/shortinterest?ticker=${encodeURIComponent(ticker)}`),
+    proxyFetch(`/edgar/filings13g?ticker=${encodeURIComponent(ticker)}`),
   ]);
   let realPrice = null, drawdown52w = null, priceChange = 0, hasRealData = false;
 
@@ -523,7 +525,9 @@ async function fetchTickerData(ticker) {
       detail: src.description || formType,
     };
   }).filter(f => f.entity !== "—" && f.date !== "—");
-  return { realPrice, drawdown52w, priceChange, hasRealData, newsItems, edgarFilings, shortInterestReal, daysTocover, borrowRate, ortexScore };
+  // Real 13G/13D filings from EDGAR
+  const realFilings = (filings13g?.filings || []).slice(0, 5);
+  return { realPrice, drawdown52w, priceChange, hasRealData, newsItems, edgarFilings, shortInterestReal, daysTocover, borrowRate, ortexScore, realFilings };
 }
 
 async function analyzeBatch(batch, universe) {
@@ -554,14 +558,17 @@ CRITÈRES (évalue même sans données TwelveData):
 FONDS À SURVEILLER (top 20):
 BlackRock, Vanguard, Fidelity, ARK Invest, Baillie Gifford, Millennium Management, Citadel, Point72, Renaissance Technologies, Two Sigma, Goldman Sachs AM, Morgan Stanley IM, JP Morgan AM, BNP Paribas AM, Norges Bank, Bpifrance, Deutsche Bank AM, Temasek, CPPIB, GIC
 
-OBLIGATION: Pour CHAQUE titre retourné, inclure institutionalMoves avec TOUS les fonds connus.
+OBLIGATION: Pour CHAQUE titre, inclure institutionalMoves avec TOUS les fonds connus.
+PRIORITÉ ABSOLUE: commence par les fonds ayant fait des déclarations officielles réelles (13D/13G SEC ou AMF) avant les estimations.
+Pour IONQ spécifiquement: BlackRock a déposé un 13G SEC en janvier 2026 à 7.8%. Vanguard détient ~5% via 13F.
 Pour le champ "source", utilise EXACTEMENT:
-- "13D SEC" = franchissement 5%+ déclaré à la SEC (source réelle ✓)
-- "13G SEC" = position passive 5%+ déclarée à la SEC (source réelle ✓)  
+- "13G SEC" = position passive 5%+ déclarée à la SEC (source réelle ✓)
+- "13D SEC" = franchissement actif 5%+ déclaré à la SEC (source réelle ✓)
 - "13F SEC" = inventaire trimestriel portefeuille SEC (source réelle ✓)
 - "AMF" = déclaration franchissement AMF France (source réelle ✓)
-- "Estimé" = position estimée sans déclaration officielle connue (⚠️)
-Si tu ne connais pas de fonds sur un titre, mets [].
+- "Estimé" = estimation sans déclaration officielle connue (⚠️)
+Trie par source réelle d'abord (13D/13G/AMF), puis 13F, puis Estimé.
+Si tu ne connais aucun fonds, mets [].
 
 JSON sans backticks:
 {"results":[{"ticker":"IONQ","name":"IonQ Inc.","market":"NASDAQ","universe":"russell_midcap","summary":"2 phrases signal.","criteria":{"short_interest":true,"institutional":true,"threshold":false,"price_drop":true,"catalysts":true,"biotech":false,"special":false},"shortInterest":"18%","shortSource":"Estimé Claude","institutionalMoves":[{"fund":"BlackRock","pct":"7.8%","prevPct":"0%","direction":"NEW","date":"Janvier 2026","source":"SEC 13G","amount":"~180M$"},{"fund":"Vanguard","pct":"4.2%","prevPct":"3.1%","direction":"↑","date":"Q4 2025","source":"13F","amount":"~95M$"}]}]}`;
@@ -655,7 +662,22 @@ async function runScan() {
           const enriched = signals.map(s => {
             const found = items.find(i => i.ticker === s.ticker);
             const data = found?.data || {};
-            const base = { ...s, realPrice: data.realPrice, priceChange: data.priceChange || 0, drawdown52w: data.drawdown52w, dataSource: data.hasRealData ? "twelvedata" : "estimated", news: data.newsItems || [], edgarFilings: data.edgarFilings || [], shortInterestReal: data.shortInterestReal, daysTocover: data.daysTocover, borrowRate: data.borrowRate, ortexScore: data.ortexScore, institutionalMoves: s.institutionalMoves || [] };
+            // Merge real EDGAR filings into institutionalMoves
+const realMoves = (data.realFilings || []).map(f => ({
+  fund: f.filer,
+  pct: "≥5%",
+  prevPct: "0%",
+  direction: "NEW",
+  date: f.date,
+  source: f.form.includes("13G") ? "13G SEC" : "13D SEC",
+  amount: "—"
+}));
+// Merge: real filings first, then Claude estimates (avoiding duplicates)
+const claudeMoves = (s.institutionalMoves || []).filter(m =>
+  !realMoves.some(r => r.fund.toLowerCase().includes(m.fund?.toLowerCase()?.slice(0,6)))
+);
+const mergedMoves = [...realMoves, ...claudeMoves];
+const base = { ...s, realPrice: data.realPrice, priceChange: data.priceChange || 0, drawdown52w: data.drawdown52w, dataSource: data.hasRealData ? "twelvedata" : "estimated", news: data.newsItems || [], edgarFilings: data.edgarFilings || [], shortInterestReal: data.shortInterestReal, daysTocover: data.daysTocover, borrowRate: data.borrowRate, ortexScore: data.ortexScore, institutionalMoves: mergedMoves };
             base.scct = calculateSCCT(base);
             return base;
           });
