@@ -571,7 +571,14 @@ Trie par source réelle d'abord (13D/13G/AMF), puis 13F, puis Estimé.
 Si tu ne connais aucun fonds, mets [].
 
 JSON sans backticks:
-{"results":[{"ticker":"IONQ","name":"IonQ Inc.","market":"NASDAQ","universe":"russell_midcap","summary":"2 phrases signal.","criteria":{"short_interest":true,"institutional":true,"threshold":false,"price_drop":true,"catalysts":true,"biotech":false,"special":false},"shortInterest":"18%","shortSource":"Estimé Claude","institutionalMoves":[{"fund":"BlackRock","pct":"7.8%","prevPct":"0%","direction":"NEW","date":"Janvier 2026","source":"SEC 13G","amount":"~180M$"},{"fund":"Vanguard","pct":"4.2%","prevPct":"3.1%","direction":"↑","date":"Q4 2025","source":"13F","amount":"~95M$"}]}]}`;
+{"results":[{"ticker":"IONQ","name":"IonQ Inc.","market":"NASDAQ","universe":"russell_midcap","summary":"2 phrases signal.","criteria":{"short_interest":true,"institutional":true,"threshold":false,"price_drop":true,"catalysts":true,"biotech":false,"special":false},"shortInterest":"18%","shortSource":"Estimé Claude","institutionalMoves":[{"fund":"BlackRock","pct":"7.8%","prevPct":"0%","direction":"NEW","date":"Janvier 2026","source":"SEC 13G","amount":"~180M$"},{"fund":"Vanguard","pct":"4.2%","prevPct":"3.1%","direction":"↑","date":"Q4 2025","source":"13F","amount":"~95M$"}],"conviction":8,"targetPrice":"65$","stopLoss":"36$","squeezeScore":7,"squeezeProbability":"42%"}]}`;
+
+OBLIGATION: Pour CHAQUE titre, inclure TOUJOURS:
+- conviction: note /10 (1-10) basée sur la solidité du signal
+- targetPrice: objectif de cours en $ ou € (ex: "65$")  
+- stopLoss: niveau stop en $ ou € (ex: "36$")
+- squeezeScore: score squeeze /10
+- squeezeProbability: probabilité squeeze en % (ex: "42%")
 
   try {
     const text = await callClaude("Analyste Smart Money. JSON uniquement sans backticks.", prompt, 2000);
@@ -677,7 +684,7 @@ const claudeMoves = (s.institutionalMoves || []).filter(m =>
   !realMoves.some(r => r.fund.toLowerCase().includes(m.fund?.toLowerCase()?.slice(0,6)))
 );
 const mergedMoves = [...realMoves, ...claudeMoves];
-const base = { ...s, realPrice: data.realPrice, priceChange: data.priceChange || 0, drawdown52w: data.drawdown52w, dataSource: data.hasRealData ? "twelvedata" : "estimated", news: data.newsItems || [], edgarFilings: data.edgarFilings || [], shortInterestReal: data.shortInterestReal, daysTocover: data.daysTocover, borrowRate: data.borrowRate, ortexScore: data.ortexScore, institutionalMoves: mergedMoves };
+const base = { ...s, realPrice: data.realPrice, priceChange: data.priceChange || 0, drawdown52w: data.drawdown52w, dataSource: data.hasRealData ? "twelvedata" : "estimated", news: data.newsItems || [], edgarFilings: data.edgarFilings || [], shortInterestReal: data.shortInterestReal, daysTocover: data.daysTocover, borrowRate: data.borrowRate, ortexScore: data.ortexScore, institutionalMoves: mergedMoves, conviction: s.conviction || null, targetPrice: s.targetPrice || null, stopLoss: s.stopLoss || null, squeezeScore: s.squeezeScore || null, squeezeProbability: s.squeezeProbability || null };
             base.scct = calculateSCCT(base);
             return base;
           });
