@@ -447,14 +447,22 @@ async function fetchTickerData(ticker) {
     proxyFetch(`/ortex/shortinterest?ticker=${encodeURIComponent(ticker)}`),
   ]);
   let realPrice = null, drawdown52w = null, priceChange = 0, hasRealData = false;
-  
+
   // Ortex short interest réel
+  // Format réponse: { data: [{ short_interest_pct_float, ... }] }
   let shortInterestReal = null, daysTocover = null, borrowRate = null, ortexScore = null;
-  if (ortex && !ortex.error && ortex.short_interest_pct_float) {
-    shortInterestReal = ortex.short_interest_pct_float + "%";
-    daysTocover = ortex.days_to_cover ? ortex.days_to_cover + "j" : null;
-    borrowRate = ortex.cost_to_borrow ? ortex.cost_to_borrow + "%" : null;
-    ortexScore = ortex.short_score || null;
+  if (ortex && !ortex.error) {
+    const latest = ortex.data?.[0] || ortex;
+    if (latest.short_interest_pct_float != null) {
+      shortInterestReal = parseFloat(latest.short_interest_pct_float).toFixed(1) + "%";
+    } else if (latest.shortInterestPctFloat != null) {
+      shortInterestReal = parseFloat(latest.shortInterestPctFloat).toFixed(1) + "%";
+    } else if (latest.pctFloat != null) {
+      shortInterestReal = parseFloat(latest.pctFloat).toFixed(1) + "%";
+    }
+    if (latest.days_to_cover != null) daysTocover = parseFloat(latest.days_to_cover).toFixed(1) + "j";
+    if (latest.cost_to_borrow != null) borrowRate = parseFloat(latest.cost_to_borrow).toFixed(1) + "%";
+    ortexScore = latest.short_score || latest.shortScore || null;
   }
   if (quote && !quote.code) {
     const cur = quote.currency === "EUR" ? "€" : "$";
