@@ -772,7 +772,7 @@ async function downloadDossierWord() {
   
   const d = currentDossierData;
   const ticker = currentDossierTicker;
-  const cleanTrame = (t) => t ? t.replace(/\\n/g, "\n") : "";
+  const cleanTrame = (t) => t ? t.replace(/\n/g, "\n") : "";
   
   const { Document, Paragraph, TextRun, HeadingLevel, BorderStyle, AlignmentType, Packer } = docx;
   
@@ -820,7 +820,7 @@ async function downloadDossierWord() {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = \`MarkElias_Dossier_\${ticker}_\${new Date().toISOString().slice(0,10)}.docx\`;
+  a.download = "MarkElias_Dossier_" + ticker + "_" + new Date().toISOString().slice(0,10) + ".docx";
   a.click();
   URL.revokeObjectURL(url);
   if (btn) btn.textContent = "📄 Télécharger Word";
