@@ -546,14 +546,21 @@ Pour chaque titre avec >= ${minScore}/7 critères, inclus-le.
 IMPORTANT: Si prix=N/A, utilise tes connaissances sur le titre pour évaluer les critères.
 Ne retourne {"results":[]} que si tu n'as AUCUNE connaissance sur aucun des titres.
 
-CRITÈRES (évalue même sans données TwelveData):
-- price_drop: TRUE si le titre a chuté de plus de 20% sur 12 mois (utilise tes connaissances)
-- short_interest: TRUE si VAD > 10% selon tes connaissances
-- institutional: TRUE si entrée institutionnelle 5%+ récente connue
-- threshold: TRUE si déclaration AMF/SEC récente connue
+CRITÈRES:
+- price_drop: TRUE si chute > 20% sur 12 mois
+- short_interest: TRUE si VAD > 10%
+- institutional: TRUE si entrée institutionnelle 5%+ connue
+- threshold: TRUE si déclaration AMF/SEC connue
 - catalysts: TRUE si événement daté dans 6 mois
-- biotech: TRUE si biotech avec readout attendu
-- special: TRUE si restructuration ou situation spéciale
+- biotech: TRUE si biotech avec readout
+- special: TRUE si restructuration ou SPAC
+
+CHAMPS OBLIGATOIRES dans chaque résultat JSON:
+- conviction: entier 1-10 (force du signal global)
+- targetPrice: prix cible avec devise ex "65$" ou "72€"
+- stopLoss: niveau stop avec devise ex "36$" ou "40€"
+- squeezeScore: score squeeze 1-10
+- squeezeProbability: probabilité squeeze ex "42%"
 
 FONDS À SURVEILLER (top 20):
 BlackRock, Vanguard, Fidelity, ARK Invest, Baillie Gifford, Millennium Management, Citadel, Point72, Renaissance Technologies, Two Sigma, Goldman Sachs AM, Morgan Stanley IM, JP Morgan AM, BNP Paribas AM, Norges Bank, Bpifrance, Deutsche Bank AM, Temasek, CPPIB, GIC
@@ -589,6 +596,7 @@ OBLIGATION: Pour CHAQUE titre, inclure TOUJOURS:
     // Debug: log institutional moves
     results.forEach(r => {
       console.log(`[${r.ticker}] institutionalMoves:`, JSON.stringify(r.institutionalMoves || []));
+      console.log(`[${r.ticker}] conviction:${r.conviction} target:${r.targetPrice} stop:${r.stopLoss}`);
     });
     return results;
   } catch(e) {
