@@ -734,7 +734,7 @@ function renderResults() {
 
 function getScore(r) { return Object.values(r.criteria || {}).filter(Boolean).length; }
 
-function renderTopFunds(moves) {
+function renderTopFunds(moves, r) {
   if (!moves || moves.length === 0) return "";
   const items = moves.slice(0, 3).map(m => {
     const isReal = (m.source||"").includes("13") || (m.source||"").includes("AMF");
@@ -742,7 +742,13 @@ function renderTopFunds(moves) {
     const dir = m.direction === "NEW" ? "🆕" : (m.direction || "");
     return `<div style="display:flex;align-items:center;gap:3px;background:#21262d;padding:3px 8px;border-radius:6px"><span style="color:#e6edf3;font-size:10px;font-weight:700;font-family:monospace">${m.fund}</span><span style="color:${col};font-size:10px;font-family:monospace"> ${m.pct}</span><span style="color:#484f58;font-size:8px"> ${dir}</span></div>`;
   }).join("");
-  return `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;padding:8px 12px;background:#0d1117;border-radius:8px;border:1px solid #21262d;align-items:center"><span style="color:#484f58;font-size:9px;font-family:monospace;white-space:nowrap">🏛️ TOP FONDS :</span>${items}</div>`;
+  // Add conviction/target/stop if available (from Reco or Deep Dive)
+  const extras = [];
+  if (r && r.conviction) extras.push(`<div style="display:flex;align-items:center;gap:3px;padding:3px 8px;border-radius:6px;background:#eccc6822;border:1px solid #eccc6844"><span style="color:#484f58;font-size:8px">💎</span><span style="color:#eccc68;font-weight:700;font-size:11px;font-family:monospace">${r.conviction}/10</span></div>`);
+  if (r && r.targetPrice) extras.push(`<div style="display:flex;align-items:center;gap:3px;padding:3px 8px;border-radius:6px;background:#2ed57322;border:1px solid #2ed57344"><span style="color:#484f58;font-size:8px">🎯</span><span style="color:#2ed573;font-weight:700;font-size:11px;font-family:monospace">${r.targetPrice}</span></div>`);
+  if (r && r.stopLoss) extras.push(`<div style="display:flex;align-items:center;gap:3px;padding:3px 8px;border-radius:6px;background:#ff475722;border:1px solid #ff475744"><span style="color:#484f58;font-size:8px">🛑</span><span style="color:#ff4757;font-weight:700;font-size:11px;font-family:monospace">${r.stopLoss}</span></div>`);
+  const extrasHtml = extras.length > 0 ? `<div style="margin-left:auto;display:flex;gap:6px">${extras.join("")}</div>` : "";
+  return `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;padding:8px 12px;background:#0d1117;border-radius:8px;border:1px solid #21262d;align-items:center"><span style="color:#484f58;font-size:9px;font-family:monospace;white-space:nowrap">🏛️ TOP FONDS :</span>${items}${extrasHtml}</div>`;
 }
 
 function renderCard(r) {
@@ -772,7 +778,7 @@ function renderCard(r) {
         <span style="color:${scctInfo.color};font-size:9px;opacity:0.7">/100</span>
       </div>
     </div>
-    ${renderTopFunds(r.institutionalMoves)}
+    ${renderTopFunds(r.institutionalMoves, r)}
     <div class="card-header">
       <div onclick="toggleCard('${r.ticker}')" style="flex:1;cursor:pointer">
         <div class="card-tags">
@@ -1053,6 +1059,14 @@ JSON sans backticks:
     const text = await callClaude("Expert Smart Money. JSON uniquement.", prompt, 2000);
     const data = parseJSON(text);
     const da = data.deepAnalysis;
+    // Save conviction + targets to card for quick display
+    const didx = allResults.findIndex(r => r.ticker === ticker);
+    if (didx >= 0 && da) {
+      allResults[didx].conviction = da.conviction || null;
+      allResults[didx].targetPrice = da.targetPrice || null;
+      allResults[didx].stopLoss = da.stopLoss || null;
+      renderResults();
+    }
     document.getElementById("modal-content").innerHTML = `
       <div class="modal-header">
         <div><div class="modal-title">${ticker}</div><div class="modal-sub">DEEP DIVE · CLAUDE AI</div></div>
