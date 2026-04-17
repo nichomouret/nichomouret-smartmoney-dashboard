@@ -386,6 +386,55 @@ function parseJSON(text) {
   return JSON.parse(clean.slice(first, last + 1));
 }
 
+
+// ── Score de Conviction Court Terme (SCCT) /100 ──────────
+function calculateSCCT(result) {
+  let score = 0;
+  
+  // 1. Drawdown réel (25pts)
+  if (result.drawdown52w) {
+    const dd = Math.abs(parseFloat(result.drawdown52w));
+    if (dd >= 60) score += 25;
+    else if (dd >= 40) score += 20;
+    else if (dd >= 30) score += 15;
+    else if (dd >= 20) score += 8;
+  }
+  
+  // 2. Pression short / VAD (25pts)
+  if (result.criteria?.short_interest) {
+    const si = parseFloat(result.shortInterest) || 0;
+    if (si >= 20) score += 25;
+    else if (si >= 15) score += 20;
+    else if (si >= 10) score += 14;
+    else score += 10; // critère coché mais % inconnu
+  }
+  
+  // 3. Catalyseur daté (20pts)
+  if (result.criteria?.catalysts || result.criteria?.biotech) {
+    score += 20; // catalyseur connu = score max
+  }
+  
+  // 4. Signal institutionnel (20pts)
+  if (result.criteria?.institutional || result.criteria?.threshold) {
+    score += 20;
+  }
+  
+  // 5. Momentum — nombre de critères cochés (10pts)
+  const totalCriteria = Object.values(result.criteria || {}).filter(Boolean).length;
+  if (totalCriteria >= 5) score += 10;
+  else if (totalCriteria >= 3) score += 7;
+  else if (totalCriteria >= 2) score += 4;
+  
+  return Math.min(score, 100);
+}
+
+function getSCCTLabel(scct) {
+  if (scct >= 75) return { label: "EXPLOSIF", color: "#ff4757", bg: "#ff475722", border: "#ff475755" };
+  if (scct >= 60) return { label: "FORT", color: "#ff6b3d", bg: "#ff6b3d22", border: "#ff6b3d55" };
+  if (scct >= 45) return { label: "MODÉRÉ", color: "#ffa502", bg: "#ffa50222", border: "#ffa50255" };
+  return { label: "À SURVEILLER", color: "#8b949e", bg: "#21262d", border: "#30363d" };
+}
+
 async function fetchTickerData(ticker) {
   const [quote, ts, news, edgar] = await Promise.all([
     proxyFetch(`/twelvedata/price?symbol=${encodeURIComponent(ticker)}`),
@@ -532,7 +581,9 @@ async function runScan() {
           const enriched = signals.map(s => {
             const found = items.find(i => i.ticker === s.ticker);
             const data = found?.data || {};
-            return { ...s, realPrice: data.realPrice, priceChange: data.priceChange || 0, drawdown52w: data.drawdown52w, dataSource: data.hasRealData ? "twelvedata" : "estimated", news: data.newsItems || [], edgarFilings: data.edgarFilings || [] };
+            const base = { ...s, realPrice: data.realPrice, priceChange: data.priceChange || 0, drawdown52w: data.drawdown52w, dataSource: data.hasRealData ? "twelvedata" : "estimated", news: data.newsItems || [], edgarFilings: data.edgarFilings || [] };
+            base.scct = calculateSCCT(base);
+            return base;
           });
           allResults = [...allResults, ...enriched];
           signalCount = allResults.length;
@@ -576,7 +627,8 @@ function renderResults() {
   const filtered = tripleLockOnly
     ? allResults.filter(r => Object.values(r.criteria || {}).filter(Boolean).length >= 3)
     : allResults;
-  filtered.sort((a, b) => Object.values(b.criteria || {}).filter(Boolean).length - Object.values(a.criteria || {}).filter(Boolean).length);
+  // Sort by SCCT score (highest potential first)
+  filtered.sort((a, b) => (b.scct || 0) - (a.scct || 0));
 
   const tripleLockCount = filtered.filter(r => Object.values(r.criteria || {}).filter(Boolean).length >= 3).length;
   document.getElementById("results-section").style.display = filtered.length > 0 ? "block" : "none";
@@ -591,6 +643,8 @@ function renderCard(r) {
   const tl = score >= 3;
   const pct = score / 7;
   const scoreColor = tl ? "#00d2ff" : pct >= 0.6 ? "#2ed573" : pct >= 0.35 ? "#ffa502" : "#ff4757";
+  const scct = r.scct || 0;
+  const scctInfo = getSCCTLabel(scct);
   const univColor = r.universe === "sbf120" ? "#2ed573" : r.universe === "sp100" ? "#58a6ff" : "#a29bfe";
   const univBg = r.universe === "sbf120" ? "#1a2f1a" : r.universe === "sp100" ? "#1a1f2f" : "#2f1a2f";
   const univLabel = r.universe === "sbf120" ? "SBF120" : r.universe === "sp100" ? "S&P100" : "RUSSELL";
@@ -603,7 +657,14 @@ function renderCard(r) {
   }).join("");
 
   return `<div class="card" style="background:linear-gradient(135deg,#0d1117,#161b22);border:1px solid ${tl ? '#00d2ff44' : '#30363d'};box-shadow:${tl ? '0 0 24px #00d2ff0d' : 'none'}">
-    ${tl ? `<div class="triple-lock-badge">🔒 TRIPLE LOCK — SIGNAL FORT</div>` : ""}
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:${tl ? '6px' : '8px'}">
+      ${tl ? `<div class="triple-lock-badge" style="margin-bottom:0">🔒 TRIPLE LOCK — SIGNAL FORT</div>` : '<div></div>'}
+      <div style="display:inline-flex;align-items:center;gap:6px;padding:4px 12px;border-radius:20px;background:${scctInfo.bg};border:1px solid ${scctInfo.border}">
+        <span style="color:${scctInfo.color};font-weight:700;font-size:11px;font-family:monospace">${scctInfo.label}</span>
+        <span style="color:${scctInfo.color};font-weight:900;font-size:14px;font-family:monospace">${scct}</span>
+        <span style="color:${scctInfo.color};font-size:9px;opacity:0.7">/100</span>
+      </div>
+    </div>
     <div class="card-header">
       <div onclick="toggleCard('${r.ticker}')" style="flex:1;cursor:pointer">
         <div class="card-tags">
