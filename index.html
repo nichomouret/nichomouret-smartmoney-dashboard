@@ -536,9 +536,14 @@ JSON sans backticks:
   try {
     const text = await callClaude("Analyste Smart Money. JSON uniquement sans backticks.", prompt, 2000);
     const parsed = parseJSON(text);
-    return (parsed.results || []).filter(r =>
+    const results = (parsed.results || []).filter(r =>
       Object.values(r.criteria || {}).filter(Boolean).length >= minScore
     );
+    // Debug: log institutional moves
+    results.forEach(r => {
+      console.log(`[${r.ticker}] institutionalMoves:`, JSON.stringify(r.institutionalMoves || []));
+    });
+    return results;
   } catch(e) {
     console.error("[analyzeBatch error]", e.message);
     setProgress(0, 0, 0, `⚠️ Erreur batch: ${e.message}`);
