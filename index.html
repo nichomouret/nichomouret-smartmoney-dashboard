@@ -1,0 +1,769 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Smart Money Scanner — Mark Elias</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #010409; color: #e6edf3; font-family: 'Courier New', monospace; min-height: 100vh; }
+  .container { max-width: 900px; margin: 0 auto; padding: 20px 14px; }
+  button { cursor: pointer; font-family: inherit; border: none; }
+  button:focus, input:focus { outline: none; }
+  input { font-family: inherit; }
+  ::-webkit-scrollbar { width: 5px; }
+  ::-webkit-scrollbar-track { background: #0d1117; }
+  ::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+
+  /* Header */
+  .header { border-bottom: 1px solid #21262d; padding-bottom: 14px; margin-bottom: 20px; }
+  .header-top { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+  .header-icon { width: 34px; height: 34px; border-radius: 8px; background: linear-gradient(135deg, #1f6feb, #388bfd); display: flex; align-items: center; justify-content: center; font-size: 17px; flex-shrink: 0; }
+  .header h1 { font-size: 16px; font-weight: 700; letter-spacing: 2px; }
+  .header-sub { font-size: 9px; color: #8b949e; letter-spacing: 2px; }
+  .sources { display: flex; flex-wrap: wrap; gap: 5px; }
+  .source-badge { font-size: 9px; padding: 2px 7px; border-radius: 4px; }
+
+  /* Sections */
+  .section-label { font-size: 9px; color: #8b949e; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 8px; }
+  .section { margin-bottom: 14px; }
+
+  /* Universe buttons */
+  .universe-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 7px; }
+  .universe-btn { padding: 10px 13px; border-radius: 8px; text-align: left; transition: all 0.15s; }
+  .universe-btn .u-label { font-weight: 700; font-size: 11px; }
+  .universe-btn .u-desc { font-size: 9px; opacity: 0.6; margin-top: 2px; }
+
+  /* Criteria */
+  .criteria-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 7px; }
+  .criteria-btn { padding: 8px 11px; border-radius: 8px; text-align: left; transition: all 0.15s; }
+  .criteria-btn .c-label { font-weight: 700; font-size: 10px; margin-bottom: 2px; }
+  .criteria-btn .c-desc { font-size: 9px; opacity: 0.7; }
+
+  /* Controls */
+  .controls { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; }
+  .score-btns { display: flex; gap: 4px; }
+  .score-btn { width: 28px; height: 28px; border-radius: 6px; font-weight: 700; font-size: 11px; transition: all 0.15s; }
+  .ticker-input { width: 100%; padding: 7px 11px; border-radius: 8px; background: #21262d; border: 1px solid #30363d; color: #e6edf3; font-size: 11px; }
+
+  /* Scan buttons */
+  .scan-row { display: flex; gap: 8px; margin-bottom: 16px; }
+  .scan-btn { flex: 1; padding: 13px; border-radius: 10px; font-weight: 700; font-size: 12px; letter-spacing: 2px; text-transform: uppercase; display: flex; align-items: center; justify-content: center; gap: 10px; transition: opacity 0.2s; }
+  .stop-btn { padding: 13px 20px; background: #ff475722; border: 1px solid #ff475755 !important; border-radius: 10px; color: #ff4757; font-weight: 700; font-size: 12px; }
+
+  /* Progress */
+  .progress-box { background: #0d1117; border: 1px solid #21262d; border-radius: 10px; padding: 14px 16px; margin-bottom: 16px; animation: fadeIn 0.2s ease; }
+  .progress-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 11px; }
+  .progress-bar-track { background: #21262d; border-radius: 4px; height: 6px; overflow: hidden; margin-bottom: 8px; }
+  .progress-bar-fill { background: linear-gradient(90deg, #1f6feb, #00d2ff); height: 100%; border-radius: 4px; transition: width 0.5s ease; }
+  .progress-footer { display: flex; justify-content: space-between; font-size: 9px; }
+
+  /* Result cards */
+  .results-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 8px; }
+  .results-list { display: flex; flex-direction: column; gap: 8px; }
+  .card { border-radius: 12px; padding: 16px; animation: fadeIn 0.3s ease; }
+  .triple-lock-badge { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; background: #00d2ff11; border: 1px solid #00d2ff33; border-radius: 6px; padding: 4px 10px; font-size: 10px; color: #00d2ff; font-weight: 700; letter-spacing: 1px; }
+  .card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; gap: 10px; }
+  .card-ticker { font-weight: 700; font-size: 17px; color: #e6edf3; letter-spacing: 1px; }
+  .card-tags { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; margin-bottom: 3px; }
+  .tag { font-size: 10px; padding: 2px 7px; border-radius: 4px; }
+  .card-name { color: #8b949e; font-size: 11px; }
+  .card-right { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; flex-shrink: 0; }
+  .score-badge { display: inline-flex; align-items: center; gap: 5px; border-radius: 6px; padding: 3px 8px; }
+  .score-dots { display: flex; gap: 2px; }
+  .score-dot { width: 5px; height: 5px; border-radius: 2px; }
+  .price-display { text-align: right; }
+  .price-val { font-size: 13px; color: #e6edf3; font-weight: 700; }
+  .price-change { font-size: 11px; }
+  .criteria-pills { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 10px; }
+  .pill { font-size: 10px; padding: 2px 7px; border-radius: 4px; }
+  .card-summary { color: #c9d1d9; font-size: 12px; line-height: 1.6; margin-bottom: 12px; }
+  .drawdown-badge { display: inline-flex; align-items: center; gap: 6px; background: #ff475715; border: 1px solid #ff475733; border-radius: 6px; padding: 3px 10px; margin-bottom: 12px; font-size: 10px; color: #ff4757; }
+  .card-actions { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
+  .action-btn { padding: 8px; border-radius: 8px; font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 5px; }
+  .expand-toggle { text-align: center; margin-top: 8px; color: #484f58; font-size: 10px; cursor: pointer; }
+  .card-expanded { margin-top: 12px; padding-top: 12px; border-top: 1px solid #21262d; }
+  .news-item { background: #21262d; border-radius: 8px; padding: 8px 10px; margin-bottom: 5px; border-left: 3px solid #58a6ff44; }
+  .news-title-row { display: flex; justify-content: space-between; margin-bottom: 3px; gap: 8px; }
+  .news-title { color: #e6edf3; font-size: 11px; font-weight: 600; }
+  .news-date { color: #8b949e; font-size: 10px; white-space: nowrap; }
+  .news-content { color: #8b949e; font-size: 11px; line-height: 1.5; }
+  .news-source { color: #484f58; font-size: 9px; margin-top: 3px; }
+  .edgar-item { background: #21262d; border-radius: 8px; padding: 8px 10px; margin-bottom: 5px; border-left: 3px solid #ffa50255; }
+
+  /* Spinner */
+  .spinner { border-radius: 50%; border: 2px solid #ffffff22; border-top-color: #58a6ff; animation: spin 0.7s linear infinite; flex-shrink: 0; }
+
+  /* Modal */
+  .modal-overlay { position: fixed; inset: 0; background: #010409f2; display: flex; align-items: center; justify-content: center; z-index: 200; padding: 16px; }
+  .modal-box { background: #0d1117; border: 1px solid #30363d; border-radius: 16px; padding: 22px; max-width: 680px; width: 100%; max-height: 88vh; overflow-y: auto; animation: fadeIn 0.2s ease; }
+  .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; }
+  .modal-title { font-size: 18px; font-weight: 700; letter-spacing: 2px; color: #e6edf3; }
+  .modal-sub { font-size: 9px; color: #8b949e; letter-spacing: 2px; margin-top: 2px; }
+  .modal-close { background: #21262d; border: 1px solid #30363d; color: #8b949e; border-radius: 6px; padding: 5px 11px; }
+  .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 16px; }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 16px; }
+  .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .stat-box { background: #21262d; border-radius: 8px; padding: 10px; text-align: center; }
+  .stat-label { font-size: 9px; color: #8b949e; margin-bottom: 4px; }
+  .stat-val { font-weight: 700; font-size: 14px; }
+  .info-box { border-radius: 8px; padding: 12px; margin-bottom: 14px; }
+  .info-label { font-size: 9px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 6px; }
+  .info-text { font-size: 12px; line-height: 1.7; color: #c9d1d9; }
+  .trame-box { background: #21262d; border-radius: 8px; padding: 12px; }
+  .trame-pre { color: #c9d1d9; font-size: 11px; line-height: 1.7; white-space: pre-wrap; font-family: 'Courier New', monospace; }
+  .legal { background: #21262d; border-radius: 8px; padding: 8px 12px; font-size: 10px; color: #484f58; line-height: 1.5; }
+
+  /* Error */
+  .error-box { background: #ff475715; border: 1px solid #ff475755; border-radius: 8px; padding: 11px 14px; color: #ff4757; font-size: 11px; margin-bottom: 14px; }
+
+  /* Footer */
+  .footer { margin-top: 24px; padding-top: 14px; border-top: 1px solid #21262d; text-align: center; font-size: 9px; color: #484f58; letter-spacing: 1px; line-height: 1.8; }
+
+  /* Loading overlay */
+  .loading-overlay { position: fixed; inset: 0; background: #010409f2; display: flex; align-items: center; justify-content: center; z-index: 300; flex-direction: column; gap: 14px; }
+  .loading-text { color: #8b949e; font-size: 12px; letter-spacing: 2px; }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <!-- Header -->
+  <div class="header">
+    <div class="header-top">
+      <div class="header-icon">🎯</div>
+      <div>
+        <h1>SMART MONEY SCANNER</h1>
+        <div class="header-sub">by MARK ELIAS · SCAN COMPLET · CLAUDE AI</div>
+      </div>
+    </div>
+    <div class="sources" id="sources"></div>
+  </div>
+
+  <!-- Univers -->
+  <div class="section">
+    <div class="section-label" id="universe-label">Univers de scan</div>
+    <div class="universe-grid" id="universe-grid"></div>
+  </div>
+
+  <!-- Critères -->
+  <div class="section">
+    <div class="section-label">Critères Mark Elias</div>
+    <div class="criteria-grid" id="criteria-grid"></div>
+  </div>
+
+  <!-- Controls -->
+  <div class="section controls">
+    <div style="flex:1;min-width:160px">
+      <div class="section-label" id="score-label">Score minimum</div>
+      <div class="score-btns" id="score-btns"></div>
+    </div>
+    <div>
+      <div class="section-label">Triple Lock</div>
+      <button id="triple-lock-btn" class="action-btn" style="padding:6px 13px;border-radius:8px;font-size:11px;">🔒 Inactif</button>
+    </div>
+    <div style="flex:2;min-width:160px">
+      <div class="section-label">Ticker spécifique (optionnel)</div>
+      <input class="ticker-input" id="custom-ticker" placeholder="ex: TEP.PA, IONQ, SMCI..." />
+    </div>
+  </div>
+
+  <!-- Scan buttons -->
+  <div class="scan-row">
+    <button class="scan-btn" id="scan-btn" style="background:linear-gradient(135deg,#1f6feb,#388bfd);color:#fff;border:none;">
+      🔍 <span id="scan-btn-text">Scanner</span>
+    </button>
+    <button class="stop-btn" id="stop-btn" style="display:none;" onclick="stopScan()">⏹️ Stop</button>
+  </div>
+
+  <!-- Progress -->
+  <div id="progress-box" style="display:none;" class="progress-box">
+    <div class="progress-header">
+      <div style="color:#58a6ff;font-size:11px;" id="progress-step">Démarrage...</div>
+      <div style="color:#8b949e;font-size:11px;" id="progress-count">0/0</div>
+    </div>
+    <div class="progress-bar-track">
+      <div class="progress-bar-fill" id="progress-bar" style="width:0%"></div>
+    </div>
+    <div class="progress-footer">
+      <div style="color:#484f58;">SBF120 · S&P100 · Russell Midcap</div>
+      <div id="progress-signals" style="color:#484f58;">Scan en cours...</div>
+    </div>
+  </div>
+
+  <!-- Error -->
+  <div id="error-box" class="error-box" style="display:none;"></div>
+
+  <!-- Results -->
+  <div id="results-section" style="display:none;">
+    <div class="results-header">
+      <div id="results-count" style="font-size:11px;font-weight:700;"></div>
+      <div style="font-size:9px;color:#484f58;">📈 Reco · 📄 Dossier · 🔍 Deep Dive</div>
+    </div>
+    <div class="results-list" id="results-list"></div>
+  </div>
+
+  <div class="footer">
+    SMART MONEY SCANNER · MARK ELIAS · CLAUDE AI<br>
+    Sources: TwelveData · NewsAPI · EDGAR SEC · AMF/ESMA<br>
+    Outil éducatif — Ne constitue pas un conseil en investissement
+  </div>
+</div>
+
+<!-- Modal -->
+<div id="modal" class="modal-overlay" style="display:none;" onclick="closeModal()">
+  <div class="modal-box" onclick="event.stopPropagation()">
+    <div id="modal-content"></div>
+  </div>
+</div>
+
+<!-- Loading overlay -->
+<div id="loading-overlay" class="loading-overlay" style="display:none;">
+  <div class="spinner" style="width:32px;height:32px;"></div>
+  <div class="loading-text" id="loading-text">Génération en cours...</div>
+</div>
+
+<script>
+const PROXY = "https://nichomouret-smartmoney-proxy-production.up.railway.app";
+const BATCH_SIZE = 15;
+const BATCH_DELAY = 3000;
+
+const SBF120 = ["AI.PA","ACA.PA","ADP.PA","AF.PA","AIR.PA","ALO.PA","ATO.PA","CS.PA","BNP.PA","EN.PA","BOL.PA","CAP.PA","CA.PA","AXA.PA","CNP.PA","SU.PA","DG.PA","DBV.PA","DSY.PA","EDEN.PA","EL.PA","ERF.PA","ENGI.PA","FGR.PA","FP.PA","GET.PA","GTT.PA","HO.PA","IPN.PA","KER.PA","OR.PA","MC.PA","ML.PA","NANO.PA","ORA.PA","RI.PA","PUB.PA","RNO.PA","RMS.PA","SAF.PA","SGO.PA","SAN.PA","SEB.PA","SEV.PA","SOLB.PA","SPIE.PA","STM.PA","SW.PA","TEP.PA","TFI.PA","TTE.PA","UBI.PA","UG.PA","VIE.PA","VIV.PA","VK.PA","VU.PA","WLN.PA","FR.PA","SOI.PA","LHN.PA","BVI.PA","GFC.PA","FDR.PA","FNAC.PA","ERT.PA","AKE.PA","ARGAN.PA","ALPE.PA","MCPHY.PA","LACR.PA","LAUR.PA","LDLC.PA","LISI.PA","LNC.PA","MAAT.PA","MBWS.PA","MDM.PA","METEX.PA","MFGP.PA","MT","BB.PA","CO.PA","MMB.PA","NEX.PA","SCP.PA","STF.PA","LI.PA","MRM.PA"];
+const SP100 = ["AAPL","MSFT","AMZN","NVDA","GOOGL","META","TSLA","UNH","XOM","JPM","JNJ","V","PG","MA","HD","CVX","MRK","ABBV","PEP","KO","AVGO","LLY","COST","WMT","BAC","MCD","ABT","TMO","CSCO","ACN","NKE","DHR","VZ","ADBE","TXN","NEE","PM","UPS","RTX","QCOM","HON","AMGN","LOW","INTC","AMD","INTU","IBM","SBUX","GS","CAT","BA","BLK","AXP","SPGI","DE","ELV","MDLZ","GILD","MMC","ADI","REGN","VRTX","CI","ZTS","MO","SYK","PLD","COP","EOG","BDX","ISRG","TJX","EW","HCA","AON","ICE","NSC","MRNA","F","GM","PARA","WBA","T","VFC","OXY","HAL","DVN","MPC","VLO","PSX","KMI","WMB","SLB","BKR","CTRA","APA","IONQ","OKLO","SMCI","NBTX"];
+const RUSSELL = ["FIVE","GNRC","PENN","PRGO","RRX","SITE","SWK","ALGN","XRAY","HOLX","PODD","INSP","IRTC","NVCR","PACB","RXRX","BEAM","NTLA","CRSP","EDIT","FATE","ARWR","ALNY","IONS","SRPT","RARE","FOLD","ACAD","SAGE","INSM","KYMR","PTCT","BMRN","LGND","JAZZ","HRMY","RCKT","DNLI","KALV","IMVT","VERA","ARVN","KRTX","PRAX","YMAB","DVAX","IOVA","EXEL","TGTX","HALO","PRLD","NKTR","EPZM","MGNX","MERC","GTHX","ENSG","ECPG","DXPE","DUOL","PLUG","BYND","SOFI","LUMN","RIVN","LCID","OPEN","UWMC","RKT","CLOV","SPCE","NKLA","RKLB","ASTS","GSAT","IRDM","MAXN","ARRY","NOVA","STEM","DBVT","SEER","ACMR","FLNC","HIMS","JOBY","ACHR","ZURA","IMGO","KALA","IDYA","DAWN","IRON","VYGN","NRIX"];
+
+const UNIVERSES = {
+  sbf120: { label: "🇫🇷 SBF 120", list: SBF120 },
+  sp100:  { label: "🇺🇸 S&P 100", list: SP100 },
+  russell_midcap: { label: "📊 Russell Midcap", list: RUSSELL },
+};
+
+const CRITERIA = [
+  { id: "short_interest", icon: "📉", label: "% VAD élevé", desc: "Short interest > 10%", color: "#ff4757" },
+  { id: "institutional", icon: "🏛️", label: "Actionnariat institutionnel", desc: "Entrées 13F/13D récentes", color: "#3742fa" },
+  { id: "threshold", icon: "🔔", label: "Franchissement de seuils", desc: "AMF / SEC 5%+", color: "#ffa502" },
+  { id: "price_drop", icon: "📊", label: "Forte chute du cours", desc: "Drawdown -20%+ sur 52W", color: "#2ed573" },
+  { id: "catalysts", icon: "⚡", label: "Catalyseurs datés", desc: "FDA, résultats, spin-off", color: "#eccc68" },
+  { id: "biotech", icon: "🧬", label: "Biotech FDA/EMA", desc: "PDUFA daté + VAD 20-40%", color: "#ff6b9d" },
+  { id: "special", icon: "♟️", label: "Situation spéciale", desc: "SPAC / post-restructuration", color: "#a29bfe" },
+];
+
+// ── State ─────────────────────────────────────────────────
+let selectedUniverses = ["sbf120", "sp100", "russell_midcap"];
+let selectedCriteria = ["short_interest", "institutional", "price_drop"];
+let minScore = 2;
+let tripleLockOnly = false;
+let scanning = false;
+let stopRequested = false;
+let allResults = [];
+
+// ── Init UI ───────────────────────────────────────────────
+function init() {
+  // Sources
+  const sources = [["TwelveData","#58a6ff","live"],["NewsAPI","#58a6ff","live"],["EDGAR SEC","#2ed573","gratuit"],["AMF/ESMA","#2ed573","gratuit"],["Ortex","#484f58","bientôt"]];
+  document.getElementById("sources").innerHTML = sources.map(([n,c,s]) =>
+    `<span class="source-badge" style="background:${c}15;border:1px solid ${c}44;color:${c};">${n} <span style="opacity:0.6">· ${s}</span></span>`
+  ).join("");
+
+  // Universes
+  renderUniverses();
+
+  // Criteria
+  renderCriteria();
+
+  // Score buttons
+  renderScoreBtns();
+
+  // Triple lock
+  renderTripleLock();
+
+  // Scan button
+  updateScanBtn();
+}
+
+function renderUniverses() {
+  const total = selectedUniverses.reduce((a, u) => a + (UNIVERSES[u]?.list?.length || 0), 0);
+  document.getElementById("universe-label").textContent = `Univers de scan — ${total} titres au total`;
+  document.getElementById("universe-grid").innerHTML = Object.entries(UNIVERSES).map(([id, u]) => {
+    const active = selectedUniverses.includes(id);
+    return `<button class="universe-btn" onclick="toggleUniverse('${id}')" style="background:${active ? '#1f6feb22' : '#21262d'};border:1px solid ${active ? '#388bfd' : '#30363d'};color:${active ? '#58a6ff' : '#8b949e'};">
+      <div class="u-label">${u.label}</div>
+      <div class="u-desc">${u.list.length} titres · scan complet</div>
+    </button>`;
+  }).join("");
+}
+
+function renderCriteria() {
+  document.getElementById("criteria-grid").innerHTML = CRITERIA.map(c => {
+    const active = selectedCriteria.includes(c.id);
+    return `<button class="criteria-btn" onclick="toggleCriteria('${c.id}')" style="background:${active ? c.color+'15' : '#21262d'};border:1px solid ${active ? c.color+'88' : '#30363d'};color:${active ? c.color : '#8b949e'};">
+      <div class="c-label">${c.icon} ${c.label}</div>
+      <div class="c-desc">${c.desc}</div>
+    </button>`;
+  }).join("");
+}
+
+function renderScoreBtns() {
+  document.getElementById("score-label").textContent = `Score minimum (${minScore}/7)`;
+  document.getElementById("score-btns").innerHTML = [1,2,3,4,5,6,7].map(n =>
+    `<button class="score-btn" onclick="setScore(${n})" style="background:${minScore===n ? '#388bfd22' : '#21262d'};border:1px solid ${minScore===n ? '#388bfd' : '#30363d'};color:${minScore===n ? '#58a6ff' : '#8b949e'};">${n}</button>`
+  ).join("");
+}
+
+function renderTripleLock() {
+  const btn = document.getElementById("triple-lock-btn");
+  btn.style.background = tripleLockOnly ? "#00d2ff15" : "#21262d";
+  btn.style.border = `1px solid ${tripleLockOnly ? "#00d2ff" : "#30363d"}`;
+  btn.style.color = tripleLockOnly ? "#00d2ff" : "#8b949e";
+  btn.textContent = `🔒 ${tripleLockOnly ? "Actif" : "Inactif"}`;
+  btn.onclick = () => { tripleLockOnly = !tripleLockOnly; renderTripleLock(); renderResults(); };
+}
+
+function updateScanBtn() {
+  const total = selectedUniverses.reduce((a, u) => a + (UNIVERSES[u]?.list?.length || 0), 0);
+  document.getElementById("scan-btn-text").textContent = scanning ? "Scan en cours..." : `Scanner ${total} titres`;
+  document.getElementById("scan-btn").disabled = scanning;
+  document.getElementById("scan-btn").style.opacity = scanning ? "0.7" : "1";
+  document.getElementById("stop-btn").style.display = scanning ? "block" : "none";
+}
+
+function toggleUniverse(id) {
+  if (selectedUniverses.includes(id)) {
+    selectedUniverses = selectedUniverses.filter(u => u !== id);
+  } else {
+    selectedUniverses.push(id);
+  }
+  renderUniverses(); updateScanBtn();
+}
+
+function toggleCriteria(id) {
+  if (selectedCriteria.includes(id)) {
+    selectedCriteria = selectedCriteria.filter(c => c !== id);
+  } else {
+    selectedCriteria.push(id);
+  }
+  renderCriteria();
+}
+
+function setScore(n) { minScore = n; renderScoreBtns(); }
+
+// ── API calls ─────────────────────────────────────────────
+async function proxyFetch(endpoint) {
+  try {
+    const r = await fetch(`${PROXY}${endpoint}`);
+    if (!r.ok) return null;
+    return await r.json();
+  } catch { return null; }
+}
+
+async function callClaude(system, user, maxTokens = 2000) {
+  const r = await fetch(`${PROXY}/claude`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: "claude-sonnet-4-6",
+      max_tokens: maxTokens,
+      system,
+      messages: [{ role: "user", content: user }],
+    }),
+  });
+  if (!r.ok) throw new Error(`Claude ${r.status}`);
+  const data = await r.json();
+  return (data.content || []).map(b => b.text || "").join("");
+}
+
+function parseJSON(text) {
+  const clean = text.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+  const first = clean.indexOf("{"), last = clean.lastIndexOf("}");
+  if (first === -1 || last === -1) throw new Error("No JSON");
+  return JSON.parse(clean.slice(first, last + 1));
+}
+
+async function fetchTickerData(ticker) {
+  const [quote, ts, news, edgar] = await Promise.all([
+    proxyFetch(`/twelvedata/price?symbol=${encodeURIComponent(ticker)}`),
+    proxyFetch(`/twelvedata/timeseries?symbol=${encodeURIComponent(ticker)}&interval=1day&outputsize=252`),
+    proxyFetch(`/news?query=${encodeURIComponent(ticker)}`),
+    proxyFetch(`/edgar/thresholds?ticker=${encodeURIComponent(ticker)}`),
+  ]);
+  let realPrice = null, drawdown52w = null, priceChange = 0, hasRealData = false;
+  if (quote && !quote.code) {
+    const cur = quote.currency === "EUR" ? "€" : "$";
+    realPrice = quote.close ? `${parseFloat(quote.close).toFixed(2)}${cur}` : null;
+  }
+  if (ts?.values?.length > 10) {
+    hasRealData = true;
+    const closes = ts.values.map(v => parseFloat(v.close));
+    const latest = closes[0], high = Math.max(...closes), oldest = closes[closes.length - 1];
+    drawdown52w = `${(((latest - high) / high) * 100).toFixed(1)}%`;
+    priceChange = parseFloat((((latest - oldest) / oldest) * 100).toFixed(1));
+  }
+  const newsItems = (news?.articles || []).slice(0, 2).map(a => ({
+    title: (a.title || "").slice(0, 55),
+    date: a.publishedAt ? new Date(a.publishedAt).toLocaleDateString("fr-FR") : "—",
+    content: (a.description || "").slice(0, 100),
+    source: a.source?.name || "—",
+  }));
+  const edgarFilings = (edgar?.hits?.hits || []).slice(0, 2).map(h => ({
+    entity: h._source?.entity_name || "Inconnu",
+    date: h._source?.file_date || "—",
+    form: h._source?.form_type || "—",
+    detail: h._source?.display_names?.[0] || "Dépôt SEC",
+  }));
+  return { realPrice, drawdown52w, priceChange, hasRealData, newsItems, edgarFilings };
+}
+
+async function analyzeBatch(batch, universe) {
+  const criteriaLabels = selectedCriteria.map(id => CRITERIA.find(c => c.id === id)?.label).join(", ");
+  const context = batch.map(({ ticker, data }) => {
+    const dd = data.drawdown52w ? `drawdown=${data.drawdown52w}[RÉEL]` : "drawdown=inconnu[ESTIMÉ]";
+    return `${ticker}: prix=${data.realPrice || "N/A"} ${dd} change=${data.priceChange}%`;
+  }).join("\n");
+
+  const prompt = `Expert Smart Money Mark Elias. Univers: ${UNIVERSES[universe]?.label}. Critères: ${criteriaLabels}. Avril 2026.
+
+TITRES:
+${context}
+
+Pour chaque titre avec >= ${minScore}/7 critères, inclus-le. Sinon retourne {"results":[]}.
+
+CRITÈRES:
+- price_drop: TRUE si drawdown <= -20% réel ou chute connue significative
+- short_interest: TRUE si VAD estimée > 10%
+- institutional: TRUE si entrée institutionnelle 5%+ récente connue
+- threshold: TRUE si déclaration AMF/SEC récente connue
+- catalysts: TRUE si événement daté dans 6 mois
+- biotech: TRUE si biotech avec readout attendu
+- special: TRUE si restructuration ou situation spéciale
+
+JSON sans backticks:
+{"results":[{"ticker":"X","name":"Nom","market":"Euronext Paris","universe":"${universe}","summary":"2 phrases signal Smart Money.","criteria":{"short_interest":true,"institutional":false,"threshold":false,"price_drop":true,"catalysts":false,"biotech":false,"special":false},"shortInterest":"13%","shortSource":"Estimé","institutional13f":"BlackRock 8.75%"}]}`;
+
+  try {
+    const text = await callClaude("Analyste Smart Money. JSON uniquement sans backticks.", prompt, 2000);
+    const parsed = parseJSON(text);
+    return (parsed.results || []).filter(r =>
+      Object.values(r.criteria || {}).filter(Boolean).length >= minScore
+    );
+  } catch { return []; }
+}
+
+// ── Scan principal ────────────────────────────────────────
+function stopScan() { stopRequested = true; }
+
+async function runScan() {
+  scanning = true;
+  stopRequested = false;
+  allResults = [];
+  document.getElementById("error-box").style.display = "none";
+  document.getElementById("results-section").style.display = "none";
+  document.getElementById("progress-box").style.display = "block";
+  updateScanBtn();
+
+  const customTicker = document.getElementById("custom-ticker").value.trim().toUpperCase();
+  let allTickers = [];
+
+  if (customTicker) {
+    allTickers = [{ ticker: customTicker, universe: "custom" }];
+  } else {
+    selectedUniverses.forEach(u => {
+      (UNIVERSES[u]?.list || []).forEach(t => allTickers.push({ ticker: t, universe: u }));
+    });
+  }
+
+  const total = allTickers.length;
+  const batches = [];
+  for (let i = 0; i < allTickers.length; i += BATCH_SIZE) {
+    batches.push(allTickers.slice(i, i + BATCH_SIZE));
+  }
+
+  setProgress(0, total, 0, `🚀 Démarrage — ${total} titres en ${batches.length} batches...`);
+
+  let scanned = 0;
+  let signalCount = 0;
+
+  for (let b = 0; b < batches.length; b++) {
+    if (stopRequested) break;
+    const batch = batches[b];
+
+    setProgress(scanned, total, signalCount, `📡 Batch ${b+1}/${batches.length} — Récupération TwelveData...`);
+
+    const batchWithData = await Promise.all(
+      batch.map(async ({ ticker, universe }) => ({
+        ticker, universe, data: await fetchTickerData(ticker)
+      }))
+    );
+    scanned += batch.length;
+
+    // Filtre drawdown
+    const qualified = batchWithData.filter(({ data }) => {
+      if (!data.drawdown52w) return true;
+      return parseFloat(data.drawdown52w) <= -20;
+    });
+
+    setProgress(scanned, total, signalCount, `🤖 Batch ${b+1}/${batches.length} — ${qualified.length} qualifiés → Claude...`);
+
+    if (qualified.length > 0) {
+      const byUniverse = {};
+      qualified.forEach(item => {
+        if (!byUniverse[item.universe]) byUniverse[item.universe] = [];
+        byUniverse[item.universe].push(item);
+      });
+
+      for (const [universe, items] of Object.entries(byUniverse)) {
+        if (stopRequested) break;
+        const signals = await analyzeBatch(items, universe);
+        if (signals.length > 0) {
+          const enriched = signals.map(s => {
+            const found = items.find(i => i.ticker === s.ticker);
+            const data = found?.data || {};
+            return { ...s, realPrice: data.realPrice, priceChange: data.priceChange || 0, drawdown52w: data.drawdown52w, dataSource: data.hasRealData ? "twelvedata" : "estimated", news: data.newsItems || [], edgarFilings: data.edgarFilings || [] };
+          });
+          allResults = [...allResults, ...enriched];
+          signalCount = allResults.length;
+          renderResults();
+          setProgress(scanned, total, signalCount, `✨ ${signalCount} signal${signalCount > 1 ? "s" : ""} détecté${signalCount > 1 ? "s" : ""}...`);
+        }
+      }
+    }
+
+    if (b < batches.length - 1 && !stopRequested) {
+      setProgress(scanned, total, signalCount, `⏳ Pause ${BATCH_DELAY/1000}s (rate limit)...`);
+      await new Promise(r => setTimeout(r, BATCH_DELAY));
+    }
+  }
+
+  const finalMsg = stopRequested
+    ? `⏹️ Arrêté — ${signalCount} signaux sur ${scanned} titres`
+    : `✅ Terminé — ${total} titres analysés — ${signalCount} signaux`;
+  setProgress(total, total, signalCount, finalMsg);
+
+  if (allResults.length === 0) {
+    document.getElementById("error-box").textContent = "Aucun signal détecté. Baissez le score minimum ou élargissez les critères.";
+    document.getElementById("error-box").style.display = "block";
+  }
+
+  scanning = false;
+  updateScanBtn();
+}
+
+function setProgress(current, total, signals, step) {
+  const pct = total > 0 ? Math.round((current / total) * 100) : 0;
+  document.getElementById("progress-step").textContent = step;
+  document.getElementById("progress-count").textContent = `${current}/${total} · ${pct}%`;
+  document.getElementById("progress-bar").style.width = `${pct}%`;
+  document.getElementById("progress-signals").style.color = signals > 0 ? "#2ed573" : "#484f58";
+  document.getElementById("progress-signals").textContent = signals > 0 ? `🎯 ${signals} signal${signals > 1 ? "s" : ""}` : "Scan en cours...";
+}
+
+// ── Render results ────────────────────────────────────────
+function renderResults() {
+  const filtered = tripleLockOnly
+    ? allResults.filter(r => Object.values(r.criteria || {}).filter(Boolean).length >= 3)
+    : allResults;
+  filtered.sort((a, b) => Object.values(b.criteria || {}).filter(Boolean).length - Object.values(a.criteria || {}).filter(Boolean).length);
+
+  const tripleLockCount = filtered.filter(r => Object.values(r.criteria || {}).filter(Boolean).length >= 3).length;
+  document.getElementById("results-section").style.display = filtered.length > 0 ? "block" : "none";
+  document.getElementById("results-count").innerHTML = `${filtered.length} signal${filtered.length > 1 ? "s" : ""} détecté${filtered.length > 1 ? "s" : ""}${tripleLockCount > 0 ? ` <span style="color:#00d2ff;margin-left:10px">· ${tripleLockCount} 🔒 Triple Lock</span>` : ""}`;
+  document.getElementById("results-list").innerHTML = filtered.map(r => renderCard(r)).join("");
+}
+
+function getScore(r) { return Object.values(r.criteria || {}).filter(Boolean).length; }
+
+function renderCard(r) {
+  const score = getScore(r);
+  const tl = score >= 3;
+  const pct = score / 7;
+  const scoreColor = tl ? "#00d2ff" : pct >= 0.6 ? "#2ed573" : pct >= 0.35 ? "#ffa502" : "#ff4757";
+  const univColor = r.universe === "sbf120" ? "#2ed573" : r.universe === "sp100" ? "#58a6ff" : "#a29bfe";
+  const univBg = r.universe === "sbf120" ? "#1a2f1a" : r.universe === "sp100" ? "#1a1f2f" : "#2f1a2f";
+  const univLabel = r.universe === "sbf120" ? "SBF120" : r.universe === "sp100" ? "S&P100" : "RUSSELL";
+  const changeColor = (r.priceChange || 0) < 0 ? "#ff4757" : "#2ed573";
+  const dots = Array.from({length:7}, (_,i) => `<div class="score-dot" style="background:${i<score ? scoreColor : scoreColor+'33'}"></div>`).join("");
+
+  const pillsHtml = CRITERIA.map(c => {
+    const active = r.criteria?.[c.id];
+    return `<span class="pill" style="background:${active ? c.color+'22' : '#ffffff08'};border:1px solid ${active ? c.color+'66' : '#ffffff15'};color:${active ? c.color : '#444'};text-decoration:${active ? 'none' : 'line-through'}">${c.icon} ${c.label}</span>`;
+  }).join("");
+
+  return `<div class="card" style="background:linear-gradient(135deg,#0d1117,#161b22);border:1px solid ${tl ? '#00d2ff44' : '#30363d'};box-shadow:${tl ? '0 0 24px #00d2ff0d' : 'none'}">
+    ${tl ? `<div class="triple-lock-badge">🔒 TRIPLE LOCK — SIGNAL FORT</div>` : ""}
+    <div class="card-header">
+      <div onclick="toggleCard('${r.ticker}')" style="flex:1;cursor:pointer">
+        <div class="card-tags">
+          <span class="card-ticker">${r.ticker}</span>
+          <span class="tag" style="background:#21262d;color:#8b949e">${r.market || "—"}</span>
+          <span class="tag" style="background:${univBg};color:${univColor}">${univLabel}</span>
+        </div>
+        <div class="card-name">${r.name || ""}</div>
+      </div>
+      <div class="card-right">
+        <div class="score-badge" style="background:${scoreColor}22;border:1px solid ${scoreColor}55">
+          ${tl ? '<span style="font-size:9px">🔒</span>' : ""}
+          <span style="color:${scoreColor};font-weight:700;font-size:12px">${score}/7</span>
+          <div class="score-dots">${dots}</div>
+        </div>
+        ${r.realPrice ? `<div class="price-display"><div class="price-val">${r.realPrice}</div><div class="price-change" style="color:${changeColor}">${(r.priceChange||0)>0?'+':''}${r.priceChange||0}% 52W</div></div>` : ""}
+      </div>
+    </div>
+    <div class="criteria-pills">${pillsHtml}</div>
+    <div class="card-summary" onclick="toggleCard('${r.ticker}')" style="cursor:pointer">${r.summary || ""}</div>
+    ${r.drawdown52w ? `<div class="drawdown-badge">📊 Drawdown 52W: <strong>${r.drawdown52w}</strong>${r.dataSource === 'twelvedata' ? ' <span style="color:#484f58">· TwelveData ✓</span>' : ''}</div>` : ""}
+    <div class="card-actions">
+      <button class="action-btn" onclick="openReco('${r.ticker}')" style="background:linear-gradient(135deg,#2ed57318,#00d2ff18);border:1px solid #2ed57355;color:#2ed573">📈 Recommandation</button>
+      <button class="action-btn" onclick="openDossier('${r.ticker}')" style="background:linear-gradient(135deg,#eccc6818,#ffa50218);border:1px solid #eccc6855;color:#eccc68">📄 Dossier Communauté</button>
+      <button class="action-btn" onclick="openDeepDive('${r.ticker}')" style="background:linear-gradient(135deg,#7c3aed18,#a29bfe18);border:1px solid #7c3aed55;color:#a29bfe">🔍 Deep Dive</button>
+    </div>
+    <div id="expanded-${r.ticker}" style="display:none" class="card-expanded">
+      ${(r.news||[]).length > 0 ? `<div style="margin-bottom:12px"><div class="section-label" style="color:#58a6ff;margin-bottom:8px">📰 Actualités <span style="color:#484f58">(NewsAPI)</span></div>${(r.news||[]).map(n => `<div class="news-item"><div class="news-title-row"><span class="news-title">${n.title}</span><span class="news-date">${n.date}</span></div><div class="news-content">${n.content}</div><div class="news-source">${n.source}</div></div>`).join("")}</div>` : ""}
+      ${(r.edgarFilings||[]).length > 0 ? `<div style="margin-bottom:12px"><div class="section-label" style="color:#ffa502;margin-bottom:8px">🔔 Franchissements SEC (EDGAR)</div>${(r.edgarFilings||[]).map(f => `<div class="edgar-item"><div style="display:flex;justify-content:space-between;gap:8px"><span style="color:#e6edf3;font-size:11px;font-weight:600">${f.entity}</span><span style="color:#8b949e;font-size:10px;white-space:nowrap">${f.date}</span></div><div style="color:#ffa502;font-size:10px;margin-top:2px">${f.form} — ${f.detail}</div></div>`).join("")}</div>` : ""}
+      <div class="expand-toggle" onclick="toggleCard('${r.ticker}')">▲ Réduire</div>
+    </div>
+    <div class="expand-toggle" id="expand-hint-${r.ticker}" onclick="toggleCard('${r.ticker}')">▼ Actualités & EDGAR</div>
+  </div>`;
+}
+
+function toggleCard(ticker) {
+  const exp = document.getElementById(`expanded-${ticker}`);
+  const hint = document.getElementById(`expand-hint-${ticker}`);
+  if (exp) {
+    const open = exp.style.display === "none";
+    exp.style.display = open ? "block" : "none";
+    if (hint) hint.style.display = open ? "none" : "block";
+  }
+}
+
+// ── Modales ───────────────────────────────────────────────
+function closeModal() { document.getElementById("modal").style.display = "none"; }
+function showLoading(text) { document.getElementById("loading-text").textContent = text; document.getElementById("loading-overlay").style.display = "flex"; }
+function hideLoading() { document.getElementById("loading-overlay").style.display = "none"; }
+
+function getResult(ticker) { return allResults.find(r => r.ticker === ticker); }
+
+async function openReco(ticker) {
+  const result = getResult(ticker);
+  if (!result) return;
+  showLoading(`Recommandation — ${ticker}`);
+  try {
+    const prompt = `Recommandation Mark Elias pour ${ticker} (${result.name}). Prix: ${result.realPrice || "N/A"}. Drawdown: ${result.drawdown52w || "N/A"}. Avril 2026.
+JSON sans backticks:
+{"reco":{"signal":"FORT ACHAT","entryPrice":"XX€","tp1":"XX€","tp2":"XX€","stop":"XX€","tp1Upside":"35","tp2Upside":"65","horizon":"2-4 semaines","thesis":"3 phrases.","squeeze":{"score":7,"dtc":"8 jours","probability":"45%","analysis":"3 phrases.","trigger":"Déclencheur daté."}}}`;
+    const text = await callClaude("Expert Smart Money. JSON uniquement.", prompt, 2000);
+    const reco = parseJSON(text).reco;
+    const signalColor = reco.signal?.includes("FORT") ? "#2ed573" : reco.signal?.includes("ACHAT") ? "#58a6ff" : "#ffa502";
+    const sim = (a) => ({ gain: Math.round(a * (parseFloat(reco.tp1Upside) / 100)), loss: Math.round(a * 0.2) });
+    document.getElementById("modal-content").innerHTML = `
+      <div class="modal-header">
+        <div><div class="modal-title">${ticker}</div><div class="modal-sub">RECOMMANDATION · MARK ELIAS</div></div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <span style="padding:5px 14px;border-radius:6px;font-weight:700;font-size:12px;background:${signalColor}22;border:1px solid ${signalColor}66;color:${signalColor}">${reco.signal}</span>
+          <button class="modal-close" onclick="closeModal()">✕</button>
+        </div>
+      </div>
+      <div class="grid-4">
+        ${[["🎯 Entrée",reco.entryPrice,"#58a6ff"],["📈 TP1",reco.tp1,"#2ed573"],["🚀 TP2",reco.tp2,"#00d2ff"],["🛑 Stop",reco.stop,"#ff4757"]].map(([l,v,c])=>`<div class="stat-box"><div class="stat-label">${l}</div><div class="stat-val" style="color:${c}">${v}</div></div>`).join("")}
+      </div>
+      <div class="grid-2">
+        <div class="stat-box"><div class="stat-label">HORIZON</div><div class="stat-val" style="color:#e6edf3;font-size:13px">${reco.horizon}</div></div>
+        <div class="stat-box"><div class="stat-label">UPSIDE TP1 / TP2</div><div class="stat-val" style="color:#2ed573">+${reco.tp1Upside}% / +${reco.tp2Upside}%</div></div>
+      </div>
+      <div class="info-box" style="background:linear-gradient(135deg,#0d419d18,#1f6feb18);border:1px solid #1f6feb44;margin-bottom:14px">
+        <div class="info-label" style="color:#58a6ff">💡 Thèse</div>
+        <div class="info-text">${reco.thesis}</div>
+      </div>
+      <div class="info-box" style="background:linear-gradient(135deg,#ff475715,#ff6b3d15);border:1px solid #ff475744">
+        <div class="info-label" style="color:#ff6b3d">🔥 Short Squeeze</div>
+        <div class="grid-3" style="margin-bottom:10px">
+          ${[["Score",reco.squeeze?.score+"/10","#ff6b3d"],["DTC",reco.squeeze?.dtc,"#ffa502"],["Probabilité",reco.squeeze?.probability,"#eccc68"]].map(([l,v,c])=>`<div class="stat-box"><div class="stat-label">${l}</div><div class="stat-val" style="color:${c};font-size:13px">${v}</div></div>`).join("")}
+        </div>
+        <div class="info-text">${reco.squeeze?.analysis || ""}</div>
+        ${reco.squeeze?.trigger ? `<div style="margin-top:8px;padding:6px 10px;background:#ff475718;border-radius:6px"><span style="color:#ff4757;font-size:11px;font-weight:700">⚡ Déclencheur : </span><span style="color:#c9d1d9;font-size:11px">${reco.squeeze.trigger}</span></div>` : ""}
+      </div>
+      <div style="margin-top:14px">
+        <div class="section-label" style="color:#eccc68;margin-bottom:8px">💰 Simulation</div>
+        <div class="grid-3">
+          ${[5000,10000,20000].map(a => { const s=sim(a); return `<div class="stat-box"><div class="stat-label">Poche ${a/1000}k€</div><div style="color:#2ed573;font-weight:700;font-size:14px">+${s.gain}€</div><div style="color:#484f58;font-size:9px">si TP1</div><div style="color:#ff4757;font-size:11px;margin-top:4px">-${s.loss}€</div><div style="color:#484f58;font-size:9px">si stop</div></div>`; }).join("")}
+        </div>
+      </div>
+      <div class="legal" style="margin-top:14px">Simulation avant frais et fiscalité. Ne constitue pas un conseil en investissement.</div>
+    `;
+    document.getElementById("modal").style.display = "flex";
+  } catch(e) { console.error(e); }
+  hideLoading();
+}
+
+async function openDossier(ticker) {
+  const result = getResult(ticker);
+  if (!result) return;
+  showLoading(`Dossier Communauté — ${ticker}`);
+  try {
+    const prompt = `Génère les 4 trames Telegram Mark Elias pour ${ticker} (${result.name}). Prix: ${result.realPrice || "N/A"}. Drawdown: ${result.drawdown52w || "N/A"}. Avril 2026.
+JSON sans backticks:
+{"dossier":{"trameAvant":"Message complet AVANT Telegram avec jauges ASCII, score /10, appel Goliath. 15 lignes.","trameEntree":"Message ENTRÉE avec prix stop catalyseur. 10 lignes.","trameUpdate":"Template UPDATE avec [crochets]. 8 lignes.","trameCloture":"Template CLÔTURE avec simulation 5k/10k/20k. 10 lignes."}}`;
+    const text = await callClaude("Expert éditorial Mark Elias. JSON uniquement.", prompt, 3000);
+    const d = parseJSON(text).dossier;
+    const trames = [["📣 AVANT — Signal détecté","#eccc68",d.trameAvant],["✅ ENTRÉE — Position ouverte","#2ed573",d.trameEntree],["🔄 UPDATE — En cours","#58a6ff",d.trameUpdate],["🏁 CLÔTURE — Bilan","#a29bfe",d.trameCloture]];
+    const allText = trames.map(([,, t]) => t).filter(Boolean).join("\n\n---\n\n");
+    document.getElementById("modal-content").innerHTML = `
+      <div class="modal-header">
+        <div><div class="modal-title">${ticker}</div><div class="modal-sub">DOSSIER COMMUNAUTÉ · TELEGRAM</div></div>
+        <div style="display:flex;gap:8px">
+          <button onclick="navigator.clipboard.writeText(${JSON.stringify(allText)}).then(()=>this.textContent='✓ Copié!')" style="padding:7px 14px;border-radius:6px;cursor:pointer;font-family:monospace;font-size:11px;font-weight:700;background:#388bfd22;border:1px solid #388bfd66;color:#58a6ff">📋 Copier tout</button>
+          <button class="modal-close" onclick="closeModal()">✕</button>
+        </div>
+      </div>
+      ${trames.filter(([,,t])=>t).map(([label,color,content])=>`
+        <div style="margin-bottom:14px">
+          <div class="section-label" style="color:${color};margin-bottom:6px">${label}</div>
+          <div class="trame-box" style="border:1px solid ${color}22"><pre class="trame-pre">${content}</pre></div>
+        </div>
+      `).join("")}
+      <div class="legal">Templates Mark Elias. Remplacer les [crochets]. Ne constitue pas un conseil en investissement.</div>
+    `;
+    document.getElementById("modal").style.display = "flex";
+  } catch(e) { console.error(e); }
+  hideLoading();
+}
+
+async function openDeepDive(ticker) {
+  const result = getResult(ticker);
+  if (!result) return;
+  showLoading(`Deep Dive — ${ticker}`);
+  try {
+    const prompt = `Deep Dive ${ticker} (${result.name}). Prix: ${result.realPrice || "N/A"}. Drawdown: ${result.drawdown52w || "N/A"}. Avril 2026.
+JSON sans backticks:
+{"ticker":"${ticker}","deepAnalysis":{"shortContext":"3 phrases.","institutionalMoves":"3 phrases.","technicalSetup":"3 phrases.","catalystTimeline":"3 phrases.","riskReward":"3 phrases.","recommendation":"FORT ACHAT","targetPrice":"XX€","stopLoss":"XX€","conviction":8}}`;
+    const text = await callClaude("Expert Smart Money. JSON uniquement.", prompt, 2000);
+    const data = parseJSON(text);
+    const da = data.deepAnalysis;
+    document.getElementById("modal-content").innerHTML = `
+      <div class="modal-header">
+        <div><div class="modal-title">${ticker}</div><div class="modal-sub">DEEP DIVE · CLAUDE AI</div></div>
+        <button class="modal-close" onclick="closeModal()">✕</button>
+      </div>
+      ${[["📉 Short Interest","shortContext","#ff4757"],["🏛️ Institutionnels","institutionalMoves","#3742fa"],["📊 Setup Technique","technicalSetup","#2ed573"],["⚡ Catalyseurs","catalystTimeline","#eccc68"],["⚖️ Risk/Reward","riskReward","#ffa502"]].filter(([,,k])=>da?.[k]).map(([label,,key])=>`
+        <div style="margin-bottom:14px">
+          <div class="section-label" style="color:${[["📉 Short Interest","#ff4757"],["🏛️ Institutionnels","#3742fa"],["📊 Setup Technique","#2ed573"],["⚡ Catalyseurs","#eccc68"],["⚖️ Risk/Reward","#ffa502"]].find(x=>x[0]===label)?.[1]};margin-bottom:5px">${label}</div>
+          <p style="color:#c9d1d9;font-size:12px;margin:0;line-height:1.7">${da[key]}</p>
+        </div>
+      `).join("")}
+      <div class="grid-3" style="margin-top:16px;padding-top:14px;border-top:1px solid #21262d">
+        ${[["🎯 Objectif",da?.targetPrice,"#2ed573"],["🛑 Stop",da?.stopLoss,"#ff4757"],["💎 Conviction",da?.conviction+"/10","#eccc68"]].map(([l,v,c])=>`<div class="stat-box"><div class="stat-label">${l}</div><div class="stat-val" style="color:${c}">${v}</div></div>`).join("")}
+      </div>
+    `;
+    document.getElementById("modal").style.display = "flex";
+  } catch(e) { console.error(e); }
+  hideLoading();
+}
+
+// ── Scan button wiring ────────────────────────────────────
+document.getElementById("scan-btn").addEventListener("click", runScan);
+
+// ── Boot ──────────────────────────────────────────────────
+init();
+</script>
+</body>
+</html>
