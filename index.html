@@ -482,12 +482,21 @@ async function fetchTickerData(ticker) {
     content: (a.description || "").slice(0, 100),
     source: a.source?.name || "—",
   }));
-  const edgarFilings = (edgar?.hits?.hits || []).slice(0, 2).map(h => ({
-    entity: h._source?.entity_name || "Inconnu",
-    date: h._source?.file_date || "—",
-    form: h._source?.form_type || "—",
-    detail: h._source?.display_names?.[0] || "Dépôt SEC",
-  }));
+  const edgarFilings = (edgar?.hits?.hits || []).slice(0, 3).map(h => {
+    const src = h._source || {};
+    // Extract filer name from display_names or entity_name
+    const displayName = src.display_names?.[0] || "";
+    const entityName = src.entity_name || "";
+    // display_names format: "EntityName (TICKER) (CIK XXXXXXX)"
+    const fundMatch = displayName.match(/^([^(]+)/);
+    const fundName = fundMatch ? fundMatch[1].trim() : entityName || "Inconnu";
+    return {
+      entity: fundName,
+      date: src.file_date || "—",
+      form: src.form_type || "—",
+      detail: displayName || entityName || "Dépôt SEC",
+    };
+  });
   return { realPrice, drawdown52w, priceChange, hasRealData, newsItems, edgarFilings, shortInterestReal, daysTocover, borrowRate, ortexScore };
 }
 
@@ -516,13 +525,13 @@ CRITÈRES (évalue même sans données TwelveData):
 - biotech: TRUE si biotech avec readout attendu
 - special: TRUE si restructuration ou situation spéciale
 
-FONDS À IDENTIFIER (les 20 plus importants):
-BlackRock, Vanguard, Fidelity, ARK Invest, Baillie Gifford, Millennium Management, Citadel, Point72, Renaissance Technologies, Two Sigma, Goldman Sachs AM, Morgan Stanley IM, JP Morgan AM, Deutsche Bank AM, BNP Paribas AM, Norges Bank, Temasek, GIC, CPPIB, Bpifrance
+FONDS À SURVEILLER (top 20):
+BlackRock, Vanguard, Fidelity, ARK Invest, Baillie Gifford, Millennium Management, Citadel, Point72, Renaissance Technologies, Two Sigma, Goldman Sachs AM, Morgan Stanley IM, JP Morgan AM, BNP Paribas AM, Norges Bank, Bpifrance, Deutsche Bank AM, Temasek, CPPIB, GIC
 
-Pour chaque titre, liste TOUS les fonds connus avec date et % exact.
+OBLIGATION: Pour CHAQUE titre retourné, tu DOIS inclure le tableau institutionalMoves avec TOUS les fonds que tu connais sur ce titre (positions récentes, déclarations AMF/SEC connues). Si tu ne connais aucun fonds sur un titre, mets un tableau vide [].
 
 JSON sans backticks:
-{"results":[{"ticker":"X","name":"Nom","market":"Euronext Paris","universe":"${universe}","summary":"2 phrases signal Smart Money.","criteria":{"short_interest":true,"institutional":true,"threshold":false,"price_drop":true,"catalysts":false,"biotech":false,"special":false},"shortInterest":"13%","shortSource":"Estimé","institutionalMoves":[{"fund":"BlackRock","pct":"8.75%","prevPct":"5.50%","direction":"↑","date":"20 mars 2026","source":"AMF","amount":"~410M€"},{"fund":"Goldman Sachs AM","pct":"6.15%","prevPct":"0%","direction":"NEW","date":"15 mars 2026","source":"AMF","amount":"~290M€"}]}]}`;
+{"results":[{"ticker":"IONQ","name":"IonQ Inc.","market":"NASDAQ","universe":"russell_midcap","summary":"2 phrases signal.","criteria":{"short_interest":true,"institutional":true,"threshold":false,"price_drop":true,"catalysts":true,"biotech":false,"special":false},"shortInterest":"18%","shortSource":"Estimé Claude","institutionalMoves":[{"fund":"BlackRock","pct":"7.8%","prevPct":"0%","direction":"NEW","date":"Janvier 2026","source":"SEC 13G","amount":"~180M$"},{"fund":"Vanguard","pct":"4.2%","prevPct":"3.1%","direction":"↑","date":"Q4 2025","source":"13F","amount":"~95M$"}]}]}`;
 
   try {
     const text = await callClaude("Analyste Smart Money. JSON uniquement sans backticks.", prompt, 2000);
