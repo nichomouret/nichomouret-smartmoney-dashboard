@@ -363,7 +363,7 @@ async function callClaude(system, user, maxTokens = 2000) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      model: "claude-sonnet-4-6",
+      model: "claude-haiku-4-5-20251001",
       max_tokens: maxTokens,
       system,
       messages: [{ role: "user", content: user }],
@@ -384,12 +384,9 @@ function parseJSON(text) {
 }
 
 async function fetchTickerData(ticker) {
-  // TwelveData: strip exchange suffix, add exchange param
-  const tdSymbol = ticker.replace(/\.PA$/, "").replace(/\.BE$/, "");
-  const tdExchange = ticker.includes(".PA") ? "&exchange=XPAR" : ticker.includes(".BE") ? "&exchange=XBRU" : "";
   const [quote, ts, news, edgar] = await Promise.all([
-    proxyFetch(`/twelvedata/price?symbol=${encodeURIComponent(tdSymbol)}${tdExchange}`),
-    proxyFetch(`/twelvedata/timeseries?symbol=${encodeURIComponent(tdSymbol)}&interval=1day&outputsize=252${tdExchange}`),
+    proxyFetch(`/twelvedata/price?symbol=${encodeURIComponent(ticker)}`),
+    proxyFetch(`/twelvedata/timeseries?symbol=${encodeURIComponent(ticker)}&interval=1day&outputsize=252`),
     proxyFetch(`/news?query=${encodeURIComponent(ticker)}`),
     proxyFetch(`/edgar/thresholds?ticker=${encodeURIComponent(ticker)}`),
   ]);
