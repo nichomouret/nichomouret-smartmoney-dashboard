@@ -578,7 +578,7 @@ Trie par source réelle d'abord (13D/13G/AMF), puis 13F, puis Estimé.
 Si tu ne connais aucun fonds, mets [].
 
 JSON sans backticks:
-{"results":[{"ticker":"IONQ","name":"IonQ Inc.","market":"NASDAQ","universe":"russell_midcap","summary":"2 phrases signal.","criteria":{"short_interest":true,"institutional":true,"threshold":false,"price_drop":true,"catalysts":true,"biotech":false,"special":false},"shortInterest":"18%","shortSource":"Estimé Claude","institutionalMoves":[{"fund":"BlackRock","pct":"7.8%","prevPct":"0%","direction":"NEW","date":"Janvier 2026","source":"SEC 13G","amount":"~180M$"},{"fund":"Vanguard","pct":"4.2%","prevPct":"3.1%","direction":"↑","date":"Q4 2025","source":"13F","amount":"~95M$"}],"conviction":8,"targetPrice":"65$","stopLoss":"36$","squeezeScore":7,"squeezeProbability":"42%"}]}`;
+{"results":[{"ticker":"IONQ","name":"IonQ Inc.","market":"NASDAQ","universe":"russell_midcap","summary":"2 phrases signal Smart Money.","criteria":{"short_interest":true,"institutional":true,"threshold":false,"price_drop":true,"catalysts":true,"biotech":false,"special":false},"shortInterest":"18%","shortSource":"Estimé Claude","institutionalMoves":[{"fund":"BlackRock","pct":"7.8%","prevPct":"0%","direction":"NEW","date":"Janvier 2026","source":"13G SEC","amount":"~180M$"}],"conviction":8,"targetPrice":"65$","stopLoss":"36$","squeezeScore":7,"squeezeProbability":"42%"}]}`;
 
 OBLIGATION: Pour CHAQUE titre, inclure TOUJOURS:
 - conviction: note /10 (1-10) basée sur la solidité du signal
@@ -595,8 +595,7 @@ OBLIGATION: Pour CHAQUE titre, inclure TOUJOURS:
     );
     // Debug: log institutional moves
     results.forEach(r => {
-      console.log(`[${r.ticker}] institutionalMoves:`, JSON.stringify(r.institutionalMoves || []));
-      console.log(`[${r.ticker}] conviction:${r.conviction} target:${r.targetPrice} stop:${r.stopLoss}`);
+      console.log(`%c[${r.ticker}] conviction:${r.conviction} target:${r.targetPrice} stop:${r.stopLoss} squeeze:${r.squeezeScore}`, "color:#2ed573;font-weight:bold");
     });
     return results;
   } catch(e) {
