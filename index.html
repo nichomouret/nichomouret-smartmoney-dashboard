@@ -417,10 +417,11 @@ function calculateSCCT(result) {
     score += 20; // catalyseur connu = score max
   }
   
-  // 4. Signal institutionnel (20pts)
-  if (result.criteria?.institutional || result.criteria?.threshold) {
-    score += 20;
-  }
+  // 4. Signal institutionnel (20pts) — bonus si fonds tier 1 identifié
+  const tier1Funds = ["BlackRock","Vanguard","Fidelity","ARK","Baillie Gifford","Millennium","Citadel","Point72","Renaissance","Norges"];
+  const hasTier1 = (result.institutionalMoves||[]).some(m => tier1Funds.some(f => m.fund?.includes(f)));
+  if (hasTier1) score += 20;
+  else if (result.criteria?.institutional || result.criteria?.threshold) score += 12;
   
   // 5. Momentum — nombre de critères cochés (10pts)
   const totalCriteria = Object.values(result.criteria || {}).filter(Boolean).length;
@@ -442,7 +443,7 @@ async function fetchTickerData(ticker) {
   const [quote, ts, news, edgar, ortex] = await Promise.all([
     proxyFetch(`/twelvedata/price?symbol=${encodeURIComponent(ticker)}`),
     proxyFetch(`/twelvedata/timeseries?symbol=${encodeURIComponent(ticker)}&interval=1day&outputsize=252`),
-    proxyFetch(`/news?query=${encodeURIComponent(ticker)}`),
+    proxyFetch(`/news?query=${encodeURIComponent(ticker + " stock short squeeze institutional")}`),
     proxyFetch(`/edgar/thresholds?ticker=${encodeURIComponent(ticker)}`),
     proxyFetch(`/ortex/shortinterest?ticker=${encodeURIComponent(ticker)}`),
   ]);
@@ -515,8 +516,13 @@ CRITÈRES (évalue même sans données TwelveData):
 - biotech: TRUE si biotech avec readout attendu
 - special: TRUE si restructuration ou situation spéciale
 
+FONDS À IDENTIFIER (les 20 plus importants):
+BlackRock, Vanguard, Fidelity, ARK Invest, Baillie Gifford, Millennium Management, Citadel, Point72, Renaissance Technologies, Two Sigma, Goldman Sachs AM, Morgan Stanley IM, JP Morgan AM, Deutsche Bank AM, BNP Paribas AM, Norges Bank, Temasek, GIC, CPPIB, Bpifrance
+
+Pour chaque titre, liste TOUS les fonds connus avec date et % exact.
+
 JSON sans backticks:
-{"results":[{"ticker":"X","name":"Nom","market":"Euronext Paris","universe":"${universe}","summary":"2 phrases signal Smart Money.","criteria":{"short_interest":true,"institutional":false,"threshold":false,"price_drop":true,"catalysts":false,"biotech":false,"special":false},"shortInterest":"13%","shortSource":"Estimé","institutional13f":"BlackRock 8.75%"}]}`;
+{"results":[{"ticker":"X","name":"Nom","market":"Euronext Paris","universe":"${universe}","summary":"2 phrases signal Smart Money.","criteria":{"short_interest":true,"institutional":true,"threshold":false,"price_drop":true,"catalysts":false,"biotech":false,"special":false},"shortInterest":"13%","shortSource":"Estimé","institutionalMoves":[{"fund":"BlackRock","pct":"8.75%","prevPct":"5.50%","direction":"↑","date":"20 mars 2026","source":"AMF","amount":"~410M€"},{"fund":"Goldman Sachs AM","pct":"6.15%","prevPct":"0%","direction":"NEW","date":"15 mars 2026","source":"AMF","amount":"~290M€"}]}]}`;
 
   try {
     const text = await callClaude("Analyste Smart Money. JSON uniquement sans backticks.", prompt, 2000);
@@ -602,7 +608,7 @@ async function runScan() {
           const enriched = signals.map(s => {
             const found = items.find(i => i.ticker === s.ticker);
             const data = found?.data || {};
-            const base = { ...s, realPrice: data.realPrice, priceChange: data.priceChange || 0, drawdown52w: data.drawdown52w, dataSource: data.hasRealData ? "twelvedata" : "estimated", news: data.newsItems || [], edgarFilings: data.edgarFilings || [], shortInterestReal: data.shortInterestReal, daysTocover: data.daysTocover, borrowRate: data.borrowRate, ortexScore: data.ortexScore };
+            const base = { ...s, realPrice: data.realPrice, priceChange: data.priceChange || 0, drawdown52w: data.drawdown52w, dataSource: data.hasRealData ? "twelvedata" : "estimated", news: data.newsItems || [], edgarFilings: data.edgarFilings || [], shortInterestReal: data.shortInterestReal, daysTocover: data.daysTocover, borrowRate: data.borrowRate, ortexScore: data.ortexScore, institutionalMoves: s.institutionalMoves || [] };
             base.scct = calculateSCCT(base);
             return base;
           });
@@ -715,6 +721,27 @@ function renderCard(r) {
     </div>
     <div id="expanded-${r.ticker}" style="display:none" class="card-expanded">
       ${(r.news||[]).length > 0 ? `<div style="margin-bottom:12px"><div class="section-label" style="color:#58a6ff;margin-bottom:8px">📰 Actualités <span style="color:#484f58">(NewsAPI)</span></div>${(r.news||[]).map(n => `<div class="news-item"><div class="news-title-row"><span class="news-title">${n.title}</span><span class="news-date">${n.date}</span></div><div class="news-content">${n.content}</div><div class="news-source">${n.source}</div></div>`).join("")}</div>` : ""}
+      ${(r.institutionalMoves||[]).length > 0 ? `<div style="margin-bottom:12px">
+        <div class="section-label" style="color:#3742fa;margin-bottom:8px">🏛️ Mouvements Institutionnels</div>
+        <table style="width:100%;border-collapse:collapse;font-size:11px;font-family:monospace">
+          <tr style="color:#484f58;font-size:9px;text-transform:uppercase;letter-spacing:1px">
+            <td style="padding:4px 8px">Fonds</td>
+            <td style="padding:4px 8px;text-align:center">%</td>
+            <td style="padding:4px 8px;text-align:center">Variation</td>
+            <td style="padding:4px 8px;text-align:center">Date</td>
+            <td style="padding:4px 8px;text-align:center">Source</td>
+            <td style="padding:4px 8px;text-align:right">Montant</td>
+          </tr>
+          ${(r.institutionalMoves||[]).map(m => `<tr style="background:#21262d;border-bottom:1px solid #161b22">
+            <td style="padding:6px 8px;color:#e6edf3;font-weight:700">${m.fund}</td>
+            <td style="padding:6px 8px;text-align:center;color:#58a6ff;font-weight:700">${m.pct}</td>
+            <td style="padding:6px 8px;text-align:center;color:${m.direction==='↑'||m.direction==='NEW'?'#2ed573':'#ff4757'};font-weight:700">${m.direction==='NEW'?'🆕 NEW':m.direction+' '+m.prevPct}</td>
+            <td style="padding:6px 8px;text-align:center;color:#eccc68">${m.date}</td>
+            <td style="padding:6px 8px;text-align:center"><span style="background:${m.source==='AMF'?'#1f2937':'#1a2f1a'};color:${m.source==='AMF'?'#60a5fa':'#2ed573'};padding:2px 6px;border-radius:4px;font-size:9px">${m.source}</span></td>
+            <td style="padding:6px 8px;text-align:right;color:#8b949e">${m.amount||'—'}</td>
+          </tr>`).join("")}
+        </table>
+      </div>` : ""}
       ${(r.edgarFilings||[]).length > 0 ? `<div style="margin-bottom:12px"><div class="section-label" style="color:#ffa502;margin-bottom:8px">🔔 Franchissements SEC (EDGAR)</div>${(r.edgarFilings||[]).map(f => `<div class="edgar-item"><div style="display:flex;justify-content:space-between;gap:8px"><span style="color:#e6edf3;font-size:11px;font-weight:600">${f.entity}</span><span style="color:#8b949e;font-size:10px;white-space:nowrap">${f.date}</span></div><div style="color:#ffa502;font-size:10px;margin-top:2px">${f.form} — ${f.detail}</div></div>`).join("")}</div>` : ""}
       <div class="expand-toggle" onclick="toggleCard('${r.ticker}')">▲ Réduire</div>
     </div>
@@ -914,7 +941,8 @@ async function openDeepDive(ticker) {
   if (!result) return;
   showLoading(`Deep Dive — ${ticker}`);
   try {
-    const prompt = `Deep Dive ${ticker} (${result.name}). Prix: ${result.realPrice || "N/A"}. Drawdown: ${result.drawdown52w || "N/A"}. Avril 2026.
+    const instContext = (result.institutionalMoves||[]).map(m => `${m.fund} ${m.pct} (${m.direction} ${m.date})`).join(", ");
+    const prompt = `Deep Dive ${ticker} (${result.name}). Prix: ${result.realPrice || "N/A"}. Drawdown: ${result.drawdown52w || "N/A"}. Fonds institutionnels connus: ${instContext || "voir analyse"}. Avril 2026.
 JSON sans backticks:
 {"ticker":"${ticker}","deepAnalysis":{"shortContext":"3 phrases.","institutionalMoves":"3 phrases.","technicalSetup":"3 phrases.","catalystTimeline":"3 phrases.","riskReward":"3 phrases.","recommendation":"FORT ACHAT","targetPrice":"XX€","stopLoss":"XX€","conviction":8}}`;
     const text = await callClaude("Expert Smart Money. JSON uniquement.", prompt, 2000);
