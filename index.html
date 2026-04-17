@@ -265,7 +265,7 @@ let allResults = [];
 // ── Init UI ───────────────────────────────────────────────
 function init() {
   // Sources
-  const sources = [["TwelveData","#58a6ff","live"],["NewsAPI","#58a6ff","live"],["EDGAR SEC","#2ed573","gratuit"],["AMF/ESMA","#2ed573","gratuit"],["Ortex","#484f58","bientôt"]];
+  const sources = [["TwelveData","#58a6ff","live"],["NewsAPI","#58a6ff","live"],["EDGAR SEC","#2ed573","gratuit"],["AMF/ESMA","#2ed573","gratuit"],["Ortex","#ff4757","live"]];
   document.getElementById("sources").innerHTML = sources.map(([n,c,s]) =>
     `<span class="source-badge" style="background:${c}15;border:1px solid ${c}44;color:${c};">${n} <span style="opacity:0.6">· ${s}</span></span>`
   ).join("");
@@ -400,13 +400,16 @@ function calculateSCCT(result) {
     else if (dd >= 20) score += 8;
   }
   
-  // 2. Pression short / VAD (25pts)
-  if (result.criteria?.short_interest) {
-    const si = parseFloat(result.shortInterest) || 0;
-    if (si >= 20) score += 25;
-    else if (si >= 15) score += 20;
-    else if (si >= 10) score += 14;
-    else score += 10; // critère coché mais % inconnu
+  // 2. Pression short / VAD (25pts) — Ortex réel prioritaire
+  const siValue = parseFloat(result.shortInterestReal || result.shortInterest) || 0;
+  if (result.shortInterestReal) {
+    // Donnée Ortex réelle
+    if (siValue >= 20) score += 25;
+    else if (siValue >= 15) score += 20;
+    else if (siValue >= 10) score += 14;
+    else if (siValue > 0) score += 8;
+  } else if (result.criteria?.short_interest) {
+    score += 10; // estimé Claude
   }
   
   // 3. Catalyseur daté (20pts)
@@ -436,13 +439,23 @@ function getSCCTLabel(scct) {
 }
 
 async function fetchTickerData(ticker) {
-  const [quote, ts, news, edgar] = await Promise.all([
+  const [quote, ts, news, edgar, ortex] = await Promise.all([
     proxyFetch(`/twelvedata/price?symbol=${encodeURIComponent(ticker)}`),
     proxyFetch(`/twelvedata/timeseries?symbol=${encodeURIComponent(ticker)}&interval=1day&outputsize=252`),
     proxyFetch(`/news?query=${encodeURIComponent(ticker)}`),
     proxyFetch(`/edgar/thresholds?ticker=${encodeURIComponent(ticker)}`),
+    proxyFetch(`/ortex/shortinterest?ticker=${encodeURIComponent(ticker)}`),
   ]);
   let realPrice = null, drawdown52w = null, priceChange = 0, hasRealData = false;
+  
+  // Ortex short interest réel
+  let shortInterestReal = null, daysTocover = null, borrowRate = null, ortexScore = null;
+  if (ortex && !ortex.error && ortex.short_interest_pct_float) {
+    shortInterestReal = ortex.short_interest_pct_float + "%";
+    daysTocover = ortex.days_to_cover ? ortex.days_to_cover + "j" : null;
+    borrowRate = ortex.cost_to_borrow ? ortex.cost_to_borrow + "%" : null;
+    ortexScore = ortex.short_score || null;
+  }
   if (quote && !quote.code) {
     const cur = quote.currency === "EUR" ? "€" : "$";
     realPrice = quote.close ? `${parseFloat(quote.close).toFixed(2)}${cur}` : null;
@@ -466,7 +479,7 @@ async function fetchTickerData(ticker) {
     form: h._source?.form_type || "—",
     detail: h._source?.display_names?.[0] || "Dépôt SEC",
   }));
-  return { realPrice, drawdown52w, priceChange, hasRealData, newsItems, edgarFilings };
+  return { realPrice, drawdown52w, priceChange, hasRealData, newsItems, edgarFilings, shortInterestReal, daysTocover, borrowRate, ortexScore };
 }
 
 async function analyzeBatch(batch, universe) {
@@ -581,7 +594,7 @@ async function runScan() {
           const enriched = signals.map(s => {
             const found = items.find(i => i.ticker === s.ticker);
             const data = found?.data || {};
-            const base = { ...s, realPrice: data.realPrice, priceChange: data.priceChange || 0, drawdown52w: data.drawdown52w, dataSource: data.hasRealData ? "twelvedata" : "estimated", news: data.newsItems || [], edgarFilings: data.edgarFilings || [] };
+            const base = { ...s, realPrice: data.realPrice, priceChange: data.priceChange || 0, drawdown52w: data.drawdown52w, dataSource: data.hasRealData ? "twelvedata" : "estimated", news: data.newsItems || [], edgarFilings: data.edgarFilings || [], shortInterestReal: data.shortInterestReal, daysTocover: data.daysTocover, borrowRate: data.borrowRate, ortexScore: data.ortexScore };
             base.scct = calculateSCCT(base);
             return base;
           });
@@ -686,6 +699,7 @@ function renderCard(r) {
     <div class="criteria-pills">${pillsHtml}</div>
     <div class="card-summary" onclick="toggleCard('${r.ticker}')" style="cursor:pointer">${r.summary || ""}</div>
     ${r.drawdown52w ? `<div class="drawdown-badge">📊 Drawdown 52W: <strong>${r.drawdown52w}</strong>${r.dataSource === 'twelvedata' ? ' <span style="color:#484f58">· TwelveData ✓</span>' : ''}</div>` : ""}
+    ${r.shortInterestReal ? `<div style="display:inline-flex;align-items:center;gap:6px;background:#ff475715;border:1px solid #ff475733;border-radius:6px;padding:3px 10px;margin-bottom:12px;font-size:10px;color:#ff4757;margin-left:6px">📉 VAD réelle: <strong>${r.shortInterestReal}</strong>${r.daysTocover ? ' · DTC: ' + r.daysTocover : ''}${r.borrowRate ? ' · CTB: ' + r.borrowRate : ''} <span style="color:#484f58">· Ortex ✓</span></div>` : ""}
     <div class="card-actions">
       <button class="action-btn" onclick="openReco('${r.ticker}')" style="background:linear-gradient(135deg,#2ed57318,#00d2ff18);border:1px solid #2ed57355;color:#2ed573">📈 Recommandation</button>
       <button class="action-btn" onclick="openDossier('${r.ticker}')" style="background:linear-gradient(135deg,#eccc6818,#ffa50218);border:1px solid #eccc6855;color:#eccc68">📄 Dossier Communauté</button>
