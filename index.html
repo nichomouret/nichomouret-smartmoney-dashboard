@@ -537,48 +537,16 @@ async function analyzeBatch(batch, universe) {
     return `${ticker}: prix=${data.realPrice || "N/A"} ${dd} change=${data.priceChange}%`;
   }).join("\n");
 
-  const prompt = `Expert Smart Money Mark Elias. Univers: ${UNIVERSES[universe]?.label}. Critères: ${criteriaLabels}. Avril 2026.
+  const prompt = `Analyste Smart Money. Univers: ${UNIVERSES[universe]?.label}. Avril 2026.
 
-TITRES:
-${context}
+TITRES: ${context}
 
-Pour chaque titre avec >= ${minScore}/7 critères, inclus-le.
-IMPORTANT: Si prix=N/A, utilise tes connaissances sur le titre pour évaluer les critères.
-Ne retourne {"results":[]} que si tu n'as AUCUNE connaissance sur aucun des titres.
+Score min: ${minScore}/7. Retourne UNIQUEMENT les titres qualifiés.
+CRITÈRES: price_drop(chute>20%), short_interest(VAD>10%), institutional(5%+), threshold(AMF/SEC), catalysts(6mois), biotech(readout), special(SPAC/restructuration)
+FONDS: BlackRock, Vanguard, Fidelity, ARK Invest, Baillie Gifford, Millennium, Citadel, Point72, Goldman Sachs AM, Morgan Stanley IM, JP Morgan AM, Norges Bank, Bpifrance
 
-CRITÈRES:
-- price_drop: TRUE si chute > 20% sur 12 mois
-- short_interest: TRUE si VAD > 10%
-- institutional: TRUE si entrée institutionnelle 5%+ connue
-- threshold: TRUE si déclaration AMF/SEC connue
-- catalysts: TRUE si événement daté dans 6 mois
-- biotech: TRUE si biotech avec readout
-- special: TRUE si restructuration ou SPAC
-
-CHAMPS OBLIGATOIRES dans chaque résultat JSON:
-- conviction: entier 1-10 (force du signal global)
-- targetPrice: prix cible avec devise ex "65$" ou "72€"
-- stopLoss: niveau stop avec devise ex "36$" ou "40€"
-- squeezeScore: score squeeze 1-10
-- squeezeProbability: probabilité squeeze ex "42%"
-
-FONDS À SURVEILLER (top 20):
-BlackRock, Vanguard, Fidelity, ARK Invest, Baillie Gifford, Millennium Management, Citadel, Point72, Renaissance Technologies, Two Sigma, Goldman Sachs AM, Morgan Stanley IM, JP Morgan AM, BNP Paribas AM, Norges Bank, Bpifrance, Deutsche Bank AM, Temasek, CPPIB, GIC
-
-OBLIGATION: Pour CHAQUE titre, inclure institutionalMoves avec TOUS les fonds connus.
-PRIORITÉ ABSOLUE: commence par les fonds ayant fait des déclarations officielles réelles (13D/13G SEC ou AMF) avant les estimations.
-Pour IONQ spécifiquement: BlackRock a déposé un 13G SEC en janvier 2026 à 7.8%. Vanguard détient ~5% via 13F.
-Pour le champ "source", utilise EXACTEMENT:
-- "13G SEC" = position passive 5%+ déclarée à la SEC (source réelle ✓)
-- "13D SEC" = franchissement actif 5%+ déclaré à la SEC (source réelle ✓)
-- "13F SEC" = inventaire trimestriel portefeuille SEC (source réelle ✓)
-- "AMF" = déclaration franchissement AMF France (source réelle ✓)
-- "Estimé" = estimation sans déclaration officielle connue (⚠️)
-Trie par source réelle d'abord (13D/13G/AMF), puis 13F, puis Estimé.
-Si tu ne connais aucun fonds, mets [].
-
-JSON sans backticks:
-{"results":[{"ticker":"IONQ","name":"IonQ Inc.","market":"NASDAQ","universe":"russell_midcap","summary":"2 phrases signal Smart Money.","criteria":{"short_interest":true,"institutional":true,"threshold":false,"price_drop":true,"catalysts":true,"biotech":false,"special":false},"shortInterest":"18%","shortSource":"Estimé Claude","institutionalMoves":[{"fund":"BlackRock","pct":"7.8%","prevPct":"0%","direction":"NEW","date":"Janvier 2026","source":"13G SEC","amount":"~180M$"}],"conviction":8,"targetPrice":"65$","stopLoss":"36$","squeezeScore":7,"squeezeProbability":"42%"}]}`;
+JSON strict sans backticks — TOUS ces champs obligatoires:
+{"results":[{"ticker":"X","name":"Nom","market":"NASDAQ","universe":"${universe}","summary":"2 phrases.","criteria":{"short_interest":true,"institutional":true,"threshold":false,"price_drop":true,"catalysts":true,"biotech":false,"special":false},"shortInterest":"18%","shortSource":"Estimé","institutionalMoves":[{"fund":"BlackRock","pct":"7.8%","prevPct":"0%","direction":"NEW","date":"Jan 2026","source":"13G SEC","amount":"~180M$"}],"conviction":8,"targetPrice":"65$","stopLoss":"36$","squeezeScore":7,"squeezeProbability":"42%"}]}`;
 
   try {
     const text = await callClaude("Analyste Smart Money. JSON uniquement sans backticks.", prompt, 2000);
