@@ -361,23 +361,34 @@ async function proxyFetch(endpoint) {
   } catch { return null; }
 }
 
-async function callClaude(system, user, maxTokens = 2000) {
-  const r = await fetch(`${PROXY}/claude`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: maxTokens,
-      temperature: 0,
-      system,
-      messages: [{ role: "user", content: user }],
-    }),
-  });
-  const data = await r.json();
-  console.log("[Claude response]", JSON.stringify(data).slice(0, 300));
-  if (!r.ok) throw new Error(`Claude ${r.status}: ${JSON.stringify(data)}`);
-  if (data.error) throw new Error(`Claude error: ${data.error.message || JSON.stringify(data.error)}`);
-  return (data.content || []).map(b => b.text || "").join("");
+async function callClaude(system, user, maxTokens = 2000, retries = 2) {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 30000); // 30s timeout
+      const r = await fetch(`${PROXY}/claude`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "claude-haiku-4-5-20251001",
+          max_tokens: maxTokens,
+          temperature: 0,
+          system,
+          messages: [{ role: "user", content: user }],
+        }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+      const data = await r.json();
+      if (!r.ok) throw new Error(`Claude ${r.status}: ${JSON.stringify(data).slice(0,100)}`);
+      if (data.error) throw new Error(`Claude error: ${data.error.message || JSON.stringify(data.error).slice(0,100)}`);
+      return (data.content || []).map(b => b.text || "").join("");
+    } catch(e) {
+      console.warn(`[Claude attempt ${attempt+1}] ${e.message}`);
+      if (attempt === retries) throw e;
+      await new Promise(r => setTimeout(r, 2000 * (attempt + 1))); // backoff
+    }
+  }
 }
 
 function parseJSON(text) {
@@ -441,13 +452,15 @@ function getSCCTLabel(scct) {
 }
 
 async function fetchTickerData(ticker) {
-  const [quote, ts, news, edgar, ortex, filings13g] = await Promise.all([
+  const isFrench = ticker.includes(".PA") || ticker.includes(".BE");
+  const [quote, ts, news, filings13g, filings13f, amfData, ortex] = await Promise.all([
     proxyFetch(`/twelvedata/price?symbol=${encodeURIComponent(ticker)}`),
     proxyFetch(`/twelvedata/timeseries?symbol=${encodeURIComponent(ticker)}&interval=1day&outputsize=252`),
-    proxyFetch(`/news?query=${encodeURIComponent(ticker + " stock short squeeze institutional")}`),
-    proxyFetch(`/edgar/thresholds?ticker=${encodeURIComponent(ticker)}`),
+    proxyFetch(`/news?query=${encodeURIComponent(ticker + " institutional shareholder")}`),
+    proxyFetch(`/edgar/filings13g?ticker=${encodeURIComponent(ticker.replace(/\.PA$|\.BE$/,""))}`),
+    isFrench ? Promise.resolve(null) : proxyFetch(`/edgar/institutional13f?ticker=${encodeURIComponent(ticker)}`),
+    isFrench ? proxyFetch(`/amf/franchissements?ticker=${encodeURIComponent(ticker)}`) : Promise.resolve(null),
     proxyFetch(`/ortex/shortinterest?ticker=${encodeURIComponent(ticker)}`),
-    proxyFetch(`/edgar/filings13g?ticker=${encodeURIComponent(ticker)}`),
   ]);
   let realPrice = null, drawdown52w = null, priceChange = 0, hasRealData = false;
 
@@ -525,8 +538,21 @@ async function fetchTickerData(ticker) {
       detail: src.description || formType,
     };
   }).filter(f => f.entity !== "—" && f.date !== "—");
-  // Real 13G/13D filings from EDGAR
-  const realFilings = (filings13g?.filings || []).slice(0, 5);
+  // Combine real institutional data from all sources
+  const real13g = (filings13g?.filings || []).slice(0, 5).map(f => ({
+    fund: f.filer, pct: f.pct || "≥5%", prevPct: "0%", direction: "NEW",
+    date: f.date, source: f.form?.includes("13G") ? "13G SEC" : "13D SEC", amount: "—", verified: true
+  }));
+  const real13f = (filings13f?.filings || []).slice(0, 5).map(f => ({
+    fund: f.filer, pct: "—", prevPct: "—", direction: "HOLDER",
+    date: f.date, source: "13F SEC", amount: "—", verified: true
+  }));
+  const realAMF = (amfData?.filings || []).slice(0, 5).map(f => ({
+    fund: f.filer, pct: f.pct || "≥5%", prevPct: "—", direction: "NEW",
+    date: f.date, source: "AMF", amount: "—", verified: true
+  }));
+  const realFilings = [...realAMF, ...real13g, ...real13f];
+  console.log(`[${ticker}] Real filings: AMF=${realAMF.length} 13G=${real13g.length} 13F=${real13f.length}`);
   return { realPrice, drawdown52w, priceChange, hasRealData, newsItems, edgarFilings, shortInterestReal, daysTocover, borrowRate, ortexScore, realFilings };
 }
 
@@ -546,7 +572,7 @@ CRITÈRES: price_drop(chute>20%), short_interest(VAD>10%), institutional(5%+), t
 FONDS: BlackRock, Vanguard, Fidelity, ARK Invest, Baillie Gifford, Millennium, Citadel, Point72, Goldman Sachs AM, Morgan Stanley IM, JP Morgan AM, Norges Bank, Bpifrance
 
 JSON strict sans backticks — TOUS ces champs obligatoires:
-{"results":[{"ticker":"X","name":"Nom","market":"NASDAQ","universe":"${universe}","summary":"2 phrases.","criteria":{"short_interest":true,"institutional":true,"threshold":false,"price_drop":true,"catalysts":true,"biotech":false,"special":false},"shortInterest":"18%","shortSource":"Estimé","institutionalMoves":[{"fund":"BlackRock","pct":"7.8%","prevPct":"0%","direction":"NEW","date":"Jan 2026","source":"13G SEC","amount":"~180M$"}],"conviction":8,"targetPrice":"65$","stopLoss":"36$","squeezeScore":7,"squeezeProbability":"42%"}]}`;
+{"results":[{"ticker":"X","name":"Nom","market":"NASDAQ","universe":"${universe}","summary":"2 phrases.","criteria":{"short_interest":true,"institutional":true,"threshold":false,"price_drop":true,"catalysts":true,"biotech":false,"special":false},"shortInterest":"18%","shortSource":"Estimé","institutionalMoves":[{"fund":"BlackRock","pct":"7.8%","prevPct":"0%","direction":"NEW","prevPct":"0%","date":"Jan 2026","source":"13G SEC","amount":"~180M$"}],"conviction":8,"targetPrice":"65$","stopLoss":"36$","squeezeScore":7,"squeezeProbability":"42%"}]}`;
 
   try {
     const text = await callClaude("Analyste Smart Money. JSON uniquement sans backticks.", prompt, 2000);
@@ -637,21 +663,15 @@ async function runScan() {
           const enriched = signals.map(s => {
             const found = items.find(i => i.ticker === s.ticker);
             const data = found?.data || {};
-            // Merge real EDGAR filings into institutionalMoves
-const realMoves = (data.realFilings || []).map(f => ({
-  fund: f.filer,
-  pct: "≥5%",
-  prevPct: "0%",
-  direction: "NEW",
-  date: f.date,
-  source: f.form.includes("13G") ? "13G SEC" : "13D SEC",
-  amount: "—"
-}));
-// Merge: real filings first, then Claude estimates (avoiding duplicates)
-const claudeMoves = (s.institutionalMoves || []).filter(m =>
-  !realMoves.some(r => r.fund.toLowerCase().includes(m.fund?.toLowerCase()?.slice(0,6)))
+            // Real institutional data from EDGAR + AMF
+const realMoves = (data.realFilings || []);
+// Claude estimates — clearly marked, filtered to avoid duplicates with real data
+const claudeMoves = (s.institutionalMoves || []).map(m => ({...m, verified: false})).filter(m =>
+  !realMoves.some(r => r.fund && m.fund && r.fund.toLowerCase().includes(m.fund.toLowerCase().slice(0,6)))
 );
+// Real data first, then Claude estimates
 const mergedMoves = [...realMoves, ...claudeMoves];
+console.log(`[${s.ticker}] Merged: ${realMoves.length} réels + ${claudeMoves.length} estimés`);
 const base = { ...s, realPrice: data.realPrice, priceChange: data.priceChange || 0, drawdown52w: data.drawdown52w, dataSource: data.hasRealData ? "twelvedata" : "estimated", news: data.newsItems || [], edgarFilings: data.edgarFilings || [], shortInterestReal: data.shortInterestReal, daysTocover: data.daysTocover, borrowRate: data.borrowRate, ortexScore: data.ortexScore, institutionalMoves: mergedMoves, conviction: s.conviction || null, targetPrice: s.targetPrice || null, stopLoss: s.stopLoss || null, squeezeScore: s.squeezeScore || null, squeezeProbability: s.squeezeProbability || null };
             base.scct = calculateSCCT(base);
             return base;
@@ -784,14 +804,18 @@ function renderCard(r) {
     <div id="expanded-${r.ticker}" style="display:none" class="card-expanded">
       ${(r.news||[]).length > 0 ? `<div style="margin-bottom:12px"><div class="section-label" style="color:#58a6ff;margin-bottom:8px">📰 Actualités <span style="color:#484f58">(NewsAPI)</span></div>${(r.news||[]).map(n => `<div class="news-item"><div class="news-title-row"><span class="news-title">${n.title}</span><span class="news-date">${n.date}</span></div><div class="news-content">${n.content}</div><div class="news-source">${n.source}</div></div>`).join("")}</div>` : ""}
       ${(r.institutionalMoves||[]).length > 0 ? `<div style="margin-bottom:12px">
-        <div class="section-label" style="color:#3742fa;margin-bottom:8px">🏛️ Mouvements Institutionnels</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <div class="section-label" style="color:#3742fa;margin-bottom:0">🏛️ Mouvements Institutionnels</div>
+          <span style="background:#ffa50222;border:1px solid #ffa50255;color:#ffa502;font-size:8px;padding:2px 8px;border-radius:4px;font-weight:700;letter-spacing:1px">⚠️ USAGE INTERNE — EN COURS DE VÉRIFICATION</span>
+        </div>
         <table style="width:100%;border-collapse:collapse;font-size:11px;font-family:monospace">
           <tr style="color:#484f58;font-size:9px;text-transform:uppercase;letter-spacing:1px">
             <td style="padding:4px 8px">Fonds</td>
             <td style="padding:4px 8px;text-align:center">%</td>
             <td style="padding:4px 8px;text-align:center">Variation</td>
-            <td style="padding:4px 8px;text-align:center">Date</td>
+            <td style="padding:4px 8px;text-align:center">Date décl.</td>
             <td style="padding:4px 8px;text-align:center">Source</td>
+            <td style="padding:4px 8px;text-align:center">Perf depuis</td>
             <td style="padding:4px 8px;text-align:right">Montant</td>
           </tr>
           ${(r.institutionalMoves||[]).map(m => {
@@ -803,12 +827,47 @@ function renderCard(r) {
             const srcLabel = isReal ? src + " ✓" : isSemiReal ? src + " ✓" : "Estimé ⚠️";
             const daysAgo = m.date ? Math.floor((new Date() - new Date(m.date.replace(/[^0-9-]/g, '') || "")) / 86400000) : 999;
             const recenceColor = daysAgo < 30 ? "#ff4757" : daysAgo < 90 ? "#ffa502" : daysAgo < 180 ? "#eccc68" : "#8b949e";
+            // Calcul variation de participation
+            const prevPctNum = parseFloat((m.prevPct || "0").replace(/[^0-9.-]/g, "")) || 0;
+            const curPctNum = parseFloat((m.pct || "0").replace(/[^0-9.~]/g, "")) || 0;
+            let varPct = "—";
+            let varColor = "#484f58";
+            if (m.direction === "NEW") {
+              varPct = "🆕 NEW";
+              varColor = "#2ed573";
+            } else if (prevPctNum > 0 && curPctNum > 0) {
+              const diff = (curPctNum - prevPctNum).toFixed(2);
+              varPct = (diff > 0 ? "▲ +" : "▼ ") + diff + "%";
+              varColor = diff > 0 ? "#2ed573" : "#ff4757";
+            } else if (m.prevPct) {
+              const sign = m.direction === "↑" ? "▲ +" : "▼ -";
+              varColor = m.direction === "↑" ? "#2ed573" : "#ff4757";
+              varPct = sign + m.prevPct.replace(/[^0-9.]/g,"") + "%";
+            }
             return `<tr style="background:#21262d;border-bottom:1px solid #161b22">
               <td style="padding:6px 8px;color:#e6edf3;font-weight:700">${m.fund}</td>
               <td style="padding:6px 8px;text-align:center;color:#58a6ff;font-weight:700">${m.pct}</td>
-              <td style="padding:6px 8px;text-align:center;color:${m.direction==='↑'||m.direction==='NEW'?'#2ed573':'#ff4757'};font-weight:700">${m.direction==='NEW'?'🆕 NEW':m.direction+' '+m.prevPct}</td>
+              <td style="padding:6px 8px;text-align:center;color:${varColor};font-weight:700;font-size:12px">${varPct}</td>
               <td style="padding:6px 8px;text-align:center;color:${recenceColor};font-weight:700">${m.date}</td>
               <td style="padding:6px 8px;text-align:center"><span style="background:${srcBg};color:${srcColor};padding:2px 6px;border-radius:4px;font-size:9px;font-weight:700">${srcLabel}</span></td>
+              <td style="padding:6px 8px;text-align:center;font-weight:700;font-size:11px" id="perf-cell">${
+              (() => {
+                if (!r || !r.priceChange || !m.date) return '—';
+                try {
+                  let ds = m.date;
+                  // Convert "Q1 2026" -> "2026-01-01", "Janvier 2026" -> "2026-01-01", "Mars 2026" -> "2026-03-01"
+                  const mois = {janvier:'01',février:'02',mars:'03',avril:'04',mai:'05',juin:'06',juillet:'07',août:'08',septembre:'09',octobre:'10',novembre:'11',décembre:'12'};
+                  ds = ds.toLowerCase().replace(/q([1-4]) (\d{4})/, (_,q,y) => y+'-'+(q*3-2).toString().padStart(2,'0')+'-01');
+                  Object.entries(mois).forEach(([fr,num]) => { ds = ds.replace(fr, num); });
+                  ds = ds.replace(/(\d{2}) (\d{4})/, '$2-$1-01').replace(/[^0-9-]/g,'-').replace(/-+/g,'-').replace(/^-|-$/g,'');
+                  const d = Math.floor((new Date() - new Date(ds)) / 86400000);
+                  if (d <= 0 || d > 500) return '—';
+                  const p = ((r.priceChange / 252) * d);
+                  const col = p > 0 ? '#2ed573' : '#ff4757';
+                  return '<span style="color:'+col+'">'+(p>0?'▲ +':'▼ ')+Math.abs(p).toFixed(1)+'%</span>';
+                } catch(e) { return '—'; }
+              })()
+            }</td>
               <td style="padding:6px 8px;text-align:right;color:#8b949e">${m.amount||'—'}</td>
             </tr>`;
           }).join("")}
