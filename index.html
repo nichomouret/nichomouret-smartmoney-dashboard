@@ -482,9 +482,26 @@ function getSCCTLabel(scct) {
 
 async function fetchTickerData(ticker) {
   const isFrench = ticker.includes(".PA") || ticker.includes(".BE");
+  const isEuropean = isFrench || ticker.includes(".DE") || ticker.includes(".L") || ticker.includes(".MI") || ticker.includes(".MC") || ticker.includes(".AS");
   const [quote, ts, news, filings13g, filings13f, amfData, ortex] = await Promise.all([
-    proxyFetch(`/twelvedata/price?symbol=${encodeURIComponent(ticker)}`),
-    proxyFetch(`/twelvedata/timeseries?symbol=${encodeURIComponent(ticker)}&interval=1day&outputsize=252`),
+    proxyFetch(`/twelvedata/price?symbol=${encodeURIComponent(ticker)}${
+      ticker.includes('.DE') ? '&exchange=XETR' :
+      ticker.includes('.L') ? '&exchange=XLON' :
+      ticker.includes('.MI') ? '&exchange=XMIL' :
+      ticker.includes('.MC') ? '&exchange=XMAD' :
+      ticker.includes('.AS') ? '&exchange=XAMS' :
+      ticker.includes('.PA') ? '&exchange=XPAR' :
+      ticker.includes('.BE') ? '&exchange=XBRU' : ''
+    }`),
+    proxyFetch(`/twelvedata/timeseries?symbol=${encodeURIComponent(ticker)}&interval=1day&outputsize=252${
+      ticker.includes('.DE') ? '&exchange=XETR' :
+      ticker.includes('.L') ? '&exchange=XLON' :
+      ticker.includes('.MI') ? '&exchange=XMIL' :
+      ticker.includes('.MC') ? '&exchange=XMAD' :
+      ticker.includes('.AS') ? '&exchange=XAMS' :
+      ticker.includes('.PA') ? '&exchange=XPAR' :
+      ticker.includes('.BE') ? '&exchange=XBRU' : ''
+    }`),
     proxyFetch(`/news?query=${encodeURIComponent(ticker + " institutional shareholder")}`),
     proxyFetch(`/edgar/filings13g?ticker=${encodeURIComponent(ticker.replace(/\.PA$|\.BE$/,""))}`),
     isFrench ? Promise.resolve(null) : proxyFetch(`/edgar/institutional13f?ticker=${encodeURIComponent(ticker)}`),
@@ -526,47 +543,8 @@ async function fetchTickerData(ticker) {
     content: (a.description || "").slice(0, 100),
     source: a.source?.name || "—",
   }));
-  // EDGAR: extraire le déclarant (fonds qui achète) pas l'émetteur
-  const edgarFilings = (edgar?.hits?.hits || []).slice(0, 5).map(h => {
-    const src = h._source || {};
-    // Le champ "entity_name" = l'émetteur (ex: IonQ Inc.)
-    // Le champ "display_names" contient parfois le déclarant
-    // Pour 13D/13G: le déclarant est le fonds institutionnel
-    const displayNames = src.display_names || [];
-    const formType = src.form_type || "";
-    const fileDate = src.file_date || "—";
-    
-    // Cherche le nom du déclarant (pas l'émetteur) dans display_names
-    // Format typique: ["FundName (TICKER) (CIK XXXXXXX)", "IssuerName (TICKER) (CIK XXXXXXX)"]
-    let filerName = "—";
-    let pctInfo = src.percentage_of_class || src.percent || "";
-    
-    // Pour 13D/13G, le premier display_name qui n'est PAS l'émetteur = le fonds
-    const issuerName = src.entity_name || "";
-    for (const dn of displayNames) {
-      const nameMatch = dn.match(/^([^(]+)/);
-      if (nameMatch) {
-        const candidate = nameMatch[1].trim();
-        if (candidate !== issuerName) {
-          filerName = candidate;
-          break;
-        }
-      }
-    }
-    // Fallback: si tous les noms = émetteur, on affiche quand même la date et le formulaire
-    if (filerName === "—" && displayNames.length > 0) {
-      const m = displayNames[0].match(/^([^(]+)/);
-      if (m) filerName = m[1].trim();
-    }
-    
-    return {
-      entity: filerName,
-      date: fileDate,
-      form: formType,
-      pct: pctInfo || "—",
-      detail: src.description || formType,
-    };
-  }).filter(f => f.entity !== "—" && f.date !== "—");
+  // edgarFilings kept for compatibility (now empty — real data from filings13g)
+  const edgarFilings = [];
   // Combine real institutional data from all sources
   const real13g = (filings13g?.filings || []).slice(0, 5).map(f => ({
     fund: f.filer, pct: f.pct || "≥5%", prevPct: "0%", direction: "NEW",
