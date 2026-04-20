@@ -484,27 +484,31 @@ async function fetchTickerData(ticker) {
   const isFrench = ticker.includes(".PA") || ticker.includes(".BE");
   const isEuropean = isFrench || ticker.includes(".DE") || ticker.includes(".L") || ticker.includes(".MI") || ticker.includes(".MC") || ticker.includes(".AS");
   const [quote, ts, news, filings13g, filings13f, amfData, ortex] = await Promise.all([
-    proxyFetch(`/twelvedata/price?symbol=${encodeURIComponent(ticker)}${
-      ticker.includes('.DE') ? '&exchange=XETR' :
-      ticker.includes('.L') ? '&exchange=XLON' :
-      ticker.includes('.MI') ? '&exchange=XMIL' :
-      ticker.includes('.MC') ? '&exchange=XMAD' :
-      ticker.includes('.AS') ? '&exchange=XAMS' :
-      ticker.includes('.PA') ? '&exchange=XPAR' :
-      ticker.includes('.BE') ? '&exchange=XBRU' : ''
+    proxyFetch(`/twelvedata/price?symbol=${encodeURIComponent(
+      ticker.replace(/\.[A-Z]+$/,'')
+    )}${
+      ticker.endsWith('.DE') ? '&exchange=XETR' :
+      ticker.endsWith('.L')  ? '&exchange=LSE' :
+      ticker.endsWith('.MI') ? '&exchange=MIL' :
+      ticker.endsWith('.MC') ? '&exchange=BMAD' :
+      ticker.endsWith('.AS') ? '&exchange=XAMS' :
+      ticker.endsWith('.PA') ? '&exchange=XPAR' :
+      ticker.endsWith('.BE') ? '&exchange=XBRU' : ''
     }`),
-    proxyFetch(`/twelvedata/timeseries?symbol=${encodeURIComponent(ticker)}&interval=1day&outputsize=252${
-      ticker.includes('.DE') ? '&exchange=XETR' :
-      ticker.includes('.L') ? '&exchange=XLON' :
-      ticker.includes('.MI') ? '&exchange=XMIL' :
-      ticker.includes('.MC') ? '&exchange=XMAD' :
-      ticker.includes('.AS') ? '&exchange=XAMS' :
-      ticker.includes('.PA') ? '&exchange=XPAR' :
-      ticker.includes('.BE') ? '&exchange=XBRU' : ''
+    proxyFetch(`/twelvedata/timeseries?symbol=${encodeURIComponent(
+      ticker.replace(/\.[A-Z]+$/,'')
+    )}&interval=1day&outputsize=252${
+      ticker.endsWith('.DE') ? '&exchange=XETR' :
+      ticker.endsWith('.L')  ? '&exchange=LSE' :
+      ticker.endsWith('.MI') ? '&exchange=MIL' :
+      ticker.endsWith('.MC') ? '&exchange=BMAD' :
+      ticker.endsWith('.AS') ? '&exchange=XAMS' :
+      ticker.endsWith('.PA') ? '&exchange=XPAR' :
+      ticker.endsWith('.BE') ? '&exchange=XBRU' : ''
     }`),
     proxyFetch(`/news?query=${encodeURIComponent(ticker + " institutional shareholder")}`),
-    proxyFetch(`/edgar/filings13g?ticker=${encodeURIComponent(ticker.replace(/\.PA$|\.BE$/,""))}`),
-    isFrench ? Promise.resolve(null) : proxyFetch(`/edgar/institutional13f?ticker=${encodeURIComponent(ticker)}`),
+    (!isEuropean && !isFrench) ? proxyFetch(`/edgar/filings13g?ticker=${encodeURIComponent(ticker)}`) : Promise.resolve({filings:[]}),
+    (!isEuropean && !isFrench) ? proxyFetch(`/edgar/institutional13f?ticker=${encodeURIComponent(ticker)}`) : Promise.resolve(null),
     isFrench ? proxyFetch(`/amf/franchissements?ticker=${encodeURIComponent(ticker)}`) : Promise.resolve(null),
     proxyFetch(`/ortex/shortinterest?ticker=${encodeURIComponent(ticker)}`),
   ]);
