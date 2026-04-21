@@ -504,21 +504,11 @@ async function fetchTickerData(ticker) {
   ]);
   let realPrice = null, drawdown52w = null, priceChange = 0, hasRealData = false;
 
-  // Ortex short interest réel
-  // Format réponse: { data: [{ short_interest_pct_float, ... }] }
+  // Ortex short interest réel — format: { shortInterestPct, shortInterestShares, date }
   let shortInterestReal = null, daysTocover = null, borrowRate = null, ortexScore = null;
-  if (ortex && !ortex.error) {
-    const latest = ortex.data?.[0] || ortex;
-    if (latest.short_interest_pct_float != null) {
-      shortInterestReal = parseFloat(latest.short_interest_pct_float).toFixed(1) + "%";
-    } else if (latest.shortInterestPctFloat != null) {
-      shortInterestReal = parseFloat(latest.shortInterestPctFloat).toFixed(1) + "%";
-    } else if (latest.pctFloat != null) {
-      shortInterestReal = parseFloat(latest.pctFloat).toFixed(1) + "%";
-    }
-    if (latest.days_to_cover != null) daysTocover = parseFloat(latest.days_to_cover).toFixed(1) + "j";
-    if (latest.cost_to_borrow != null) borrowRate = parseFloat(latest.cost_to_borrow).toFixed(1) + "%";
-    ortexScore = latest.short_score || latest.shortScore || null;
+  if (ortex && !ortex.error && ortex.shortInterestPct != null) {
+    shortInterestReal = parseFloat(ortex.shortInterestPct).toFixed(1) + "%";
+    console.log(`[${ticker}] Ortex VAD réelle: ${shortInterestReal} (${ortex.date})`);
   }
   if (quote && !quote.code) {
     const cur = quote.currency === "EUR" ? "€" : "$";
@@ -673,7 +663,7 @@ const claudeMoves = (s.institutionalMoves || []).map(m => ({...m, verified: fals
 // Real data first, then Claude estimates
 const mergedMoves = [...realMoves, ...claudeMoves];
 console.log(`[${s.ticker}] Merged: ${realMoves.length} réels + ${claudeMoves.length} estimés`);
-const base = { ...s, realPrice: data.realPrice, priceChange: data.priceChange || 0, drawdown52w: data.drawdown52w, dataSource: data.hasRealData ? "twelvedata" : "estimated", news: data.newsItems || [], edgarFilings: data.edgarFilings || [], shortInterestReal: data.shortInterestReal, daysTocover: data.daysTocover, borrowRate: data.borrowRate, ortexScore: data.ortexScore, institutionalMoves: mergedMoves, conviction: s.conviction || null, targetPrice: s.targetPrice || null, stopLoss: s.stopLoss || null, squeezeScore: s.squeezeScore || null, squeezeProbability: s.squeezeProbability || null };
+const base = { ...s, realPrice: data.realPrice, priceChange: data.priceChange || 0, drawdown52w: data.drawdown52w, dataSource: data.hasRealData ? "twelvedata" : "estimated", news: data.newsItems || [], edgarFilings: data.edgarFilings || [], shortInterestReal: data.shortInterestReal, daysTocover: data.daysTocover, borrowRate: data.borrowRate, ortexScore: data.ortexScore, institutionalMoves: mergedMoves, conviction: s.conviction || null, targetPrice: s.targetPrice || null, stopLoss: s.stopLoss || null, squeezeScore: s.squeezeScore || null, squeezeProbability: s.squeezeProbability || null, shortInterest: s.shortInterest || null, shortSource: s.shortSource || null };
             base.scct = calculateSCCT(base);
             return base;
           });
@@ -743,6 +733,13 @@ function renderTopFunds(moves, r) {
   if (r && r.conviction) extras.push(`<div style="display:flex;align-items:center;gap:3px;padding:3px 8px;border-radius:6px;background:#eccc6822;border:1px solid #eccc6844"><span style="color:#484f58;font-size:8px">💎</span><span style="color:#eccc68;font-weight:700;font-size:11px;font-family:monospace">${r.conviction}/10</span></div>`);
   if (r && r.targetPrice) extras.push(`<div style="display:flex;align-items:center;gap:3px;padding:3px 8px;border-radius:6px;background:#2ed57322;border:1px solid #2ed57344"><span style="color:#484f58;font-size:8px">🎯</span><span style="color:#2ed573;font-weight:700;font-size:11px;font-family:monospace">${r.targetPrice}</span></div>`);
   if (r && r.stopLoss) extras.push(`<div style="display:flex;align-items:center;gap:3px;padding:3px 8px;border-radius:6px;background:#ff475722;border:1px solid #ff475744"><span style="color:#484f58;font-size:8px">🛑</span><span style="color:#ff4757;font-weight:700;font-size:11px;font-family:monospace">${r.stopLoss}</span></div>`);
+  // Add VAD to extras if available
+  const vadVal = r && (r.shortInterestReal || r.shortInterest);
+  const vadColor = r && r.shortInterestReal ? "#ff4757" : "#ff6b3d";
+  const vadBg = r && r.shortInterestReal ? "#ff475722" : "#ff6b3d15";
+  const vadBorder = r && r.shortInterestReal ? "#ff475744" : "#ff6b3d33";
+  const vadLabel = r && r.shortInterestReal ? "VAD ✓" : "VAD est.";
+  if (vadVal) extras.unshift(`<div style="display:flex;align-items:center;gap:3px;padding:3px 8px;border-radius:6px;background:${vadBg};border:1px solid ${vadBorder}"><span style="color:#484f58;font-size:8px">📉</span><span style="color:${vadColor};font-weight:700;font-size:11px;font-family:monospace">${vadVal}</span><span style="color:#484f58;font-size:7px"> ${vadLabel}</span></div>`);
   const extrasHtml = extras.length > 0 ? `<div style="margin-left:auto;display:flex;gap:6px">${extras.join("")}</div>` : "";
   return `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;padding:8px 12px;background:#0d1117;border-radius:8px;border:1px solid #21262d;align-items:center"><span style="color:#484f58;font-size:9px;font-family:monospace;white-space:nowrap">🏛️ TOP FONDS :</span>${items}${extrasHtml}</div>`;
 }
@@ -795,8 +792,10 @@ function renderCard(r) {
     </div>
     <div class="criteria-pills">${pillsHtml}</div>
     <div class="card-summary" onclick="toggleCard('${r.ticker}')" style="cursor:pointer">${r.summary || ""}</div>
-    ${r.drawdown52w ? `<div class="drawdown-badge">📊 Drawdown 52W: <strong>${r.drawdown52w}</strong>${r.dataSource === 'twelvedata' ? ' <span style="color:#484f58">· TwelveData ✓</span>' : ''}</div>` : ""}
-    ${r.shortInterestReal ? `<div style="display:inline-flex;align-items:center;gap:6px;background:#ff475715;border:1px solid #ff475733;border-radius:6px;padding:3px 10px;margin-bottom:12px;font-size:10px;color:#ff4757;margin-left:6px">📉 VAD réelle: <strong>${r.shortInterestReal}</strong>${r.daysTocover ? ' · DTC: ' + r.daysTocover : ''}${r.borrowRate ? ' · CTB: ' + r.borrowRate : ''} <span style="color:#484f58">· Ortex ✓</span></div>` : ""}
+    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;align-items:center">
+      ${r.drawdown52w ? `<div class="drawdown-badge" style="margin-bottom:0">📊 Drawdown 52W: <strong>${r.drawdown52w}</strong>${r.dataSource === 'twelvedata' ? ' <span style="color:#484f58">· TwelveData ✓</span>' : ''}</div>` : ""}
+      ${r.shortInterestReal ? `<div style="display:inline-flex;align-items:center;gap:6px;background:#ff475715;border:1px solid #ff475733;border-radius:6px;padding:3px 10px;font-size:10px;color:#ff4757">📉 <strong>VAD: ${r.shortInterestReal}</strong>${r.daysTocover ? ' · DTC: ' + r.daysTocover : ''} <span style="color:#484f58">· Ortex ✓</span></div>` : r.shortInterest ? `<div style="display:inline-flex;align-items:center;gap:6px;background:#ff475710;border:1px solid #ff475722;border-radius:6px;padding:3px 10px;font-size:10px;color:#ff6b3d">📉 <strong>VAD est.: ${r.shortInterest}</strong> <span style="color:#484f58">· Estimé</span></div>` : ""}
+    </div>
     <div class="card-actions">
       <button class="action-btn" onclick="openReco('${r.ticker}')" style="background:linear-gradient(135deg,#2ed57318,#00d2ff18);border:1px solid #2ed57355;color:#2ed573">📈 Recommandation</button>
       <button class="action-btn" onclick="openDossier('${r.ticker}')" style="background:linear-gradient(135deg,#eccc6818,#ffa50218);border:1px solid #eccc6855;color:#eccc68">📄 Dossier Communauté</button>
