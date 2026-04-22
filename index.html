@@ -556,7 +556,7 @@ async function fetchTickerData(ticker) {
   return { realPrice, drawdown52w, priceChange, hasRealData, newsItems, edgarFilings, shortInterestReal, daysTocover, borrowRate, ortexScore, realFilings };
 }
 
-async function analyzeBatch(batch, universe) {
+async function analyzeBatch(batch, universe, customTicker = null) {
   const criteriaLabels = selectedCriteria.map(id => CRITERIA.find(c => c.id === id)?.label).join(", ");
   const context = batch.map(({ ticker, data }) => {
     const dd = data.drawdown52w ? `drawdown=${data.drawdown52w}[RÉEL]` : "drawdown=inconnu[ESTIMÉ]";
@@ -659,7 +659,7 @@ async function runScan() {
 
       for (const [universe, items] of Object.entries(byUniverse)) {
         if (stopRequested) break;
-        const signals = await analyzeBatch(items, universe);
+        const signals = await analyzeBatch(items, universe, customTicker);
         if (signals.length > 0) {
           const enriched = signals.map(s => {
             const found = items.find(i => i.ticker === s.ticker);
