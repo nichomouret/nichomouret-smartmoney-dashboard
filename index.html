@@ -563,7 +563,8 @@ async function analyzeBatch(batch, universe, customTicker = null) {
     return `${ticker}: prix=${data.realPrice || "N/A"} ${dd} change=${data.priceChange}%`;
   }).join("\n");
 
-  const prompt = `Analyste Smart Money. Univers: ${UNIVERSES[universe]?.label}. Avril 2026.
+  const universeLabel = customTicker ? `Ticker spécifique (${customTicker})` : (UNIVERSES[universe]?.label || universe);
+  const prompt = `Analyste Smart Money. Univers: ${universeLabel}. Avril 2026.
 
 TITRES: ${context}
 
@@ -659,6 +660,7 @@ async function runScan() {
         if (!byUniverse[item.universe]) byUniverse[item.universe] = [];
         byUniverse[item.universe].push(item);
       });
+      console.log(`[byUniverse] keys: ${Object.keys(byUniverse).join(",")}, customTicker: ${customTicker}`);
 
       for (const [universe, items] of Object.entries(byUniverse)) {
         if (stopRequested) break;
