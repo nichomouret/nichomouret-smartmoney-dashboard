@@ -576,10 +576,13 @@ JSON strict sans backticks — TOUS ces champs obligatoires:
 
   try {
     const text = await callClaude("Analyste Smart Money. JSON uniquement sans backticks.", prompt, 2000);
+    console.log(`[Claude raw] ${text.slice(0,300)}`);
     const parsed = parseJSON(text);
+    console.log(`[Claude parsed] ${(parsed.results||[]).length} results`);
     const results = (parsed.results || []).filter(r =>
       customTicker || Object.values(r.criteria || {}).filter(Boolean).length >= minScore
     );
+    console.log(`[After filter] ${results.length} results (customTicker=${!!customTicker})`);
     // Debug: log institutional moves
     results.forEach(r => {
       console.log(`%c[${r.ticker}] conviction:${r.conviction} target:${r.targetPrice} stop:${r.stopLoss} squeeze:${r.squeezeScore}`, "color:#2ed573;font-weight:bold");
