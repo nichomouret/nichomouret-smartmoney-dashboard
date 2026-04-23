@@ -277,7 +277,7 @@ const CRITERIA = [
   { id: "catalysts", icon: "⚡", label: "Catalyseurs datés", desc: "FDA, résultats, spin-off", color: "#eccc68" },
   { id: "biotech", icon: "🧬", label: "Biotech FDA/EMA", desc: "PDUFA daté + VAD 20-40%", color: "#ff6b9d" },
   { id: "special", icon: "♟️", label: "Situation spéciale", desc: "SPAC / post-restructuration", color: "#a29bfe" },
-  { id: "gamma", label: "⚡ Gamma Squeeze", desc: "P/C < 0.5 + OI calls élevé", color: "#a855f7", bg: "#a855f722", border: "#a855f755" },
+  { id: "gamma", label: "⚡ Gamma Squeeze", desc: "P/C < 0.5 + OI calls élevé", color: "#a855f7" },
 ];
 
 // ── State ─────────────────────────────────────────────────
@@ -459,8 +459,8 @@ function calculateSCCT(result) {
   }
   
   // 3b. Gamma squeeze signal bonus (5pts)
-  if (result.criteria?.gamma || (data && data.gammaScore === "FORT")) score += 5;
-  else if (data && data.gammaScore === "MODÉRÉ") score += 2;
+  if (result.criteria?.gamma || result.gammaScore === "FORT") score += 5;
+  else if (result.gammaScore === "MODÉRÉ") score += 2;
 
   // 4. Signal institutionnel (20pts) — bonus si fonds tier 1 identifié
   const tier1Funds = ["BlackRock","Vanguard","Fidelity","ARK","Baillie Gifford","Millennium","Citadel","Point72","Renaissance","Norges"];
@@ -598,13 +598,10 @@ JSON strict sans backticks — TOUS ces champs obligatoires:
 
   try {
     const text = await callClaude("Analyste Smart Money. JSON uniquement sans backticks.", prompt, 2000);
-    console.log(`[Claude raw] ${text.slice(0,300)}`);
     const parsed = parseJSON(text);
-    console.log(`[Claude parsed] ${(parsed.results||[]).length} results`);
     const results = (parsed.results || []).filter(r =>
       customTicker || Object.values(r.criteria || {}).filter(Boolean).length >= minScore
-    );
-    console.log(`[After filter] ${results.length} results (customTicker=${!!customTicker})`);
+    );;
     // Debug: log institutional moves
     results.forEach(r => {
       console.log(`%c[${r.ticker}] conviction:${r.conviction} target:${r.targetPrice} stop:${r.stopLoss} squeeze:${r.squeezeScore}`, "color:#2ed573;font-weight:bold");
@@ -681,7 +678,6 @@ async function runScan() {
         if (!byUniverse[item.universe]) byUniverse[item.universe] = [];
         byUniverse[item.universe].push(item);
       });
-      console.log(`[byUniverse] keys: ${Object.keys(byUniverse).join(",")}, customTicker: ${customTicker}`);
 
       for (const [universe, items] of Object.entries(byUniverse)) {
         if (stopRequested) break;
