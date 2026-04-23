@@ -277,6 +277,7 @@ const CRITERIA = [
   { id: "catalysts", icon: "⚡", label: "Catalyseurs datés", desc: "FDA, résultats, spin-off", color: "#eccc68" },
   { id: "biotech", icon: "🧬", label: "Biotech FDA/EMA", desc: "PDUFA daté + VAD 20-40%", color: "#ff6b9d" },
   { id: "special", icon: "♟️", label: "Situation spéciale", desc: "SPAC / post-restructuration", color: "#a29bfe" },
+  { id: "gamma", label: "⚡ Gamma Squeeze", desc: "P/C < 0.5 + OI calls élevé", color: "#a855f7", bg: "#a855f722", border: "#a855f755" },
 ];
 
 // ── State ─────────────────────────────────────────────────
@@ -457,6 +458,10 @@ function calculateSCCT(result) {
     score += 20; // catalyseur connu = score max
   }
   
+  // 3b. Gamma squeeze signal bonus (5pts)
+  if (result.criteria?.gamma || (data && data.gammaScore === "FORT")) score += 5;
+  else if (data && data.gammaScore === "MODÉRÉ") score += 2;
+
   // 4. Signal institutionnel (20pts) — bonus si fonds tier 1 identifié
   const tier1Funds = ["BlackRock","Vanguard","Fidelity","ARK","Baillie Gifford","Millennium","Citadel","Point72","Renaissance","Norges"];
   const hasTier1 = (result.institutionalMoves||[]).some(m => tier1Funds.some(f => m.fund?.includes(f)));
@@ -482,7 +487,7 @@ function getSCCTLabel(scct) {
 async function fetchTickerData(ticker) {
   const isFrench = ticker.includes(".PA") || ticker.includes(".BE");
   const isEuropean = isFrench;
-  const [quote, ts, news, filings13g, filings13f, amfData, ortex] = await Promise.all([
+  const [quote, ts, news, filings13g, filings13f, amfData, ortex, optionsData] = await Promise.all([
     proxyFetch(`/twelvedata/price?symbol=${encodeURIComponent(
       ticker.replace(/\.[A-Z]+$/,'')
     )}${
@@ -510,6 +515,7 @@ async function fetchTickerData(ticker) {
     (!isEuropean && !isFrench) ? proxyFetch(`/edgar/institutional13f?ticker=${encodeURIComponent(ticker)}`) : Promise.resolve(null),
     isFrench ? proxyFetch(`/amf/franchissements?ticker=${encodeURIComponent(ticker)}`) : Promise.resolve(null),
     proxyFetch(`/ortex/shortinterest?ticker=${encodeURIComponent(ticker)}`),
+    isEuropean ? Promise.resolve(null) : proxyFetch(`/ortex/options?ticker=${encodeURIComponent(ticker)}`),
   ]);
   let realPrice = null, drawdown52w = null, priceChange = 0, hasRealData = false;
 
@@ -553,7 +559,22 @@ async function fetchTickerData(ticker) {
   }));
   const realFilings = [...realAMF, ...real13g, ...real13f];
   console.log(`[${ticker}] Real filings: AMF=${realAMF.length} 13G=${real13g.length} 13F=${real13f.length}`);
-  return { realPrice, drawdown52w, priceChange, hasRealData, newsItems, edgarFilings, shortInterestReal, daysTocover, borrowRate, ortexScore, realFilings };
+  // Options data — Gamma Squeeze signals
+  let putCallRatio = null, callOI = null, totalOI = null, impliedVolatility = null, gammaScore = null;
+  if (optionsData && !optionsData.error) {
+    putCallRatio = optionsData.putCallRatio;
+    callOI = optionsData.callOI;
+    totalOI = optionsData.totalOI;
+    impliedVolatility = optionsData.impliedVolatility;
+    // Gamma score: P/C < 0.5 = bullish, high call OI = potential squeeze
+    if (putCallRatio !== null) {
+      if (putCallRatio < 0.4) gammaScore = "FORT";
+      else if (putCallRatio < 0.6) gammaScore = "MODÉRÉ";
+      else gammaScore = "FAIBLE";
+    }
+    console.log(`[${ticker}] Options: P/C=${putCallRatio} OI=${totalOI} IV=${impliedVolatility} → ${gammaScore}`);
+  }
+  return { realPrice, drawdown52w, priceChange, hasRealData, newsItems, edgarFilings, shortInterestReal, daysTocover, borrowRate, ortexScore, realFilings, putCallRatio, callOI, totalOI, impliedVolatility, gammaScore };
 }
 
 async function analyzeBatch(batch, universe, customTicker = null) {
@@ -569,11 +590,11 @@ async function analyzeBatch(batch, universe, customTicker = null) {
 TITRES: ${context}
 
 Score min: ${minScore}/7. Retourne UNIQUEMENT les titres qualifiés.
-CRITÈRES: price_drop(chute>20%), short_interest(VAD>10%), institutional(5%+), threshold(AMF/SEC), catalysts(6mois), biotech(readout), special(SPAC/restructuration)
+CRITÈRES: price_drop(chute>20%), short_interest(VAD>10%), institutional(5%+), threshold(AMF/SEC), catalysts(6mois), biotech(readout), special(SPAC/restructuration), gamma(P/C<0.5+OI_calls_élevé)
 FONDS: BlackRock, Vanguard, Fidelity, ARK Invest, Baillie Gifford, Millennium, Citadel, Point72, Goldman Sachs AM, Morgan Stanley IM, JP Morgan AM, Norges Bank, Bpifrance
 
 JSON strict sans backticks — TOUS ces champs obligatoires:
-{"results":[{"ticker":"X","name":"Nom","market":"NASDAQ","universe":"${universe}","summary":"2 phrases.","criteria":{"short_interest":true,"institutional":true,"threshold":false,"price_drop":true,"catalysts":true,"biotech":false,"special":false},"shortInterest":"18%","shortSource":"Estimé","institutionalMoves":[{"fund":"BlackRock","pct":"7.8%","prevPct":"0%","direction":"NEW","prevPct":"0%","date":"Jan 2026","source":"13G SEC","amount":"~180M$"}],"conviction":8,"targetPrice":"65$","stopLoss":"36$","squeezeScore":7,"squeezeProbability":"42%"}]}`;
+{"results":[{"ticker":"X","name":"Nom","market":"NASDAQ","universe":"${universe}","summary":"2 phrases.","criteria":{"short_interest":true,"institutional":true,"threshold":false,"price_drop":true,"catalysts":true,"biotech":false,"special":false,"gamma":false},"shortInterest":"18%","shortSource":"Estimé","institutionalMoves":[{"fund":"BlackRock","pct":"7.8%","prevPct":"0%","direction":"NEW","prevPct":"0%","date":"Jan 2026","source":"13G SEC","amount":"~180M$"}],"conviction":8,"targetPrice":"65$","stopLoss":"36$","squeezeScore":7,"squeezeProbability":"42%"}]}`;
 
   try {
     const text = await callClaude("Analyste Smart Money. JSON uniquement sans backticks.", prompt, 2000);
@@ -678,7 +699,7 @@ const claudeMoves = (s.institutionalMoves || []).map(m => ({...m, verified: fals
 // Real data first, then Claude estimates
 const mergedMoves = [...realMoves, ...claudeMoves];
 console.log(`[${s.ticker}] Merged: ${realMoves.length} réels + ${claudeMoves.length} estimés`);
-const base = { ...s, realPrice: data.realPrice, priceChange: data.priceChange || 0, drawdown52w: data.drawdown52w, dataSource: data.hasRealData ? "twelvedata" : "estimated", news: data.newsItems || [], edgarFilings: data.edgarFilings || [], shortInterestReal: data.shortInterestReal, daysTocover: data.daysTocover, borrowRate: data.borrowRate, ortexScore: data.ortexScore, institutionalMoves: mergedMoves, conviction: s.conviction || null, targetPrice: s.targetPrice || null, stopLoss: s.stopLoss || null, squeezeScore: s.squeezeScore || null, squeezeProbability: s.squeezeProbability || null, shortInterest: s.shortInterest || null, shortSource: s.shortSource || null };
+const base = { ...s, realPrice: data.realPrice, priceChange: data.priceChange || 0, drawdown52w: data.drawdown52w, dataSource: data.hasRealData ? "twelvedata" : "estimated", news: data.newsItems || [], edgarFilings: data.edgarFilings || [], shortInterestReal: data.shortInterestReal, daysTocover: data.daysTocover, borrowRate: data.borrowRate, ortexScore: data.ortexScore, institutionalMoves: mergedMoves, conviction: s.conviction || null, targetPrice: s.targetPrice || null, stopLoss: s.stopLoss || null, squeezeScore: s.squeezeScore || null, squeezeProbability: s.squeezeProbability || null, shortInterest: s.shortInterest || null, shortSource: s.shortSource || null, putCallRatio: data.putCallRatio, callOI: data.callOI, totalOI: data.totalOI, impliedVolatility: data.impliedVolatility, gammaScore: data.gammaScore };
             base.scct = calculateSCCT(base);
             return base;
           });
@@ -810,6 +831,7 @@ function renderCard(r) {
     <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;align-items:center">
       ${r.drawdown52w ? `<div class="drawdown-badge" style="margin-bottom:0">📊 Drawdown 52W: <strong>${r.drawdown52w}</strong>${r.dataSource === 'twelvedata' ? ' <span style="color:#484f58">· TwelveData ✓</span>' : ''}</div>` : ""}
       ${r.shortInterestReal ? `<div style="display:inline-flex;align-items:center;gap:6px;background:#ff475715;border:1px solid #ff475733;border-radius:6px;padding:3px 10px;font-size:10px;color:#ff4757">📉 <strong>VAD: ${r.shortInterestReal}</strong>${r.daysTocover ? ' · DTC: ' + r.daysTocover : ''} <span style="color:#484f58">· Ortex ✓</span></div>` : r.shortInterest ? `<div style="display:inline-flex;align-items:center;gap:6px;background:#ff475710;border:1px solid #ff475722;border-radius:6px;padding:3px 10px;font-size:10px;color:#ff6b3d">📉 <strong>VAD est.: ${r.shortInterest}</strong> <span style="color:#484f58">· Estimé</span></div>` : ""}
+      ${r.gammaScore ? `<div style="display:inline-flex;align-items:center;gap:6px;background:#a855f715;border:1px solid #a855f733;border-radius:6px;padding:3px 10px;font-size:10px;color:#a855f7">⚡ <strong>Gamma: ${r.gammaScore}</strong>${r.putCallRatio !== null && r.putCallRatio !== undefined ? ' · P/C: ' + parseFloat(r.putCallRatio).toFixed(2) : ''} <span style="color:#484f58">· Ortex ✓</span></div>` : ""}
     </div>
     <div class="card-actions">
       <button class="action-btn" onclick="openReco('${r.ticker}')" style="background:linear-gradient(135deg,#2ed57318,#00d2ff18);border:1px solid #2ed57355;color:#2ed573">📈 Recommandation</button>
