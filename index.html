@@ -591,10 +591,8 @@ TITRES: ${context}
 
 Score min: ${minScore}/7. Retourne UNIQUEMENT les titres qualifiés.
 CRITÈRES: price_drop(chute>20%), short_interest(VAD>10%), institutional(5%+), threshold(AMF/SEC), catalysts(6mois), biotech(readout), special(SPAC/restructuration), gamma(P/C<0.5+OI_calls_élevé)
-FONDS: BlackRock, Vanguard, Fidelity, ARK Invest, Baillie Gifford, Millennium, Citadel, Point72, Goldman Sachs AM, Morgan Stanley IM, JP Morgan AM, Norges Bank, Bpifrance
-
 JSON strict sans backticks — TOUS ces champs obligatoires:
-{"results":[{"ticker":"X","name":"Nom","market":"NASDAQ","universe":"${universe}","summary":"2 phrases.","criteria":{"short_interest":true,"institutional":true,"threshold":false,"price_drop":true,"catalysts":true,"biotech":false,"special":false,"gamma":false},"shortInterest":"18%","shortSource":"Estimé","institutionalMoves":[{"fund":"BlackRock","pct":"7.8%","prevPct":"0%","direction":"NEW","prevPct":"0%","date":"Jan 2026","source":"13G SEC","amount":"~180M$"}],"conviction":8,"targetPrice":"65$","stopLoss":"36$","squeezeScore":7,"squeezeProbability":"42%"}]}`;
+{"results":[{"ticker":"X","name":"Nom","market":"NASDAQ","universe":"${universe}","summary":"2 phrases.","criteria":{"short_interest":true,"institutional":true,"threshold":false,"price_drop":true,"catalysts":true,"biotech":false,"special":false,"gamma":false},"shortInterest":"18%","shortSource":"Estimé","institutionalMoves":[],"conviction":8,"targetPrice":"65$","stopLoss":"36$","squeezeScore":7,"squeezeProbability":"42%"}]}`;
 
   try {
     const text = await callClaude("Analyste Smart Money. JSON uniquement sans backticks.", prompt, 2000);
@@ -686,15 +684,13 @@ async function runScan() {
           const enriched = signals.map(s => {
             const found = items.find(i => i.ticker === s.ticker);
             const data = found?.data || {};
-            // Real institutional data from EDGAR + AMF
+            // ONLY real filings from EDGAR + AMF — NO Claude estimates
 const realMoves = (data.realFilings || []);
-// Claude estimates — clearly marked, filtered to avoid duplicates with real data
-const claudeMoves = (s.institutionalMoves || []).map(m => ({...m, verified: false})).filter(m =>
-  !realMoves.some(r => r.fund && m.fund && r.fund.toLowerCase().includes(m.fund.toLowerCase().slice(0,6)))
-);
-// Real data first, then Claude estimates
-const mergedMoves = [...realMoves, ...claudeMoves];
-console.log(`[${s.ticker}] Merged: ${realMoves.length} réels + ${claudeMoves.length} estimés`);
+// Never use Claude-generated institutional data — it hallucinate sources and fund names
+const mergedMoves = [...realMoves];
+if (realMoves.length > 0) {
+  console.log(`[${s.ticker}] Real filings: ${realMoves.length}`);
+}
 const base = { ...s, realPrice: data.realPrice, priceChange: data.priceChange || 0, drawdown52w: data.drawdown52w, dataSource: data.hasRealData ? "twelvedata" : "estimated", news: data.newsItems || [], edgarFilings: data.edgarFilings || [], shortInterestReal: data.shortInterestReal, daysTocover: data.daysTocover, borrowRate: data.borrowRate, ortexScore: data.ortexScore, institutionalMoves: mergedMoves, conviction: s.conviction || null, targetPrice: s.targetPrice || null, stopLoss: s.stopLoss || null, squeezeScore: s.squeezeScore || null, squeezeProbability: s.squeezeProbability || null, shortInterest: s.shortInterest || null, shortSource: s.shortSource || null, putCallRatio: data.putCallRatio, callOI: data.callOI, totalOI: data.totalOI, impliedVolatility: data.impliedVolatility, gammaScore: data.gammaScore };
             base.scct = calculateSCCT(base);
             return base;
@@ -755,7 +751,8 @@ function getScore(r) { return Object.values(r.criteria || {}).filter(Boolean).le
 function renderTopFunds(moves, r) {
   if (!moves || moves.length === 0) return "";
   const items = moves.slice(0, 3).map(m => {
-    const isReal = (m.source||"").includes("13") || (m.source||"").includes("AMF");
+    // STRICT: verified=true only when data comes from real EDGAR/AMF endpoint
+    const isReal = m.verified === true && ((m.source||"").includes("13") || (m.source||"").includes("AMF"));
     const col = isReal ? "#2ed573" : "#8b949e";
     const dir = m.direction === "NEW" ? "🆕" : (m.direction || "");
     return `<div style="display:flex;align-items:center;gap:3px;background:#21262d;padding:3px 8px;border-radius:6px"><span style="color:#e6edf3;font-size:10px;font-weight:700;font-family:monospace">${m.fund}</span><span style="color:${col};font-size:10px;font-family:monospace"> ${m.pct}</span><span style="color:#484f58;font-size:8px"> ${dir}</span></div>`;
@@ -853,8 +850,11 @@ function renderCard(r) {
           </tr>
           ${(r.institutionalMoves||[]).map(m => {
             const src = m.source || "";
-            const isReal = src.includes("13D") || src.includes("13G") || src.includes("AMF");
-            const isSemiReal = src.includes("13F");
+            // STRICT: only show real badge if data comes from actual EDGAR/AMF endpoint (m.verified === true)
+            // Claude-estimated moves always get "Estimé ⚠️" regardless of source field content
+            const isVerified = m.verified === true;
+            const isReal = isVerified && (src.includes("13D") || src.includes("13G") || src.includes("AMF"));
+            const isSemiReal = isVerified && src.includes("13F");
             const srcColor = isReal ? "#ff4757" : isSemiReal ? "#ffa502" : "#484f58";
             const srcBg = isReal ? "#ff475722" : isSemiReal ? "#ffa50222" : "#21262d";
             const srcLabel = isReal ? src + " ✓" : isSemiReal ? src + " ✓" : "Estimé ⚠️";
@@ -880,7 +880,7 @@ function renderCard(r) {
             return `<tr style="background:#21262d;border-bottom:1px solid #161b22">
               <td style="padding:6px 8px;color:#e6edf3;font-weight:700">${m.fund}</td>
               <td style="padding:6px 8px;text-align:center;color:#58a6ff;font-weight:700">${m.pct}</td>
-              <td style="padding:6px 8px;text-align:center;color:${varColor};font-weight:700;font-size:12px">${varPct}</td>
+              <td style="padding:6px 8px;text-align:center;color:${m.verified ? varColor : '#484f58'};font-weight:700;font-size:12px">${varPct}</td>
               <td style="padding:6px 8px;text-align:center;color:${recenceColor};font-weight:700">${m.date}</td>
               <td style="padding:6px 8px;text-align:center"><span style="background:${srcBg};color:${srcColor};padding:2px 6px;border-radius:4px;font-size:9px;font-weight:700">${srcLabel}</span></td>
               <td style="padding:6px 8px;text-align:center;font-weight:700;font-size:11px" id="perf-cell">${
