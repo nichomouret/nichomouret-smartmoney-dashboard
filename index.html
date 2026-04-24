@@ -502,7 +502,7 @@ async function fetchTickerData(ticker) {
     proxyFetch(`/twelvedata/price?symbol=${encodeURIComponent(cleanSymbol)}${exchParam}`),
     proxyFetch(`/twelvedata/timeseries?symbol=${encodeURIComponent(cleanSymbol)}&interval=1day&outputsize=252${exchParam}`),
     proxyFetch(`/news?query=${encodeURIComponent(ticker + " institutional shareholder")}`),
-    (!isEuropean && !isFrench) ? proxyFetch(`/edgar/filings13g?ticker=${encodeURIComponent(ticker)}`) : Promise.resolve({filings:[]}),
+    (!isEuropean && !isFrench) ? proxyFetch(`/edgar/filings13g?ticker=${encodeURIComponent(ticker.replace(/\.PA$|\.BE$/,''))}`) : Promise.resolve({filings:[]}),
     (!isEuropean && !isFrench) ? proxyFetch(`/edgar/institutional13f?ticker=${encodeURIComponent(ticker)}`) : Promise.resolve(null),
     isFrench ? proxyFetch(`/amf/franchissements?ticker=${encodeURIComponent(ticker)}`) : Promise.resolve(null),
   ]);
@@ -599,9 +599,7 @@ IMPORTANT: institutionalMoves doit contenir 2-3 fonds RÉELS connus pour ce titr
     // Debug: log institutional moves
     results.forEach(r => {
       console.log(`%c[${r.ticker}] conviction:${r.conviction} target:${r.targetPrice} stop:${r.stopLoss} squeeze:${r.squeezeScore}`, "color:#2ed573;font-weight:bold");
-      if (r.institutionalMoves?.length > 0) {
-        console.log(`[${r.ticker}] institutionalMoves[0] keys:`, Object.keys(r.institutionalMoves[0]), JSON.stringify(r.institutionalMoves[0]).slice(0,150));
-      }
+
     });
     return results;
   } catch(e) {
