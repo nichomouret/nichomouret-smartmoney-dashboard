@@ -599,6 +599,9 @@ IMPORTANT: institutionalMoves doit contenir 2-3 fonds RÉELS connus pour ce titr
     // Debug: log institutional moves
     results.forEach(r => {
       console.log(`%c[${r.ticker}] conviction:${r.conviction} target:${r.targetPrice} stop:${r.stopLoss} squeeze:${r.squeezeScore}`, "color:#2ed573;font-weight:bold");
+      if (r.institutionalMoves?.length > 0) {
+        console.log(`[${r.ticker}] institutionalMoves[0] keys:`, Object.keys(r.institutionalMoves[0]), JSON.stringify(r.institutionalMoves[0]).slice(0,150));
+      }
     });
     return results;
   } catch(e) {
@@ -685,9 +688,20 @@ const realMoves = (data.realFilings || []);
 // Never use Claude-generated institutional data — it hallucinate sources and fund names
 // Real data first, then Claude estimates (clearly marked as unverified)
 const claudeMoves = (s.institutionalMoves || [])
-  .map(m => ({...m, verified: false}))
+  .map(m => {
+    // Normalize field names — Claude sometimes uses different keys
+    const fund = m.fund || m.name || m.fonds || m.fundName || m.institution || "";
+    const pct = m.pct || m.percentage || m.stake || m.participation || m.percent || "";
+    const prevPct = m.prevPct || m.previousPct || m.prev || m.previousStake || "—";
+    const direction = m.direction || m.change || m.movement || "HOLDER";
+    const date = m.date || m.declarationDate || m.period || m.quarter || "—";
+    const source = m.source || "Estimé";
+    const amount = m.amount || m.value || m.marketValue || "—";
+    return { fund, pct, prevPct, direction, date, source, amount, verified: false };
+  })
   .filter(m => 
-    m.fund && m.fund !== "undefined" && m.pct && m.pct !== "undefined" &&
+    m.fund && m.fund !== "undefined" && m.fund.length > 1 &&
+    m.pct && m.pct !== "undefined" && m.pct.length > 0 &&
     !realMoves.some(r => r.fund && m.fund && r.fund.toLowerCase().includes(m.fund.toLowerCase().slice(0,6)))
   );
 const mergedMoves = [...realMoves, ...claudeMoves];
