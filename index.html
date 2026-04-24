@@ -126,7 +126,7 @@
   .loading-overlay { position: fixed; inset: 0; background: #010409f2; display: flex; align-items: center; justify-content: center; z-index: 300; flex-direction: column; gap: 14px; }
   .loading-text { color: #8b949e; font-size: 12px; letter-spacing: 2px; }
 </style>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/docx/8.5.0/docx.umd.min.js"></script>
+
 </head>
 <body>
 <div class="container">
@@ -201,7 +201,7 @@
   <div id="results-section" style="display:none;">
     <div class="results-header">
       <div id="results-count" style="font-size:11px;font-weight:700;"></div>
-      <div style="font-size:9px;color:#484f58;">📈 Reco · 📄 Dossier · 🔍 Deep Dive</div>
+      <div style="font-size:9px;color:#484f58;">📈 Reco · 🔍 Deep Dive</div>
     </div>
     <div class="results-list" id="results-list"></div>
   </div>
@@ -286,8 +286,6 @@ let selectedCriteria = ["short_interest", "institutional", "price_drop"];
 let minScore = 2;
 let tripleLockOnly = false;
 let scanning = false;
-let currentDossierData = null;
-let currentDossierTicker = null;
 let stopRequested = false;
 let allResults = [];
 
@@ -698,6 +696,30 @@ const base = { ...s, realPrice: data.realPrice, priceChange: data.priceChange ||
           signalCount = allResults.length;
           renderResults();
           setProgress(scanned, total, signalCount, `✨ ${signalCount} signal${signalCount > 1 ? "s" : ""} détecté${signalCount > 1 ? "s" : ""}...`);
+
+          // Auto Deep Dive for each signal — get precise target/stop/conviction immediately
+          for (const result of enriched) {
+            if (stopRequested) break;
+            try {
+              const ddPrompt = `Deep Dive ${result.ticker} (${result.name}). Prix: ${result.realPrice || "N/A"}. Drawdown: ${result.drawdown52w || "N/A"}. VAD: ${result.shortInterestReal || result.shortInterest || "N/A"}. Avril 2026.
+JSON sans backticks:
+{"ticker":"${result.ticker}","deepAnalysis":{"recommendation":"FORT ACHAT","targetPrice":"XX$","stopLoss":"XX$","conviction":8,"upside":"45%","thesis":"2 phrases."}}`;
+              const ddText = await callClaude("Expert Smart Money. JSON uniquement.", ddPrompt, 500);
+              const ddParsed = parseJSON(ddText);
+              const da = ddParsed.deepAnalysis;
+              if (da) {
+                const idx = allResults.findIndex(r => r.ticker === result.ticker);
+                if (idx >= 0) {
+                  allResults[idx].conviction = da.conviction || allResults[idx].conviction;
+                  allResults[idx].targetPrice = da.targetPrice || allResults[idx].targetPrice;
+                  allResults[idx].stopLoss = da.stopLoss || allResults[idx].stopLoss;
+                  allResults[idx].ddUpside = da.upside || null;
+                  allResults[idx].ddThesis = da.thesis || null;
+                }
+              }
+            } catch(e) { /* silent fail — deep dive optional */ }
+            renderResults();
+          }
         }
       }
     }
@@ -844,7 +866,6 @@ function renderCard(r) {
     </div>
     <div class="card-actions">
       <button class="action-btn" onclick="openReco('${r.ticker}')" style="background:linear-gradient(135deg,#2ed57318,#00d2ff18);border:1px solid #2ed57355;color:#2ed573">📈 Recommandation</button>
-      <button class="action-btn" onclick="openDossier('${r.ticker}')" style="background:linear-gradient(135deg,#eccc6818,#ffa50218);border:1px solid #eccc6855;color:#eccc68">📄 Dossier Communauté</button>
       <button class="action-btn" onclick="openDeepDive('${r.ticker}')" style="background:linear-gradient(135deg,#7c3aed18,#a29bfe18);border:1px solid #7c3aed55;color:#a29bfe">🔍 Deep Dive</button>
     </div>
     <div id="expanded-${r.ticker}" style="display:none" class="card-expanded">
@@ -1012,123 +1033,6 @@ JSON sans backticks:
   hideLoading();
 }
 
-async function openDossier(ticker) {
-  const result = getResult(ticker);
-  if (!result) return;
-  showLoading(`Dossier Communauté — ${ticker}`);
-  try {
-    const prompt = `Génère les 4 trames Telegram Mark Elias pour ${ticker} (${result.name}). Prix: ${result.realPrice || "N/A"}. Drawdown: ${result.drawdown52w || "N/A"}. Avril 2026.
-IMPORTANT: Les valeurs des trames doivent être du texte pur avec de vrais retours à la ligne. PAS de \\n littéraux, PAS de HTML, PAS de code. Juste du texte formaté pour Telegram.
-JSON sans backticks:
-{"dossier":{"trameAvant":"Message complet AVANT Telegram avec jauges ASCII, score /10, appel Goliath. 15 lignes.","trameEntree":"Message ENTRÉE avec prix stop catalyseur. 10 lignes.","trameUpdate":"Template UPDATE avec [crochets]. 8 lignes.","trameCloture":"Template CLÔTURE avec simulation 5k/10k/20k. 10 lignes."}}`;
-    const text = await callClaude("Expert éditorial Mark Elias. JSON uniquement.", prompt, 3000);
-    const d = parseJSON(text).dossier;
-    // Clean escape sequences from Claude response
-    const cleanTrame = (t) => t ? t.replace(/\\n/g, "\n").replace(/\\t/g, "  ") : t;
-    const trames = [
-      ["📣 AVANT — Signal détecté","#eccc68", cleanTrame(d.trameAvant)],
-      ["✅ ENTRÉE — Position ouverte","#2ed573", cleanTrame(d.trameEntree)],
-      ["🔄 UPDATE — En cours","#58a6ff", cleanTrame(d.trameUpdate)],
-      ["🏁 CLÔTURE — Bilan","#a29bfe", cleanTrame(d.trameCloture)]
-    ];
-    const allText = trames.map(([,, t]) => t).filter(Boolean).join("\n\n---\n\n");
-    document.getElementById("modal-content").innerHTML = `
-      <div class="modal-header">
-        <div><div class="modal-title">${ticker}</div><div class="modal-sub">DOSSIER COMMUNAUTÉ · TELEGRAM</div></div>
-        <div style="display:flex;gap:8px">
-          <button id="copy-dossier-btn" onclick="copyDossier()" style="padding:7px 14px;border-radius:6px;cursor:pointer;font-family:monospace;font-size:11px;font-weight:700;background:#388bfd22;border:1px solid #388bfd66;color:#58a6ff">📋 Copier Telegram</button>
-          <button id="word-dossier-btn" onclick="downloadDossierWord()" style="padding:7px 14px;border-radius:6px;cursor:pointer;font-family:monospace;font-size:11px;font-weight:700;background:#2ed57322;border:1px solid #2ed57366;color:#2ed573">📄 Télécharger Word</button>
-          <button class="modal-close" onclick="closeModal()">✕</button>
-        </div>
-      </div>
-      ${trames.filter(([,,t])=>t).map(([label,color,content])=>`
-        <div style="margin-bottom:14px">
-          <div class="section-label" style="color:${color};margin-bottom:6px">${label}</div>
-          <div class="trame-box" style="border:1px solid ${color}22"><pre class="trame-pre">${content}</pre></div>
-        </div>
-      `).join("")}
-      <div class="legal">Templates Mark Elias. Remplacer les [crochets]. Ne constitue pas un conseil en investissement.</div>
-    `;
-    // Store for copy/download
-    currentDossierData = d;
-    currentDossierTicker = ticker;
-    document.getElementById("modal").style.display = "flex";
-  } catch(e) { console.error(e); }
-  hideLoading();
-}
-
-function copyDossier() {
-  if (!currentDossierData) return;
-  const d = currentDossierData;
-  const cleanTrame = (t) => t ? t.replace(/\\n/g, "\n") : "";
-  const text = [cleanTrame(d.trameAvant), cleanTrame(d.trameEntree), cleanTrame(d.trameUpdate), cleanTrame(d.trameCloture)]
-    .filter(Boolean).join("\n\n---\n\n");
-  navigator.clipboard.writeText(text).then(() => {
-    const btn = document.getElementById("copy-dossier-btn");
-    if (btn) { btn.textContent = "✓ Copié!"; setTimeout(() => btn.textContent = "📋 Copier Telegram", 2000); }
-  });
-}
-
-async function downloadDossierWord() {
-  if (!currentDossierData || typeof docx === "undefined") return;
-  const btn = document.getElementById("word-dossier-btn");
-  if (btn) btn.textContent = "⏳ Génération...";
-  
-  const d = currentDossierData;
-  const ticker = currentDossierTicker;
-  const cleanTrame = (t) => t ? t.replace(/\n/g, "\n") : "";
-  
-  const { Document, Paragraph, TextRun, HeadingLevel, BorderStyle, AlignmentType, Packer } = docx;
-  
-  const makeSection = (title, text, color) => {
-    const lines = cleanTrame(text).split("\n");
-    return [
-      new Paragraph({
-        children: [new TextRun({ text: title, bold: true, size: 24, color: color || "1f6feb" })],
-        spacing: { before: 300, after: 100 },
-        border: { bottom: { style: BorderStyle.SINGLE, size: 1, color: "333333" } }
-      }),
-      ...lines.map(line => new Paragraph({
-        children: [new TextRun({ text: line, size: 20, font: "Courier New" })],
-        spacing: { before: 0, after: 80 }
-      })),
-    ];
-  };
-
-  const doc = new Document({
-    sections: [{
-      properties: {},
-      children: [
-        new Paragraph({
-          children: [new TextRun({ text: "DOSSIER COMMUNAUTÉ — " + ticker, bold: true, size: 32, color: "1f6feb" })],
-          heading: HeadingLevel.HEADING_1,
-          spacing: { after: 200 }
-        }),
-        new Paragraph({
-          children: [new TextRun({ text: "by MARK ELIAS · Smart Money Intelligence · Avril 2026", size: 18, color: "888888", italics: true })],
-          spacing: { after: 400 }
-        }),
-        ...(d.trameAvant ? makeSection("📣 TRAME AVANT — Signal détecté", d.trameAvant, "b8860b") : []),
-        ...(d.trameEntree ? makeSection("✅ TRAME ENTRÉE — Position ouverte", d.trameEntree, "2d8a4e") : []),
-        ...(d.trameUpdate ? makeSection("🔄 TRAME UPDATE — En cours", d.trameUpdate, "1f6feb") : []),
-        ...(d.trameCloture ? makeSection("🏁 TRAME CLÔTURE — Bilan final", d.trameCloture, "6a3fbf") : []),
-        new Paragraph({
-          children: [new TextRun({ text: "Ce document ne constitue pas un conseil en investissement. Mark Elias partage ses propres analyses et positions à titre informatif uniquement. Tout investissement comporte un risque de perte en capital.", size: 16, color: "888888", italics: true })],
-          spacing: { before: 400 }
-        }),
-      ]
-    }]
-  });
-
-  const blob = await Packer.toBlob(doc);
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "MarkElias_Dossier_" + ticker + "_" + new Date().toISOString().slice(0,10) + ".docx";
-  a.click();
-  URL.revokeObjectURL(url);
-  if (btn) btn.textContent = "📄 Télécharger Word";
-}
 
 async function openDeepDive(ticker) {
   const result = getResult(ticker);
