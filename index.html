@@ -277,7 +277,7 @@ const CRITERIA = [
   { id: "catalysts", icon: "⚡", label: "Catalyseurs datés", desc: "FDA, résultats, spin-off", color: "#eccc68" },
   { id: "biotech", icon: "🧬", label: "Biotech FDA/EMA", desc: "PDUFA daté + VAD 20-40%", color: "#ff6b9d" },
   { id: "special", icon: "♟️", label: "Situation spéciale", desc: "SPAC / post-restructuration", color: "#a29bfe" },
-  { id: "gamma", label: "⚡ Gamma Squeeze", desc: "P/C < 0.5 + OI calls élevé", color: "#a855f7" },
+  { id: "gamma", icon: "⚡", label: "Gamma Squeeze", desc: "P/C < 0.5 + OI calls élevé", color: "#a855f7", bg: "#a855f715", border: "#a855f733" },
 ];
 
 // ── State ─────────────────────────────────────────────────
@@ -751,7 +751,7 @@ function getScore(r) { return Object.values(r.criteria || {}).filter(Boolean).le
 function renderTopFunds(moves, r) {
   if (!moves || moves.length === 0) return "";
   const items = moves.slice(0, 3).map(m => {
-    // STRICT: verified=true only when data comes from real EDGAR/AMF endpoint
+    // Show all funds — green if verified from EDGAR/AMF, gray if estimated
     const isReal = m.verified === true && ((m.source||"").includes("13") || (m.source||"").includes("AMF"));
     const col = isReal ? "#2ed573" : "#8b949e";
     const dir = m.direction === "NEW" ? "🆕" : (m.direction || "");
