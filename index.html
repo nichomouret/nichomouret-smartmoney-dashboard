@@ -586,7 +586,9 @@ TITRES: ${context}
 Score min: ${minScore}/7. Retourne UNIQUEMENT les titres qualifiés.
 CRITÈRES: price_drop(chute>20%), short_interest(VAD>10%), institutional(5%+), threshold(AMF/SEC), catalysts(6mois), biotech(readout), special(SPAC/restructuration), gamma(P/C<0.5+OI_calls_élevé)
 JSON strict sans backticks — TOUS ces champs obligatoires:
-{"results":[{"ticker":"X","name":"Nom","market":"NASDAQ","universe":"${universe}","summary":"2 phrases.","criteria":{"short_interest":true,"institutional":true,"threshold":false,"price_drop":true,"catalysts":true,"biotech":false,"special":false,"gamma":false},"shortInterest":"18%","shortSource":"Estimé","institutionalMoves":[],"conviction":8,"targetPrice":"65$","stopLoss":"36$","squeezeScore":7,"squeezeProbability":"42%"}]}`;
+{"results":[{"ticker":"X","name":"Nom complet","market":"NASDAQ","universe":"${universe}","summary":"2 phrases max.","criteria":{"short_interest":true,"institutional":true,"threshold":false,"price_drop":true,"catalysts":true,"biotech":false,"special":false,"gamma":false},"shortInterest":"18%","shortSource":"Estimé","institutionalMoves":[{"fund":"BlackRock","pct":"7.2%","prevPct":"6.1%","direction":"↑","date":"Q4 2025","source":"Estimé","amount":"~$2.1B"},{"fund":"Vanguard","pct":"5.8%","prevPct":"5.8%","direction":"HOLDER","date":"Q4 2025","source":"Estimé","amount":"~$1.7B"}],"conviction":8,"targetPrice":"65$","stopLoss":"36$","squeezeScore":7,"squeezeProbability":"42%"}]}
+
+IMPORTANT: institutionalMoves doit contenir 2-3 fonds RÉELS connus pour ce titre. Chaque fonds doit avoir: fund(string), pct(string%), prevPct(string%), direction(↑|↓|HOLDER|NEW), date(string), source("Estimé"), amount(string~). JAMAIS de valeurs undefined ou null.`;
 
   try {
     const text = await callClaude("Analyste Smart Money. JSON uniquement sans backticks.", prompt, 2000);
@@ -682,9 +684,12 @@ async function runScan() {
 const realMoves = (data.realFilings || []);
 // Never use Claude-generated institutional data — it hallucinate sources and fund names
 // Real data first, then Claude estimates (clearly marked as unverified)
-const claudeMoves = (s.institutionalMoves || []).map(m => ({...m, verified: false})).filter(m =>
-  !realMoves.some(r => r.fund && m.fund && r.fund.toLowerCase().includes(m.fund.toLowerCase().slice(0,6)))
-);
+const claudeMoves = (s.institutionalMoves || [])
+  .map(m => ({...m, verified: false}))
+  .filter(m => 
+    m.fund && m.fund !== "undefined" && m.pct && m.pct !== "undefined" &&
+    !realMoves.some(r => r.fund && m.fund && r.fund.toLowerCase().includes(m.fund.toLowerCase().slice(0,6)))
+  );
 const mergedMoves = [...realMoves, ...claudeMoves];
 console.log(`[${s.ticker}] Merged: ${realMoves.length} réels + ${claudeMoves.length} estimés`);
 const base = { ...s, realPrice: data.realPrice, priceChange: data.priceChange || 0, drawdown52w: data.drawdown52w, dataSource: data.hasRealData ? "twelvedata" : "estimated", news: data.newsItems || [], edgarFilings: data.edgarFilings || [], shortInterestReal: data.shortInterestReal, daysTocover: data.daysTocover, borrowRate: data.borrowRate, ortexScore: data.ortexScore, institutionalMoves: mergedMoves, conviction: s.conviction || null, targetPrice: s.targetPrice || null, stopLoss: s.stopLoss || null, squeezeScore: s.squeezeScore || null, squeezeProbability: s.squeezeProbability || null, shortInterest: s.shortInterest || null, shortSource: s.shortSource || null, putCallRatio: data.putCallRatio, callOI: data.callOI, totalOI: data.totalOI, impliedVolatility: data.impliedVolatility, gammaScore: data.gammaScore };
