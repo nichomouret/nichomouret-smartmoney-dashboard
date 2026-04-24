@@ -487,36 +487,30 @@ function getSCCTLabel(scct) {
 async function fetchTickerData(ticker) {
   const isFrench = ticker.includes(".PA") || ticker.includes(".BE");
   const isEuropean = isFrench;
-  const [quote, ts, news, filings13g, filings13f, amfData, ortex, optionsData] = await Promise.all([
-    proxyFetch(`/twelvedata/price?symbol=${encodeURIComponent(
-      ticker.replace(/\.[A-Z]+$/,'')
-    )}${
-      ticker.endsWith('.DE') ? '&exchange=XETR' :
-      ticker.endsWith('.L')  ? '&exchange=LSE' :
-      ticker.endsWith('.MI') ? '&exchange=MIL' :
-      ticker.endsWith('.MC') ? '&exchange=BMAD' :
-      ticker.endsWith('.AS') ? '&exchange=XAMS' :
-      ticker.endsWith('.PA') ? '&exchange=XPAR' :
-      ticker.endsWith('.BE') ? '&exchange=XBRU' : ''
-    }`),
-    proxyFetch(`/twelvedata/timeseries?symbol=${encodeURIComponent(
-      ticker.replace(/\.[A-Z]+$/,'')
-    )}&interval=1day&outputsize=252${
-      ticker.endsWith('.DE') ? '&exchange=XETR' :
-      ticker.endsWith('.L')  ? '&exchange=LSE' :
-      ticker.endsWith('.MI') ? '&exchange=MIL' :
-      ticker.endsWith('.MC') ? '&exchange=BMAD' :
-      ticker.endsWith('.AS') ? '&exchange=XAMS' :
-      ticker.endsWith('.PA') ? '&exchange=XPAR' :
-      ticker.endsWith('.BE') ? '&exchange=XBRU' : ''
-    }`),
+  const exchParam = 
+    ticker.endsWith('.DE') ? '&exchange=XETR' :
+    ticker.endsWith('.L')  ? '&exchange=LSE' :
+    ticker.endsWith('.MI') ? '&exchange=MIL' :
+    ticker.endsWith('.MC') ? '&exchange=BMAD' :
+    ticker.endsWith('.AS') ? '&exchange=XAMS' :
+    ticker.endsWith('.PA') ? '&exchange=XPAR' :
+    ticker.endsWith('.BE') ? '&exchange=XBRU' : '';
+  const cleanSymbol = ticker.replace(/\.[A-Z]+$/,'');
+
+  // Fetch non-Ortex data in parallel
+  const [quote, ts, news, filings13g, filings13f, amfData] = await Promise.all([
+    proxyFetch(`/twelvedata/price?symbol=${encodeURIComponent(cleanSymbol)}${exchParam}`),
+    proxyFetch(`/twelvedata/timeseries?symbol=${encodeURIComponent(cleanSymbol)}&interval=1day&outputsize=252${exchParam}`),
     proxyFetch(`/news?query=${encodeURIComponent(ticker + " institutional shareholder")}`),
     (!isEuropean && !isFrench) ? proxyFetch(`/edgar/filings13g?ticker=${encodeURIComponent(ticker)}`) : Promise.resolve({filings:[]}),
     (!isEuropean && !isFrench) ? proxyFetch(`/edgar/institutional13f?ticker=${encodeURIComponent(ticker)}`) : Promise.resolve(null),
     isFrench ? proxyFetch(`/amf/franchissements?ticker=${encodeURIComponent(ticker)}`) : Promise.resolve(null),
-    proxyFetch(`/ortex/shortinterest?ticker=${encodeURIComponent(ticker)}`),
-    isEuropean ? Promise.resolve(null) : proxyFetch(`/ortex/options?ticker=${encodeURIComponent(ticker)}`),
   ]);
+
+  // Ortex calls sequentially with small delay to avoid 429
+  const ortex = await proxyFetch(`/ortex/shortinterest?ticker=${encodeURIComponent(ticker)}`);
+  await new Promise(r => setTimeout(r, 200));
+  const optionsData = isEuropean ? null : await proxyFetch(`/ortex/options?ticker=${encodeURIComponent(ticker)}`);
   let realPrice = null, drawdown52w = null, priceChange = 0, hasRealData = false;
 
   // Ortex short interest réel — format: { shortInterestPct, shortInterestShares, date }
