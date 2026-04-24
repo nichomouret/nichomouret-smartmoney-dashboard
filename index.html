@@ -977,16 +977,7 @@ JSON sans backticks:
 {"reco":{"signal":"FORT ACHAT","entryPrice":"XX€","tp1":"XX€","tp2":"XX€","stop":"XX€","tp1Upside":"35","tp2Upside":"65","horizon":"2-4 semaines","thesis":"3 phrases.","squeeze":{"score":7,"dtc":"8 jours","probability":"45%","analysis":"3 phrases.","trigger":"Déclencheur daté."}}}`;
     const text = await callClaude("Expert Smart Money. JSON uniquement.", prompt, 2000);
     const reco = parseJSON(text).reco;
-    // Save key metrics back to card for quick display
-    const idx = allResults.findIndex(r => r.ticker === ticker);
-    if (idx >= 0) {
-      allResults[idx].conviction = reco.squeeze?.score || null;
-      allResults[idx].targetPrice = reco.tp1 || null;
-      allResults[idx].stopLoss = reco.stop || null;
-      allResults[idx].squeezeScore = reco.squeeze?.score || null;
-      allResults[idx].squeezeProbability = reco.squeeze?.probability || null;
-      renderResults(); // refresh cards with new data
-    }
+    // Reco shows in modal only — does NOT update card values
     const signalColor = reco.signal?.includes("FORT") ? "#2ed573" : reco.signal?.includes("ACHAT") ? "#58a6ff" : "#ffa502";
     const sim = (a) => ({ gain: Math.round(a * (parseFloat(reco.tp1Upside) / 100)), loss: Math.round(a * 0.2) });
     document.getElementById("modal-content").innerHTML = `
@@ -1046,14 +1037,7 @@ JSON sans backticks:
     const text = await callClaude("Expert Smart Money. JSON uniquement.", prompt, 2000);
     const data = parseJSON(text);
     const da = data.deepAnalysis;
-    // Save conviction + targets to card for quick display
-    const didx = allResults.findIndex(r => r.ticker === ticker);
-    if (didx >= 0 && da) {
-      allResults[didx].conviction = da.conviction || null;
-      allResults[didx].targetPrice = da.targetPrice || null;
-      allResults[didx].stopLoss = da.stopLoss || null;
-      renderResults();
-    }
+    // Deep Dive shows in modal only — does NOT update card values
     document.getElementById("modal-content").innerHTML = `
       <div class="modal-header">
         <div><div class="modal-title">${ticker}</div><div class="modal-sub">DEEP DIVE · CLAUDE AI</div></div>
