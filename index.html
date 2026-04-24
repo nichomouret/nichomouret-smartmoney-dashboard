@@ -687,10 +687,12 @@ async function runScan() {
             // ONLY real filings from EDGAR + AMF — NO Claude estimates
 const realMoves = (data.realFilings || []);
 // Never use Claude-generated institutional data — it hallucinate sources and fund names
-const mergedMoves = [...realMoves];
-if (realMoves.length > 0) {
-  console.log(`[${s.ticker}] Real filings: ${realMoves.length}`);
-}
+// Real data first, then Claude estimates (clearly marked as unverified)
+const claudeMoves = (s.institutionalMoves || []).map(m => ({...m, verified: false})).filter(m =>
+  !realMoves.some(r => r.fund && m.fund && r.fund.toLowerCase().includes(m.fund.toLowerCase().slice(0,6)))
+);
+const mergedMoves = [...realMoves, ...claudeMoves];
+console.log(`[${s.ticker}] Merged: ${realMoves.length} réels + ${claudeMoves.length} estimés`);
 const base = { ...s, realPrice: data.realPrice, priceChange: data.priceChange || 0, drawdown52w: data.drawdown52w, dataSource: data.hasRealData ? "twelvedata" : "estimated", news: data.newsItems || [], edgarFilings: data.edgarFilings || [], shortInterestReal: data.shortInterestReal, daysTocover: data.daysTocover, borrowRate: data.borrowRate, ortexScore: data.ortexScore, institutionalMoves: mergedMoves, conviction: s.conviction || null, targetPrice: s.targetPrice || null, stopLoss: s.stopLoss || null, squeezeScore: s.squeezeScore || null, squeezeProbability: s.squeezeProbability || null, shortInterest: s.shortInterest || null, shortSource: s.shortSource || null, putCallRatio: data.putCallRatio, callOI: data.callOI, totalOI: data.totalOI, impliedVolatility: data.impliedVolatility, gammaScore: data.gammaScore };
             base.scct = calculateSCCT(base);
             return base;
