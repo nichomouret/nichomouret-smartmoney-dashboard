@@ -684,26 +684,12 @@ async function runScan() {
             // ONLY real filings from EDGAR + AMF — NO Claude estimates
 const realMoves = (data.realFilings || []);
 // Never use Claude-generated institutional data — it hallucinate sources and fund names
-// Real data first, then Claude estimates (clearly marked as unverified)
-const claudeMoves = (s.institutionalMoves || [])
-  .map(m => {
-    // Normalize field names — Claude sometimes uses different keys
-    const fund = m.fund || m.name || m.fonds || m.fundName || m.institution || "";
-    const pct = m.pct || m.percentage || m.stake || m.participation || m.percent || "";
-    const prevPct = m.prevPct || m.previousPct || m.prev || m.previousStake || "—";
-    const direction = m.direction || m.change || m.movement || "HOLDER";
-    const date = m.date || m.declarationDate || m.period || m.quarter || "—";
-    const source = m.source || "Estimé";
-    const amount = m.amount || m.value || m.marketValue || "—";
-    return { fund, pct, prevPct, direction, date, source, amount, verified: false };
-  })
-  .filter(m => 
-    m.fund && m.fund !== "undefined" && m.fund.length > 1 &&
-    m.pct && m.pct !== "undefined" && m.pct.length > 0 &&
-    !realMoves.some(r => r.fund && m.fund && r.fund.toLowerCase().includes(m.fund.toLowerCase().slice(0,6)))
-  );
-const mergedMoves = [...realMoves, ...claudeMoves];
-console.log(`[${s.ticker}] Merged: ${realMoves.length} réels + ${claudeMoves.length} estimés`);
+// ONLY real data from EDGAR/AMF — Claude estimates completely removed
+// Claude invents fund names without any real source
+const mergedMoves = [...realMoves];
+if (realMoves.length > 0) {
+  console.log(`[${s.ticker}] Real filings: ${realMoves.length} verified`);
+}
 const base = { ...s, realPrice: data.realPrice, priceChange: data.priceChange || 0, drawdown52w: data.drawdown52w, dataSource: data.hasRealData ? "twelvedata" : "estimated", news: data.newsItems || [], edgarFilings: data.edgarFilings || [], shortInterestReal: data.shortInterestReal, daysTocover: data.daysTocover, borrowRate: data.borrowRate, ortexScore: data.ortexScore, institutionalMoves: mergedMoves, conviction: s.conviction || null, targetPrice: s.targetPrice || null, stopLoss: s.stopLoss || null, squeezeScore: s.squeezeScore || null, squeezeProbability: s.squeezeProbability || null, shortInterest: s.shortInterest || null, shortSource: s.shortSource || null, putCallRatio: data.putCallRatio, callOI: data.callOI, totalOI: data.totalOI, impliedVolatility: data.impliedVolatility, gammaScore: data.gammaScore };
             base.scct = calculateSCCT(base);
             return base;
@@ -762,13 +748,30 @@ function renderResults() {
 function getScore(r) { return Object.values(r.criteria || {}).filter(Boolean).length; }
 
 function renderTopFunds(moves, r) {
-  if (!moves || moves.length === 0) return "";
+  // Only show verified real funds — no Claude estimates
+  const realMoves = (moves || []).filter(m => m.verified === true);
+  if (realMoves.length === 0) {
+    // Show only conviction/target/stop if available, no fake funds
+    const extras = [];
+    if (r && r.conviction) extras.push(`<div style="display:flex;align-items:center;gap:3px;padding:3px 8px;border-radius:6px;background:#eccc6822;border:1px solid #eccc6844"><span style="color:#484f58;font-size:8px">💎</span><span style="color:#eccc68;font-weight:700;font-size:11px;font-family:monospace">${r.conviction}/10</span></div>`);
+    if (r && r.targetPrice) extras.push(`<div style="display:flex;align-items:center;gap:3px;padding:3px 8px;border-radius:6px;background:#2ed57322;border:1px solid #2ed57344"><span style="color:#484f58;font-size:8px">🎯</span><span style="color:#2ed573;font-weight:700;font-size:11px;font-family:monospace">${r.targetPrice}</span></div>`);
+    if (r && r.stopLoss) extras.push(`<div style="display:flex;align-items:center;gap:3px;padding:3px 8px;border-radius:6px;background:#ff475722;border:1px solid #ff475744"><span style="color:#484f58;font-size:8px">🛑</span><span style="color:#ff4757;font-weight:700;font-size:11px;font-family:monospace">${r.stopLoss}</span></div>`);
+    const vadVal = r && (r.shortInterestReal || r.shortInterest);
+    if (vadVal) {
+      const vadColor = r.shortInterestReal ? "#ff4757" : "#ff6b3d";
+      const vadBg = r.shortInterestReal ? "#ff475722" : "#ff6b3d15";
+      const vadBorder = r.shortInterestReal ? "#ff475744" : "#ff6b3d33";
+      const vadLabel = r.shortInterestReal ? "VAD ✓" : "VAD est.";
+      extras.unshift(`<div style="display:flex;align-items:center;gap:3px;padding:3px 8px;border-radius:6px;background:${vadBg};border:1px solid ${vadBorder}"><span style="color:#484f58;font-size:8px">📉</span><span style="color:${vadColor};font-weight:700;font-size:11px;font-family:monospace">${vadVal}</span><span style="color:#484f58;font-size:7px"> ${vadLabel}</span></div>`);
+    }
+    if (extras.length === 0) return "";
+    return `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;padding:8px 12px;background:#0d1117;border-radius:8px;border:1px solid #21262d;align-items:center"><span style="color:#484f58;font-size:9px;font-family:monospace;white-space:nowrap">📊 MÉTRIQUES :</span><div style="display:flex;gap:6px">${extras.join("")}</div></div>`;
+  }
+  // Build items from real moves only
   const items = moves.slice(0, 3).map(m => {
-    // Show all funds — green if verified from EDGAR/AMF, gray if estimated
-    const isReal = m.verified === true && ((m.source||"").includes("13") || (m.source||"").includes("AMF"));
-    const col = isReal ? "#2ed573" : "#8b949e";
+    const col = "#2ed573"; // all verified = green
     const dir = m.direction === "NEW" ? "🆕" : (m.direction || "");
-    return `<div style="display:flex;align-items:center;gap:3px;background:#21262d;padding:3px 8px;border-radius:6px"><span style="color:#e6edf3;font-size:10px;font-weight:700;font-family:monospace">${m.fund}</span><span style="color:${col};font-size:10px;font-family:monospace"> ${m.pct}</span><span style="color:#484f58;font-size:8px"> ${dir}</span></div>`;
+    return `<div style="display:flex;align-items:center;gap:3px;background:#21262d;padding:3px 8px;border-radius:6px;border:1px solid #2ed57333"><span style="color:#e6edf3;font-size:10px;font-weight:700;font-family:monospace">${m.fund}</span><span style="color:${col};font-size:10px;font-family:monospace"> ${m.pct}</span><span style="color:#484f58;font-size:8px"> ${dir}</span></div>`;
   }).join("");
   // Add conviction/target/stop if available (from Reco or Deep Dive)
   const extras = [];
