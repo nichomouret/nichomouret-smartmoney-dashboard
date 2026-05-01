@@ -283,7 +283,7 @@ const CRITERIA = [
 // ── State ─────────────────────────────────────────────────
 let selectedUniverses = ["sp100", "nasdaq100", "russell_midcap"];
 let selectedCriteria = ["short_interest", "institutional", "price_drop"];
-let minScore = 2;
+let minScore = 1;
 let tripleLockOnly = false;
 let scanning = false;
 let stopRequested = false;
@@ -568,7 +568,8 @@ async function analyzeBatch(batch, universe, customTicker = null) {
   const criteriaLabels = selectedCriteria.map(id => CRITERIA.find(c => c.id === id)?.label).join(", ");
   const context = batch.map(({ ticker, data }) => {
     const dd = data.drawdown52w ? `drawdown=${data.drawdown52w}[RÉEL]` : "drawdown=inconnu[ESTIMÉ]";
-    return `${ticker}: prix=${data.realPrice || "N/A"} ${dd} change=${data.priceChange}%`;
+    const vad = data.shortInterestReal ? `VAD=${data.shortInterestReal}[ORTEX]` : "VAD=inconnu";
+    return `${ticker}: prix=${data.realPrice || "N/A"} ${dd} change=${data.priceChange}% ${vad}`;
   }).join("\n");
 
   const universeLabel = customTicker ? `Ticker spécifique (${customTicker})` : (UNIVERSES[universe]?.label || universe);
@@ -579,9 +580,9 @@ TITRES: ${context}
 Score min: ${minScore}/7. Retourne UNIQUEMENT les titres qualifiés.
 CRITÈRES: price_drop(chute>20%), short_interest(VAD>10%), institutional(5%+), threshold(AMF/SEC), catalysts(6mois), biotech(readout), special(SPAC/restructuration), gamma(P/C<0.5+OI_calls_élevé)
 JSON strict sans backticks — TOUS ces champs obligatoires:
-{"results":[{"ticker":"X","name":"Nom complet","market":"NASDAQ","universe":"${universe}","summary":"2 phrases max.","criteria":{"short_interest":true,"institutional":true,"threshold":false,"price_drop":true,"catalysts":true,"biotech":false,"special":false,"gamma":false},"shortInterest":"18%","shortSource":"Estimé","institutionalMoves":[{"fund":"BlackRock","pct":"7.2%","prevPct":"6.1%","direction":"↑","date":"Q4 2025","source":"Estimé","amount":"~$2.1B"},{"fund":"Vanguard","pct":"5.8%","prevPct":"5.8%","direction":"HOLDER","date":"Q4 2025","source":"Estimé","amount":"~$1.7B"}],"conviction":8,"targetPrice":"65$","stopLoss":"36$","squeezeScore":7,"squeezeProbability":"42%"}]}
+{"results":[{"ticker":"X","name":"Nom complet","market":"NASDAQ","universe":"${universe}","summary":"2 phrases max.","criteria":{"short_interest":true,"institutional":true,"threshold":false,"price_drop":true,"catalysts":true,"biotech":false,"special":false,"gamma":false},"shortInterest":"18%","shortSource":"Estimé","institutionalMoves":[],"conviction":8,"targetPrice":"65€","stopLoss":"36€","squeezeScore":7,"squeezeProbability":"42%"}]}
 
-IMPORTANT: institutionalMoves doit contenir 2-3 fonds RÉELS connus pour ce titre. Chaque fonds doit avoir: fund(string), pct(string%), prevPct(string%), direction(↑|↓|HOLDER|NEW), date(string), source("Estimé"), amount(string~). JAMAIS de valeurs undefined ou null.`;
+IMPORTANT: Pour les tickers européens (.PA), les VAD sont généralement faibles (1-10%). Utilise les données VAD fournies si disponibles. Retourne les titres qui ont au moins 1 critère valide. institutionalMoves peut être vide []. JAMAIS de valeurs undefined ou null.`;
 
   try {
     const text = await callClaude("Analyste Smart Money. JSON uniquement sans backticks.", prompt, 2000);
