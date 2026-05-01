@@ -501,12 +501,9 @@ async function fetchTickerData(ticker) {
     isFrench ? proxyFetch(`/amf/franchissements?ticker=${encodeURIComponent(ticker)}`) : Promise.resolve(null),
   ]);
 
-  // Ortex calls sequentially with delay to avoid 429
-  // French tickers hit rate limit faster — use longer delay
-  const ortexDelay = isEuropean ? 600 : 300;
-  const ortex = await proxyFetch(`/ortex/shortinterest?ticker=${encodeURIComponent(ticker)}`);
-  await new Promise(r => setTimeout(r, ortexDelay));
-  const optionsData = isEuropean ? null : await proxyFetch(`/ortex/options?ticker=${encodeURIComponent(ticker)}`);
+  // Ortex fetched in series at batch level — not here
+  const ortex = null;
+  const optionsData = null;
   let realPrice = null, drawdown52w = null, priceChange = 0, hasRealData = false;
 
   // Ortex short interest réel — format: { shortInterestPct, shortInterestShares, date }
@@ -645,12 +642,27 @@ async function runScan() {
 
     setProgress(scanned, total, signalCount, `📡 Batch ${b+1}/${batches.length} — Récupération TwelveData...`);
 
+    // Fetch TwelveData + EDGAR + AMF in parallel for all tickers
     const batchWithData = await Promise.all(
       batch.map(async ({ ticker, universe }) => ({
         ticker, universe, data: await fetchTickerData(ticker)
       }))
     );
     scanned += batch.length;
+
+    // Fetch Ortex in SERIES to avoid 429 — one ticker at a time with delay
+    for (const item of batchWithData) {
+      if (stopRequested) break;
+      const ticker = item.ticker;
+      const isEU = ticker.includes(".PA") || ticker.includes(".BE");
+      try {
+        const ortexData = await proxyFetch(`/ortex/shortinterest?ticker=${encodeURIComponent(ticker)}`);
+        if (ortexData && !ortexData.error && ortexData.shortInterestPct != null) {
+          item.data.shortInterestReal = parseFloat(ortexData.shortInterestPct).toFixed(1) + "%";
+        }
+      } catch(e) { /* silent */ }
+      await new Promise(r => setTimeout(r, isEU ? 400 : 250));
+    }
 
     // Filtre drawdown — garde les vrais crashs ET les titres sans données TD
     const qualified = batchWithData.filter(({ data }) => {
