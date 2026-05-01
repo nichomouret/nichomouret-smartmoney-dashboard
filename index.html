@@ -229,7 +229,7 @@
 <script>
 const PROXY = "https://nichomouret-smartmoney-proxy-production.up.railway.app";
 const BATCH_SIZE = 15;
-const BATCH_DELAY = 3000;
+const BATCH_DELAY = 4000;
 
 const SBF120 = ["AI.PA","ACA.PA","ADP.PA","AF.PA","AIR.PA","ALO.PA","ATO.PA","CS.PA","BNP.PA","EN.PA","BOL.PA","CAP.PA","CA.PA","AXA.PA","CNP.PA","SU.PA","DG.PA","DBV.PA","DSY.PA","EDEN.PA","EL.PA","ERF.PA","ENGI.PA","FGR.PA","FP.PA","GET.PA","GTT.PA","HO.PA","IPN.PA","KER.PA","OR.PA","MC.PA","ML.PA","NANO.PA","ORA.PA","RI.PA","PUB.PA","RNO.PA","RMS.PA","SAF.PA","SGO.PA","SAN.PA","SEB.PA","SEV.PA","SOLB.PA","SPIE.PA","STM.PA","SW.PA","TEP.PA","TFI.PA","TTE.PA","UBI.PA","UG.PA","VIE.PA","VIV.PA","VK.PA","VU.PA","WLN.PA","FR.PA","SOI.PA","LHN.PA","BVI.PA","GFC.PA","FDR.PA","FNAC.PA","ERT.PA","AKE.PA","ARGAN.PA","ALPE.PA","MCPHY.PA","LACR.PA","LAUR.PA","LDLC.PA","LISI.PA","LNC.PA","MAAT.PA","MBWS.PA","MDM.PA","METEX.PA","MFGP.PA","MT","BB.PA","CO.PA","MMB.PA","NEX.PA","SCP.PA","STF.PA","LI.PA","MRM.PA"];
 const SP100 = ["AAPL","MSFT","AMZN","NVDA","GOOGL","META","TSLA","UNH","XOM","JPM","JNJ","V","PG","MA","HD","CVX","MRK","ABBV","PEP","KO","AVGO","LLY","COST","WMT","BAC","MCD","ABT","TMO","CSCO","ACN","NKE","DHR","VZ","ADBE","TXN","NEE","PM","UPS","RTX","QCOM","HON","AMGN","LOW","INTC","AMD","INTU","IBM","SBUX","GS","CAT","BA","BLK","AXP","SPGI","DE","ELV","MDLZ","GILD","MMC","ADI","REGN","VRTX","CI","ZTS","MO","SYK","PLD","COP","EOG","BDX","ISRG","TJX","EW","HCA","AON","ICE","NSC","MRNA","F","GM","PARA","WBA","T","VFC","OXY","HAL","DVN","MPC","VLO","PSX","KMI","WMB","SLB","BKR","CTRA","APA","IONQ","OKLO","SMCI","NBTX"];
@@ -501,9 +501,11 @@ async function fetchTickerData(ticker) {
     isFrench ? proxyFetch(`/amf/franchissements?ticker=${encodeURIComponent(ticker)}`) : Promise.resolve(null),
   ]);
 
-  // Ortex calls sequentially with small delay to avoid 429
+  // Ortex calls sequentially with delay to avoid 429
+  // French tickers hit rate limit faster — use longer delay
+  const ortexDelay = isEuropean ? 600 : 300;
   const ortex = await proxyFetch(`/ortex/shortinterest?ticker=${encodeURIComponent(ticker)}`);
-  await new Promise(r => setTimeout(r, 200));
+  await new Promise(r => setTimeout(r, ortexDelay));
   const optionsData = isEuropean ? null : await proxyFetch(`/ortex/options?ticker=${encodeURIComponent(ticker)}`);
   let realPrice = null, drawdown52w = null, priceChange = 0, hasRealData = false;
 
