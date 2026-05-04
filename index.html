@@ -292,7 +292,7 @@ let allResults = [];
 // ── Init UI ───────────────────────────────────────────────
 function init() {
   // Sources
-  const sources = [["TwelveData","#58a6ff","live"],["NewsAPI","#58a6ff","live"],["EDGAR SEC","#2ed573","gratuit"],["AMF/ESMA","#2ed573","gratuit"],["Ortex","#ff4757","live"]];
+  const sources = [["TwelveData","#58a6ff","live"],["NewsAPI","#58a6ff","live"],["EDGAR SEC","#2ed573","gratuit"],["AMF/ESMA","#2ed573","gratuit"],["Ortex","#ff4757","live"],["Pelosi STOCK Act","#a855f7","live"]];
   document.getElementById("sources").innerHTML = sources.map(([n,c,s]) =>
     `<span class="source-badge" style="background:${c}15;border:1px solid ${c}44;color:${c};">${n} <span style="opacity:0.6">· ${s}</span></span>`
   ).join("");
@@ -425,51 +425,82 @@ function parseJSON(text) {
 // ── Score de Conviction Court Terme (SCCT) /100 ──────────
 function calculateSCCT(result) {
   let score = 0;
-  
-  // 1. Drawdown réel (25pts)
+  const moves = result.institutionalMoves || [];
+
+  // 1. DRAWDOWN 52W RÉEL (20 pts)
   if (result.drawdown52w) {
     const dd = Math.abs(parseFloat(result.drawdown52w));
-    if (dd >= 60) score += 25;
-    else if (dd >= 40) score += 20;
-    else if (dd >= 30) score += 15;
-    else if (dd >= 20) score += 8;
+    if (dd >= 60) score += 20;
+    else if (dd >= 40) score += 16;
+    else if (dd >= 30) score += 12;
+    else if (dd >= 20) score += 6;
   }
-  
-  // 2. Pression short / VAD (25pts) — Ortex réel prioritaire
+
+  // 2. VAD / SHORT INTEREST (20 pts) — Ortex prioritaire
   const siValue = parseFloat(result.shortInterestReal || result.shortInterest) || 0;
   if (result.shortInterestReal) {
-    // Donnée Ortex réelle
-    if (siValue >= 20) score += 25;
-    else if (siValue >= 15) score += 20;
-    else if (siValue >= 10) score += 14;
-    else if (siValue > 0) score += 8;
+    if (siValue >= 20) score += 20;
+    else if (siValue >= 15) score += 16;
+    else if (siValue >= 10) score += 10;
+    else if (siValue > 0) score += 5;
   } else if (result.criteria?.short_interest) {
-    score += 10; // estimé Claude
+    score += 6;
   }
-  
-  // 3. Catalyseur daté (20pts)
-  if (result.criteria?.catalysts || result.criteria?.biotech) {
-    score += 20; // catalyseur connu = score max
-  }
-  
-  // 3b. Gamma squeeze signal bonus (5pts)
+
+  // 3. FRANCHISSEMENT DE SEUIL (20 pts) — Signal légal fort
+  const hasRealThreshold = moves.some(m =>
+    m.verified === true && (
+      (m.source||"").includes("13G") ||
+      (m.source||"").includes("13D") ||
+      (m.source||"").includes("AMF") ||
+      (m.source||"").includes("ESMA") ||
+      (m.source||"").includes("STOCK Act")
+    )
+  );
+  if (hasRealThreshold) score += 20;
+  else if (result.criteria?.threshold) score += 8;
+
+  // 4. SIGNAL INSTITUTIONNEL COMBINÉ (25 pts)
+  const tier1 = ["BlackRock","Vanguard","Fidelity","State Street","JPMorgan","Morgan Stanley",
+    "Goldman Sachs","Norges","Temasek","GIC","Tiger Global","Millennium","Citadel",
+    "Point72","Renaissance","Two Sigma","DE Shaw","Bridgewater","Baupost","Coatue",
+    "Baillie Gifford","ARK","Schroders","Amundi","Carmignac"];
+  const activists = ["Elliott","Starboard","Icahn","Pershing Square","ValueAct",
+    "Third Point","Jana","Legion Partners","Engine Capital","Trian"];
+
+  const tier1Moves = moves.filter(m => m.verified && tier1.some(f => (m.fund||"").includes(f)));
+  const activistMoves = moves.filter(m => m.verified && activists.some(f => (m.fund||"").includes(f)));
+  const pelosiMoves = moves.filter(m => m.isPelosi || (m.fund||"").includes("Pelosi"));
+
+  if (tier1Moves.length >= 2) score += 25;
+  else if (tier1Moves.length >= 1 && activistMoves.length >= 1) score += 23;
+  else if (tier1Moves.length >= 1 && pelosiMoves.length >= 1) score += 22;
+  else if (tier1Moves.length >= 1) score += 18;
+  else if (activistMoves.length >= 1) score += 15;
+  else if (result.criteria?.institutional) score += 5;
+
+  // 5. CATALYSEUR DATÉ (10 pts)
+  if (result.criteria?.catalysts || result.criteria?.biotech) score += 10;
+
+  // 6. MOMENTUM (5 pts)
+  const totalCriteria = Object.values(result.criteria || {}).filter(Boolean).length;
+  if (totalCriteria >= 5) score += 5;
+  else if (totalCriteria >= 3) score += 3;
+  else if (totalCriteria >= 2) score += 1;
+
+  // BONUS GAMMA SQUEEZE (+5 pts)
   if (result.criteria?.gamma || result.gammaScore === "FORT") score += 5;
   else if (result.gammaScore === "MODÉRÉ") score += 2;
 
-  // 4. Signal institutionnel (20pts) — bonus si fonds tier 1 identifié
-  const tier1Funds = ["BlackRock","Vanguard","Fidelity","ARK","Baillie Gifford","Millennium","Citadel","Point72","Renaissance","Norges"];
-  const hasTier1 = (result.institutionalMoves||[]).some(m => tier1Funds.some(f => m.fund?.includes(f)));
-  if (hasTier1) score += 20;
-  else if (result.criteria?.institutional || result.criteria?.threshold) score += 12;
-  
-  // 5. Momentum — nombre de critères cochés (10pts)
-  const totalCriteria = Object.values(result.criteria || {}).filter(Boolean).length;
-  if (totalCriteria >= 5) score += 10;
-  else if (totalCriteria >= 3) score += 7;
-  else if (totalCriteria >= 2) score += 4;
-  
+  // BONUS PELOSI ACHAT (+8 pts)
+  if (pelosiMoves.some(m => m.direction === "NEW" || m.direction === "↑")) score += 8;
+
+  // BONUS ACTIVISTE 13D (+7 pts)
+  if (moves.some(m => m.verified && (m.source||"").includes("13D"))) score += 7;
+
   return Math.min(score, 100);
 }
+
 
 function getSCCTLabel(scct) {
   if (scct >= 75) return { label: "EXPLOSIF", color: "#ff4757", bg: "#ff475722", border: "#ff475755" };
@@ -492,13 +523,14 @@ async function fetchTickerData(ticker) {
   const cleanSymbol = ticker.replace(/\.[A-Z]+$/,'');
 
   // Fetch non-Ortex data in parallel
-  const [quote, ts, news, filings13g, filings13f, amfData] = await Promise.all([
+  const [quote, ts, news, filings13g, filings13f, amfData, pelositrades] = await Promise.all([
     proxyFetch(`/twelvedata/price?symbol=${encodeURIComponent(isEuropean ? ticker : cleanSymbol)}${exchParam}`),
     proxyFetch(`/twelvedata/timeseries?symbol=${encodeURIComponent(isEuropean ? ticker : cleanSymbol)}&interval=1day&outputsize=252${exchParam}`),
     proxyFetch(`/news?query=${encodeURIComponent(ticker + " institutional shareholder")}`),
     (!isEuropean && !isFrench) ? proxyFetch(`/edgar/filings13g?ticker=${encodeURIComponent(ticker.replace(/\.PA$|\.BE$/,''))}`) : Promise.resolve({filings:[]}),
     (!isEuropean && !isFrench) ? proxyFetch(`/edgar/institutional13f?ticker=${encodeURIComponent(ticker)}`) : Promise.resolve(null),
     isFrench ? proxyFetch(`/amf/franchissements?ticker=${encodeURIComponent(ticker)}`) : Promise.resolve(null),
+    (!isFrench) ? proxyFetch(`/pelosi/trades?ticker=${encodeURIComponent(cleanSymbol)}`) : Promise.resolve(null),
   ]);
 
   // Ortex fetched in series at batch level — not here
@@ -544,7 +576,21 @@ async function fetchTickerData(ticker) {
     fund: f.filer, pct: f.pct || "≥5%", prevPct: "—", direction: "NEW",
     date: f.date, source: "AMF", amount: "—", verified: true
   }));
-  const realFilings = [...realAMF, ...real13g, ...real13f];
+  // Pelosi STOCK Act trades
+  const pelosiTrades = (pelositrades?.trades || []).slice(0, 3).map(t => ({
+    fund: "🏛️ Nancy Pelosi",
+    pct: t.amount || "—",
+    prevPct: "—",
+    direction: t.type === "purchase" ? "NEW" : "↓",
+    date: t.date || "—",
+    source: "STOCK Act",
+    amount: t.amount || "—",
+    verified: true,
+    isPelosi: true,
+    description: t.description || "—",
+  }));
+
+  const realFilings = [...realAMF, ...real13g, ...real13f, ...pelosiTrades];
   console.log(`[${ticker}] Real filings: AMF=${realAMF.length} 13G=${real13g.length} 13F=${real13f.length}`);
   // Options data — Gamma Squeeze signals
   let putCallRatio = null, callOI = null, totalOI = null, impliedVolatility = null, gammaScore = null;
@@ -903,9 +949,10 @@ function renderCard(r) {
             const isVerified = m.verified === true;
             const isReal = isVerified && (src.includes("13D") || src.includes("13G") || src.includes("AMF"));
             const isSemiReal = isVerified && src.includes("13F");
-            const srcColor = isReal ? "#ff4757" : isSemiReal ? "#ffa502" : "#484f58";
-            const srcBg = isReal ? "#ff475722" : isSemiReal ? "#ffa50222" : "#21262d";
-            const srcLabel = isReal ? src + " ✓" : isSemiReal ? src + " ✓" : "Estimé ⚠️";
+            const isPelosiRow = m.isPelosi || (m.fund||"").includes("Pelosi");
+            const srcColor = isPelosiRow ? "#a855f7" : isReal ? "#ff4757" : isSemiReal ? "#ffa502" : "#484f58";
+            const srcBg = isPelosiRow ? "#a855f722" : isReal ? "#ff475722" : isSemiReal ? "#ffa50222" : "#21262d";
+            const srcLabel = isPelosiRow ? "STOCK Act ✓" : isReal ? src + " ✓" : isSemiReal ? src + " ✓" : "Estimé ⚠️";
             const daysAgo = m.date ? Math.floor((new Date() - new Date(m.date.replace(/[^0-9-]/g, '') || "")) / 86400000) : 999;
             const recenceColor = daysAgo < 30 ? "#ff4757" : daysAgo < 90 ? "#ffa502" : daysAgo < 180 ? "#eccc68" : "#8b949e";
             // Calcul variation de participation
