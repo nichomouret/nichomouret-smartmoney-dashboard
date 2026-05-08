@@ -208,7 +208,7 @@
 
   <div class="footer">
     SMART MONEY SCANNER · MARK ELIAS · CLAUDE AI<br>
-    Sources: TwelveData · NewsAPI · EDGAR SEC · AMF/ESMA<br>
+    Sources: TwelveData · NewsAPI · EDGAR SEC · AMF BDIF · ESMA<br>
     Outil éducatif — Ne constitue pas un conseil en investissement
   </div>
 </div>
@@ -292,7 +292,7 @@ let allResults = [];
 // ── Init UI ───────────────────────────────────────────────
 function init() {
   // Sources
-  const sources = [["TwelveData","#58a6ff","live"],["NewsAPI","#58a6ff","live"],["EDGAR SEC","#2ed573","gratuit"],["AMF/ESMA","#2ed573","gratuit"],["Ortex","#ff4757","live"],["Pelosi STOCK Act","#a855f7","live"]];
+  const sources = [["TwelveData","#58a6ff","live"],["NewsAPI","#58a6ff","live"],["EDGAR SEC","#2ed573","gratuit"],["AMF BDIF","#2ed573","live"],["ESMA","#2ed573","gratuit"],["Ortex","#ff4757","live"],["Pelosi STOCK Act","#a855f7","live"]];
   document.getElementById("sources").innerHTML = sources.map(([n,c,s]) =>
     `<span class="source-badge" style="background:${c}15;border:1px solid ${c}44;color:${c};">${n} <span style="opacity:0.6">· ${s}</span></span>`
   ).join("");
@@ -464,12 +464,13 @@ function calculateSCCT(result) {
   const tier1 = ["BlackRock","Vanguard","Fidelity","State Street","JPMorgan","Morgan Stanley",
     "Goldman Sachs","Norges","Temasek","GIC","Tiger Global","Millennium","Citadel",
     "Point72","Renaissance","Two Sigma","DE Shaw","Bridgewater","Baupost","Coatue",
-    "Baillie Gifford","ARK","Schroders","Amundi","Carmignac"];
+    "Baillie Gifford","ARK","Schroders","Amundi","Carmignac",
+    "BARCLAYS","CITIGROUP","BANK_OF_AMERICA","JPMORGAN","MORGAN_STANLEY","GOLDMAN_SACHS","BLACKROCK","VANGUARD"];
   const activists = ["Elliott","Starboard","Icahn","Pershing Square","ValueAct",
     "Third Point","Jana","Legion Partners","Engine Capital","Trian"];
 
-  const tier1Moves = moves.filter(m => m.verified && tier1.some(f => (m.fund||"").includes(f)));
-  const activistMoves = moves.filter(m => m.verified && activists.some(f => (m.fund||"").includes(f)));
+  const tier1Moves = moves.filter(m => m.verified && (m.isTier1 || tier1.some(f => (m.fund||"").toUpperCase().includes(f.toUpperCase()))));
+  const activistMoves = moves.filter(m => m.verified && (m.isActivist || activists.some(f => (m.fund||"").includes(f))));
   const pelosiMoves = moves.filter(m => m.isPelosi || (m.fund||"").includes("Pelosi"));
 
   if (tier1Moves.length >= 2) score += 25;
@@ -507,6 +508,52 @@ function getSCCTLabel(scct) {
   if (scct >= 60) return { label: "FORT", color: "#ff6b3d", bg: "#ff6b3d22", border: "#ff6b3d55" };
   if (scct >= 45) return { label: "MODÉRÉ", color: "#ffa502", bg: "#ffa50222", border: "#ffa50255" };
   return { label: "À SURVEILLER", color: "#8b949e", bg: "#21262d", border: "#30363d" };
+}
+
+// ── AMF BDIF — Fetch real institutional crossings for .PA tickers ─────
+async function fetchAmfBdif(ticker) {
+  if (!ticker.includes(".PA") && !ticker.includes(".BE")) return [];
+  try {
+    const r = await fetch(`${PROXY}/amf-bdif/ticker/${encodeURIComponent(ticker)}?limit=12`);
+    if (!r.ok) return [];
+    const data = await r.json();
+    if (!data.ok || !data.crossings?.length) return [];
+
+    return data.crossings.map(c => {
+      // Use tier1 normalized name if available, otherwise raw declarant
+      const fundName = c.is_tier1_fund && c.tier1_match_name
+        ? c.tier1_match_name
+        : (c.declarant || "—");
+
+      // Direction: hausse = ↑, baisse = ↓
+      const dir = c.direction === "hausse" ? "↑" : (c.direction === "baisse" ? "↓" : "NEW");
+
+      // Format date as YYYY-MM-DD
+      const dateStr = c.crossing_date ? c.crossing_date.split("T")[0] : "—";
+
+      // Position post-franchissement
+      const pct = c.new_position_pct_capital
+        ? parseFloat(c.new_position_pct_capital).toFixed(2) + "%"
+        : (c.threshold_pct ? c.threshold_pct + "%" : "≥5%");
+
+      return {
+        fund: fundName,
+        pct: pct,
+        prevPct: "—",
+        direction: dir,
+        date: dateStr,
+        source: "AMF BDIF",
+        amount: c.cause ? c.cause.replace(/_/g, " ") : "—",
+        verified: true,
+        isTier1: c.is_tier1_fund,
+        isActivist: c.is_activist,
+        pdfUrl: c.pdf_url || null,
+      };
+    });
+  } catch(e) {
+    console.warn(`[AMF BDIF] ${ticker} fetch failed:`, e.message);
+    return [];
+  }
 }
 
 async function fetchTickerData(ticker) {
@@ -590,8 +637,10 @@ async function fetchTickerData(ticker) {
     description: t.description || "—",
   }));
 
-  const realFilings = [...realAMF, ...real13g, ...real13f, ...pelosiTrades];
-  console.log(`[${ticker}] Real filings: AMF=${realAMF.length} 13G=${real13g.length} 13F=${real13f.length}`);
+  // Fetch AMF BDIF crossings for .PA tickers (in addition to ESMA)
+  const amfBdif = await fetchAmfBdif(ticker);
+  const realFilings = [...amfBdif, ...realAMF, ...real13g, ...real13f, ...pelosiTrades];
+  console.log(`[${ticker}] Real filings: BDIF=${amfBdif.length} AMF=${realAMF.length} 13G=${real13g.length} 13F=${real13f.length}`);
   // Options data — Gamma Squeeze signals
   let putCallRatio = null, callOI = null, totalOI = null, impliedVolatility = null, gammaScore = null;
   if (optionsData && !optionsData.error) {
@@ -736,10 +785,10 @@ async function runScan() {
           const enriched = signals.map(s => {
             const found = items.find(i => i.ticker === s.ticker);
             const data = found?.data || {};
-            // ONLY real filings from EDGAR + AMF — NO Claude estimates
+            // ONLY real filings from EDGAR + AMF + AMF BDIF — NO Claude estimates
 const realMoves = (data.realFilings || []);
 // Never use Claude-generated institutional data — it hallucinate sources and fund names
-// ONLY real data from EDGAR/AMF — Claude estimates completely removed
+// ONLY real data from EDGAR/AMF/BDIF — Claude estimates completely removed
 // Claude invents fund names without any real source
 const mergedMoves = [...realMoves];
 if (realMoves.length > 0) {
@@ -940,19 +989,20 @@ function renderCard(r) {
             <td style="padding:4px 8px;text-align:center">Date décl.</td>
             <td style="padding:4px 8px;text-align:center">Source</td>
             <td style="padding:4px 8px;text-align:center">Perf depuis</td>
-            <td style="padding:4px 8px;text-align:right">Montant</td>
+            <td style="padding:4px 8px;text-align:right">Cause / Montant</td>
           </tr>
           ${(r.institutionalMoves||[]).map(m => {
             const src = m.source || "";
             // STRICT: only show real badge if data comes from actual EDGAR/AMF endpoint (m.verified === true)
             // Claude-estimated moves always get "Estimé ⚠️" regardless of source field content
             const isVerified = m.verified === true;
-            const isReal = isVerified && (src.includes("13D") || src.includes("13G") || src.includes("AMF"));
+            const isBdif = isVerified && src.includes("BDIF");
+            const isReal = isVerified && (src.includes("13D") || src.includes("13G") || src.includes("AMF") || isBdif);
             const isSemiReal = isVerified && src.includes("13F");
             const isPelosiRow = m.isPelosi || (m.fund||"").includes("Pelosi");
-            const srcColor = isPelosiRow ? "#a855f7" : isReal ? "#ff4757" : isSemiReal ? "#ffa502" : "#484f58";
-            const srcBg = isPelosiRow ? "#a855f722" : isReal ? "#ff475722" : isSemiReal ? "#ffa50222" : "#21262d";
-            const srcLabel = isPelosiRow ? "STOCK Act ✓" : isReal ? src + " ✓" : isSemiReal ? src + " ✓" : "Estimé ⚠️";
+            const srcColor = isPelosiRow ? "#a855f7" : isBdif ? "#2ed573" : isReal ? "#ff4757" : isSemiReal ? "#ffa502" : "#484f58";
+            const srcBg = isPelosiRow ? "#a855f722" : isBdif ? "#2ed57322" : isReal ? "#ff475722" : isSemiReal ? "#ffa50222" : "#21262d";
+            const srcLabel = isPelosiRow ? "STOCK Act ✓" : isBdif ? "AMF BDIF ✓" : isReal ? src + " ✓" : isSemiReal ? src + " ✓" : "Estimé ⚠️";
             const daysAgo = m.date ? Math.floor((new Date() - new Date(m.date.replace(/[^0-9-]/g, '') || "")) / 86400000) : 999;
             const recenceColor = daysAgo < 30 ? "#ff4757" : daysAgo < 90 ? "#ffa502" : daysAgo < 180 ? "#eccc68" : "#8b949e";
             // Calcul variation de participation
@@ -963,6 +1013,12 @@ function renderCard(r) {
             if (m.direction === "NEW") {
               varPct = "🆕 NEW";
               varColor = "#2ed573";
+            } else if (m.direction === "↑") {
+              varPct = "▲ HAUSSE";
+              varColor = "#2ed573";
+            } else if (m.direction === "↓") {
+              varPct = "▼ BAISSE";
+              varColor = "#ff4757";
             } else if (prevPctNum > 0 && curPctNum > 0) {
               const diff = (curPctNum - prevPctNum).toFixed(2);
               varPct = (diff > 0 ? "▲ +" : "▼ ") + diff + "%";
@@ -972,8 +1028,12 @@ function renderCard(r) {
               varColor = m.direction === "↑" ? "#2ed573" : "#ff4757";
               varPct = sign + m.prevPct.replace(/[^0-9.]/g,"") + "%";
             }
+            // Cause / Amount column — clickable PDF link if available
+            const amountCell = m.pdfUrl
+              ? `<a href="${m.pdfUrl}" target="_blank" rel="noopener" style="color:#58a6ff;text-decoration:none">${m.amount||'—'} 📄</a>`
+              : (m.amount||'—');
             return `<tr style="background:#21262d;border-bottom:1px solid #161b22">
-              <td style="padding:6px 8px;color:#e6edf3;font-weight:700">${m.fund}</td>
+              <td style="padding:6px 8px;color:#e6edf3;font-weight:700">${m.fund}${m.isTier1 ? ' <span style="color:#2ed573;font-size:8px">⭐</span>' : ''}${m.isActivist ? ' <span style="color:#ff4757;font-size:8px">⚡</span>' : ''}</td>
               <td style="padding:6px 8px;text-align:center;color:#58a6ff;font-weight:700">${m.pct}</td>
               <td style="padding:6px 8px;text-align:center;color:${m.verified ? varColor : '#484f58'};font-weight:700;font-size:12px">${varPct}</td>
               <td style="padding:6px 8px;text-align:center;color:${recenceColor};font-weight:700">${m.date}</td>
@@ -996,7 +1056,7 @@ function renderCard(r) {
                 } catch(e) { return '—'; }
               })()
             }</td>
-              <td style="padding:6px 8px;text-align:right;color:#8b949e">${m.amount||'—'}</td>
+              <td style="padding:6px 8px;text-align:right;color:#8b949e">${amountCell}</td>
             </tr>`;
           }).join("")}
         </table>
