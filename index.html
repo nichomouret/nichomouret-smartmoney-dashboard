@@ -16,8 +16,6 @@
   ::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
   @keyframes spin { to { transform: rotate(360deg); } }
   @keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
-
-  /* Header */
   .header { border-bottom: 1px solid #21262d; padding-bottom: 14px; margin-bottom: 20px; }
   .header-top { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
   .header-icon { width: 34px; height: 34px; border-radius: 8px; background: linear-gradient(135deg, #1f6feb, #388bfd); display: flex; align-items: center; justify-content: center; font-size: 17px; flex-shrink: 0; }
@@ -25,51 +23,39 @@
   .header-sub { font-size: 9px; color: #8b949e; letter-spacing: 2px; }
   .sources { display: flex; flex-wrap: wrap; gap: 5px; }
   .source-badge { font-size: 9px; padding: 2px 7px; border-radius: 4px; }
-
-  /* Sections */
   .section-label { font-size: 9px; color: #8b949e; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 8px; }
   .section { margin-bottom: 14px; }
-
-  /* Universe buttons */
   .universe-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 7px; }
   .universe-btn { padding: 10px 13px; border-radius: 8px; text-align: left; transition: all 0.15s; }
   .universe-btn .u-label { font-weight: 700; font-size: 11px; }
   .universe-btn .u-desc { font-size: 9px; opacity: 0.6; margin-top: 2px; }
-
-  /* Criteria */
   .criteria-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 7px; }
   .criteria-btn { padding: 8px 11px; border-radius: 8px; text-align: left; transition: all 0.15s; }
   .criteria-btn .c-label { font-weight: 700; font-size: 10px; margin-bottom: 2px; }
   .criteria-btn .c-desc { font-size: 9px; opacity: 0.7; }
-
-  /* Controls */
   .controls { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; }
   .score-btns { display: flex; gap: 4px; }
   .score-btn { width: 28px; height: 28px; border-radius: 6px; font-weight: 700; font-size: 11px; transition: all 0.15s; }
   .ticker-input { width: 100%; padding: 7px 11px; border-radius: 8px; background: #21262d; border: 1px solid #30363d; color: #e6edf3; font-size: 11px; }
-
-  /* Scan buttons */
   .scan-row { display: flex; gap: 8px; margin-bottom: 16px; }
   .scan-btn { flex: 1; padding: 13px; border-radius: 10px; font-weight: 700; font-size: 12px; letter-spacing: 2px; text-transform: uppercase; display: flex; align-items: center; justify-content: center; gap: 10px; transition: opacity 0.2s; }
   .stop-btn { padding: 13px 20px; background: #ff475722; border: 1px solid #ff475755 !important; border-radius: 10px; color: #ff4757; font-weight: 700; font-size: 12px; }
-
-  /* Progress */
   .progress-box { background: #0d1117; border: 1px solid #21262d; border-radius: 10px; padding: 14px 16px; margin-bottom: 16px; animation: fadeIn 0.2s ease; }
   .progress-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 11px; }
   .progress-bar-track { background: #21262d; border-radius: 4px; height: 6px; overflow: hidden; margin-bottom: 8px; }
   .progress-bar-fill { background: linear-gradient(90deg, #1f6feb, #00d2ff); height: 100%; border-radius: 4px; transition: width 0.5s ease; }
   .progress-footer { display: flex; justify-content: space-between; font-size: 9px; }
-
-  /* Result cards */
   .results-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 8px; }
   .results-list { display: flex; flex-direction: column; gap: 8px; }
   .card { border-radius: 12px; padding: 16px; animation: fadeIn 0.3s ease; }
   .triple-lock-badge { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; background: #00d2ff11; border: 1px solid #00d2ff33; border-radius: 6px; padding: 4px 10px; font-size: 10px; color: #00d2ff; font-weight: 700; letter-spacing: 1px; }
+  .warning-banner { background: linear-gradient(135deg, #ffa50222, #ff475722); border: 1px solid #ffa50266; border-radius: 8px; padding: 10px 14px; margin-bottom: 10px; font-size: 11px; color: #ffa502; line-height: 1.6; }
   .card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; gap: 10px; }
   .card-ticker { font-weight: 700; font-size: 17px; color: #e6edf3; letter-spacing: 1px; }
   .card-tags { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; margin-bottom: 3px; }
   .tag { font-size: 10px; padding: 2px 7px; border-radius: 4px; }
   .card-name { color: #8b949e; font-size: 11px; }
+  .card-name.real { color: #2ed573; font-weight: 700; }
   .card-right { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; flex-shrink: 0; }
   .score-badge { display: inline-flex; align-items: center; gap: 5px; border-radius: 6px; padding: 3px 8px; }
   .score-dots { display: flex; gap: 2px; }
@@ -91,12 +77,7 @@
   .news-date { color: #8b949e; font-size: 10px; white-space: nowrap; }
   .news-content { color: #8b949e; font-size: 11px; line-height: 1.5; }
   .news-source { color: #484f58; font-size: 9px; margin-top: 3px; }
-  .edgar-item { background: #21262d; border-radius: 8px; padding: 8px 10px; margin-bottom: 5px; border-left: 3px solid #ffa50255; }
-
-  /* Spinner */
   .spinner { border-radius: 50%; border: 2px solid #ffffff22; border-top-color: #58a6ff; animation: spin 0.7s linear infinite; flex-shrink: 0; }
-
-  /* Modal */
   .modal-overlay { position: fixed; inset: 0; background: #010409f2; display: flex; align-items: center; justify-content: center; z-index: 200; padding: 16px; }
   .modal-box { background: #0d1117; border: 1px solid #30363d; border-radius: 16px; padding: 22px; max-width: 680px; width: 100%; max-height: 88vh; overflow-y: auto; animation: fadeIn 0.2s ease; }
   .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; }
@@ -112,26 +93,16 @@
   .info-box { border-radius: 8px; padding: 12px; margin-bottom: 14px; }
   .info-label { font-size: 9px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 6px; }
   .info-text { font-size: 12px; line-height: 1.7; color: #c9d1d9; }
-  .trame-box { background: #21262d; border-radius: 8px; padding: 12px; }
-  .trame-pre { color: #c9d1d9; font-size: 11px; line-height: 1.7; white-space: pre-wrap; font-family: 'Courier New', monospace; }
   .legal { background: #21262d; border-radius: 8px; padding: 8px 12px; font-size: 10px; color: #484f58; line-height: 1.5; }
-
-  /* Error */
   .error-box { background: #ff475715; border: 1px solid #ff475755; border-radius: 8px; padding: 11px 14px; color: #ff4757; font-size: 11px; margin-bottom: 14px; }
-
-  /* Footer */
   .footer { margin-top: 24px; padding-top: 14px; border-top: 1px solid #21262d; text-align: center; font-size: 9px; color: #484f58; letter-spacing: 1px; line-height: 1.8; }
-
-  /* Loading overlay */
   .loading-overlay { position: fixed; inset: 0; background: #010409f2; display: flex; align-items: center; justify-content: center; z-index: 300; flex-direction: column; gap: 14px; }
   .loading-text { color: #8b949e; font-size: 12px; letter-spacing: 2px; }
+  .ticker-helper { font-size: 10px; color: #58a6ff; margin-top: 4px; cursor: help; }
 </style>
-
 </head>
 <body>
 <div class="container">
-
-  <!-- Header -->
   <div class="header">
     <div class="header-top">
       <div class="header-icon">🎯</div>
@@ -143,19 +114,16 @@
     <div class="sources" id="sources"></div>
   </div>
 
-  <!-- Univers -->
   <div class="section">
     <div class="section-label" id="universe-label">Univers de scan</div>
     <div class="universe-grid" id="universe-grid"></div>
   </div>
 
-  <!-- Critères -->
   <div class="section">
     <div class="section-label">Critères Mark Elias</div>
     <div class="criteria-grid" id="criteria-grid"></div>
   </div>
 
-  <!-- Controls -->
   <div class="section controls">
     <div style="flex:1;min-width:160px">
       <div class="section-label" id="score-label">Score minimum</div>
@@ -167,11 +135,11 @@
     </div>
     <div style="flex:2;min-width:160px">
       <div class="section-label">Ticker spécifique (optionnel)</div>
-      <input class="ticker-input" id="custom-ticker" placeholder="ex: TEP.PA, IONQ, SMCI..." />
+      <input class="ticker-input" id="custom-ticker" placeholder="ex: UBI.PA · IVA.PA · IONQ · NBTX (Yahoo Finance format)" />
+      <div class="ticker-helper" title="Pour les actions FR : XXX.PA (ex: UBI.PA, WLN.PA, IVA.PA). Pour les US : XXX (ex: AAPL, IONQ). Vérifiez sur finance.yahoo.com">💡 Format Yahoo Finance · FR=`.PA` · US=sans suffixe</div>
     </div>
   </div>
 
-  <!-- Scan buttons -->
   <div class="scan-row">
     <button class="scan-btn" id="scan-btn" style="background:linear-gradient(135deg,#1f6feb,#388bfd);color:#fff;border:none;">
       🔍 <span id="scan-btn-text">Scanner</span>
@@ -179,7 +147,6 @@
     <button class="stop-btn" id="stop-btn" style="display:none;" onclick="stopScan()">⏹️ Stop</button>
   </div>
 
-  <!-- Progress -->
   <div id="progress-box" style="display:none;" class="progress-box">
     <div class="progress-header">
       <div style="color:#58a6ff;font-size:11px;" id="progress-step">Démarrage...</div>
@@ -194,10 +161,8 @@
     </div>
   </div>
 
-  <!-- Error -->
   <div id="error-box" class="error-box" style="display:none;"></div>
 
-  <!-- Results -->
   <div id="results-section" style="display:none;">
     <div class="results-header">
       <div id="results-count" style="font-size:11px;font-weight:700;"></div>
@@ -213,14 +178,12 @@
   </div>
 </div>
 
-<!-- Modal -->
 <div id="modal" class="modal-overlay" style="display:none;" onclick="closeModal()">
   <div class="modal-box" onclick="event.stopPropagation()">
     <div id="modal-content"></div>
   </div>
 </div>
 
-<!-- Loading overlay -->
 <div id="loading-overlay" class="loading-overlay" style="display:none;">
   <div class="spinner" style="width:32px;height:32px;"></div>
   <div class="loading-text" id="loading-text">Génération en cours...</div>
@@ -234,29 +197,9 @@ const BATCH_DELAY = 4000;
 const SBF120 = ["AI.PA","ACA.PA","ADP.PA","AF.PA","AIR.PA","ALO.PA","ATO.PA","CS.PA","BNP.PA","EN.PA","BOL.PA","CAP.PA","CA.PA","AXA.PA","CNP.PA","SU.PA","DG.PA","DBV.PA","DSY.PA","EDEN.PA","EL.PA","ERF.PA","ENGI.PA","FGR.PA","FP.PA","GET.PA","GTT.PA","HO.PA","IPN.PA","KER.PA","OR.PA","MC.PA","ML.PA","NANO.PA","ORA.PA","RI.PA","PUB.PA","RNO.PA","RMS.PA","SAF.PA","SGO.PA","SAN.PA","SEB.PA","SEV.PA","SOLB.PA","SPIE.PA","STM.PA","SW.PA","TEP.PA","TFI.PA","TTE.PA","UBI.PA","UG.PA","VIE.PA","VIV.PA","VK.PA","VU.PA","WLN.PA","FR.PA","SOI.PA","LHN.PA","BVI.PA","GFC.PA","FDR.PA","FNAC.PA","ERT.PA","AKE.PA","ARGAN.PA","ALPE.PA","MCPHY.PA","LACR.PA","LAUR.PA","LDLC.PA","LISI.PA","LNC.PA","MAAT.PA","MBWS.PA","MDM.PA","METEX.PA","MFGP.PA","MT","BB.PA","CO.PA","MMB.PA","NEX.PA","SCP.PA","STF.PA","LI.PA","MRM.PA"];
 const SP100 = ["AAPL","MSFT","AMZN","NVDA","GOOGL","META","TSLA","UNH","XOM","JPM","JNJ","V","PG","MA","HD","CVX","MRK","ABBV","PEP","KO","AVGO","LLY","COST","WMT","BAC","MCD","ABT","TMO","CSCO","ACN","NKE","DHR","VZ","ADBE","TXN","NEE","PM","UPS","RTX","QCOM","HON","AMGN","LOW","INTC","AMD","INTU","IBM","SBUX","GS","CAT","BA","BLK","AXP","SPGI","DE","ELV","MDLZ","GILD","MMC","ADI","REGN","VRTX","CI","ZTS","MO","SYK","PLD","COP","EOG","BDX","ISRG","TJX","EW","HCA","AON","ICE","NSC","MRNA","F","GM","PARA","WBA","T","VFC","OXY","HAL","DVN","MPC","VLO","PSX","KMI","WMB","SLB","BKR","CTRA","APA","IONQ","OKLO","SMCI","NBTX"];
 const RUSSELL = ["FIVE","GNRC","PENN","PRGO","RRX","SITE","SWK","XRAY","PODD","INSP","IRTC","NVCR","PACB","NTLA","EDIT","FATE","ALNY","IONS","SRPT","RARE","FOLD","ACAD","SAGE","INSM","KYMR","PTCT","BMRN","LGND","JAZZ","HRMY","RCKT","DNLI","KALV","IMVT","VERA","ARVN","KRTX","PRAX","YMAB","DVAX","IOVA","EXEL","TGTX","HALO","PRLD","NKTR","EPZM","MGNX","MRCY","GTHX","ENSG","ECPG","DXPE","DUOL","PLUG","BYND","SOFI","LUMN","OPEN","UWMC","RKT","CLOV","SPCE","NKLA","RKLB","ASTS","GSAT","IRDM","MAXN","ARRY","NOVA","STEM","DBVT","SEER","ACMR","FLNC","HIMS","JOBY","ACHR","ZURA","IMGO","KALA","IDYA","DAWN","IRON","VYGN","NRIX"];
-
-
-// ── Nasdaq 100 ────────────────────────────────────────────
 const NASDAQ100 = ["GOOG","NFLX","TMUS","AMAT","MU","LRCX","KLAC","PANW","SNPS","CRWD","CDNS","MRVL","ASML","ADP","ABNB","ORLY","FTNT","CTAS","NXPI","MCHP","PAYX","PYPL","ROST","KDP","MNST","EXC","CPRT","ODFL","FAST","DDOG","TEAM","WDAY","ZS","DLTR","VRSK","BIIB","IDXX","ANSS","GEHC","GFS","FANG","CEG","ON","PCAR","TTD","CTSH","ALGN","DXCM","ILMN","HOLX","ENPH","SIRI","RIVN","LCID","OKTA","ZM","DOCU","PTON","MTTR","HOOD","COIN","RBLX","U","PATH","GTLB","PLTR","AI","RXRX","ARWR","CRSP","BEAM"];
-
-// ── S&P 500 élargi (titres hors S&P100) ──────────────────
 const SP500_EXTRA = ["AAL","AAP","ABMD","ADSK","AES","AFL","AIG","AIZ","AJG","AKAM","ALB","ALK","ALL","ALLE","AME","AMP","AMT","AMTM","ANET","ANF","AOS","APD","APH","APTV","ARE","ATO","AVB","AVY","AWK","AWR","AZO","BAX","BBWI","BBY","BEN","BFB","BG","BIO","BK","BKNG","BMY","BR","BRO","BSX","BWA","BXP","C","CAG","CAH","CARR","CCI","CCL","CDW","CE","CF","CG","CHRW","CINF","CL","CLX","CMA","CME","CMG","CMI","CMS","CNA","CNP","COF","COO","CPB","CPT","CRL","CRM","CSGP","CSX","CTLT","CTVA","CVS","D","DAL","DAY","DD","DFS","DG","DGX","DHI","DIS","DISH","DLR","DOV","DPZ","DRI","DTE","DUK","DVA","EA","EBAY","ECL","ED","EFX","EIX","EL","EMN","EMR","EPAM","EQIX","EQR","EQT","ES","ESS","ETN","ETR","EVRG","EXPD","EXPE","EXR","FCX","FDS","FDX","FE","FFIV","FIS","FSLR","FTV","GD","GE","GEN","GL","GLW","GPC","GPN","GRMN","GWW","HAS","HBAN","HES","HIG","HII","HLT","HPE","HPQ","HRL","HSIC","HST","HSY","HUBB","HUM","HWM","IEX","IFF","INCY","IP","IPG","IQV","IR","IRM","IT","ITW","IVZ","J","JBHT","JBL","JKHY","JNPR","K","KHC","KMB","KMX","KR","L","LDOS","LEN","LH","LHX","LIN","LKQ","LMT","LNT","LUV","LVS","LW","LYB","LYV","MAA","MAR","MAS","MCK","MCO","MDT","MHK","MKC","MKTX","MLM","MMM","MOH","MOS","MPWR","MS","MSCI","MTB","MTCH","MTD","NCLH","NDAQ","NEM","NI","NOC","NOW","NRG","NTAP","NTRS","NUE","NVR","NWS","O","OGN","OKE","OMC","ORCL","OTIS","PAYC","PCG","PEAK","PEG","PFG","PGR","PH","PHM","PKG","PNC","PNR","PNW","POOL","PPG","PPL","PRU","PSA","PTC","PWR","QRVO","RCL","REG","RF","RJF","RMD","ROK","ROL","ROP","RSG","RVTY","SHW","SIVB","SJM","SNA","SO","SPG","SRE","STE","STT","STX","STZ","SWKS","SYF","SYY","TAP","TDG","TECH","TER","TFC","TFX","TGT","TROW","TRV","TSCO","TSN","TT","TTWO","TXT","UA","UAA","UAL","UDR","UHS","ULTA","UNP","URI","USB","VICI","VMC","VRSN","VTR","WAB","WAT","WBD","WDC","WELL","WFC","WHR","WM","WRB","WRK","WST","WTW","WY","WYNN","XEL","XYL","YUM","ZBH","ZBRA","ZION"];
-
-
-
-
-
-
-
-
-
-
-
-
-// ── Nasdaq 150 — extension (101-150) ─────────────────────
 const NASDAQ150_EXT = ["HUBS","BILL","ZI","FRSH","BRZE","ASAN","JAMF","AFRM","UPST","LC","TREE","CVNA","VZIO","XPOF","PRTS","CHPT","BLNK","FCEL","RIDE","WKHS","GOEV","NVAX","SAVA","FORM","AMBA","ONTO","COHU","DIOD","HTZ","LILM"];
-
-// ── Top 100 Drawdown 52W ──────────────────────────────────
 const TOP_DRAWDOWN = ["AGEN","RUBY","AKRO","ALDX","INVA","DMTK","NVRO","RCUS","TMDX","SILK","ATRC","AXNX","MAPS","NIO","XPEV","LI","BIRD","PAYO","LMND","ROOT","METC","DAVE","SHLS","W","REAL","RENT","FLYW","GETY","RDFN","DBRG","SUNW","SPWR","ATUS","IAC","IRBT","BIGC","DOMO","TELO","CWAN","ENFN","AVPT","DCBO","WEAV","BOX","ZNGA","TASK"];
 
 const UNIVERSES = {
@@ -280,7 +223,6 @@ const CRITERIA = [
   { id: "gamma", icon: "⚡", label: "Gamma Squeeze", desc: "P/C < 0.5 + OI calls élevé", color: "#a855f7", bg: "#a855f715", border: "#a855f733" },
 ];
 
-// ── State ─────────────────────────────────────────────────
 let selectedUniverses = ["sp100", "nasdaq100", "russell_midcap"];
 let selectedCriteria = ["short_interest", "institutional", "price_drop"];
 let minScore = 1;
@@ -289,27 +231,15 @@ let scanning = false;
 let stopRequested = false;
 let allResults = [];
 
-// ── Init UI ───────────────────────────────────────────────
 function init() {
-  // Sources
   const sources = [["TwelveData","#58a6ff","live"],["NewsAPI","#58a6ff","live"],["EDGAR SEC","#2ed573","gratuit"],["AMF BDIF","#2ed573","live"],["ESMA","#2ed573","gratuit"],["Ortex","#ff4757","live"],["Pelosi STOCK Act","#a855f7","live"]];
   document.getElementById("sources").innerHTML = sources.map(([n,c,s]) =>
     `<span class="source-badge" style="background:${c}15;border:1px solid ${c}44;color:${c};">${n} <span style="opacity:0.6">· ${s}</span></span>`
   ).join("");
-
-  // Universes
   renderUniverses();
-
-  // Criteria
   renderCriteria();
-
-  // Score buttons
   renderScoreBtns();
-
-  // Triple lock
   renderTripleLock();
-
-  // Scan button
   updateScanBtn();
 }
 
@@ -360,26 +290,19 @@ function updateScanBtn() {
 }
 
 function toggleUniverse(id) {
-  if (selectedUniverses.includes(id)) {
-    selectedUniverses = selectedUniverses.filter(u => u !== id);
-  } else {
-    selectedUniverses.push(id);
-  }
+  if (selectedUniverses.includes(id)) selectedUniverses = selectedUniverses.filter(u => u !== id);
+  else selectedUniverses.push(id);
   renderUniverses(); updateScanBtn();
 }
 
 function toggleCriteria(id) {
-  if (selectedCriteria.includes(id)) {
-    selectedCriteria = selectedCriteria.filter(c => c !== id);
-  } else {
-    selectedCriteria.push(id);
-  }
+  if (selectedCriteria.includes(id)) selectedCriteria = selectedCriteria.filter(c => c !== id);
+  else selectedCriteria.push(id);
   renderCriteria();
 }
 
 function setScore(n) { minScore = n; renderScoreBtns(); }
 
-// ── API calls ─────────────────────────────────────────────
 async function proxyFetch(endpoint) {
   try {
     const r = await fetch(`${PROXY}${endpoint}`);
@@ -409,7 +332,7 @@ async function callClaude(system, user, maxTokens = 2000, retries = 2) {
     } catch(e) {
       console.warn(`[Claude attempt ${attempt+1}] ${e.message}`);
       if (attempt === retries) throw e;
-      await new Promise(r => setTimeout(r, 2000 * (attempt + 1))); // backoff
+      await new Promise(r => setTimeout(r, 2000 * (attempt + 1)));
     }
   }
 }
@@ -421,13 +344,10 @@ function parseJSON(text) {
   return JSON.parse(clean.slice(first, last + 1));
 }
 
-
-// ── Score de Conviction Court Terme (SCCT) /100 ──────────
 function calculateSCCT(result) {
   let score = 0;
   const moves = result.institutionalMoves || [];
 
-  // 1. DRAWDOWN 52W RÉEL (20 pts)
   if (result.drawdown52w) {
     const dd = Math.abs(parseFloat(result.drawdown52w));
     if (dd >= 60) score += 20;
@@ -436,7 +356,6 @@ function calculateSCCT(result) {
     else if (dd >= 20) score += 6;
   }
 
-  // 2. VAD / SHORT INTEREST (20 pts) — Ortex prioritaire
   const siValue = parseFloat(result.shortInterestReal || result.shortInterest) || 0;
   if (result.shortInterestReal) {
     if (siValue >= 20) score += 20;
@@ -447,27 +366,22 @@ function calculateSCCT(result) {
     score += 6;
   }
 
-  // 3. FRANCHISSEMENT DE SEUIL (20 pts) — Signal légal fort
   const hasRealThreshold = moves.some(m =>
     m.verified === true && (
-      (m.source||"").includes("13G") ||
-      (m.source||"").includes("13D") ||
-      (m.source||"").includes("AMF") ||
-      (m.source||"").includes("ESMA") ||
-      (m.source||"").includes("STOCK Act")
+      (m.source||"").includes("13G") || (m.source||"").includes("13D") ||
+      (m.source||"").includes("AMF") || (m.source||"").includes("ESMA") ||
+      (m.source||"").includes("BDIF") || (m.source||"").includes("STOCK Act")
     )
   );
   if (hasRealThreshold) score += 20;
   else if (result.criteria?.threshold) score += 8;
 
-  // 4. SIGNAL INSTITUTIONNEL COMBINÉ (25 pts)
   const tier1 = ["BlackRock","Vanguard","Fidelity","State Street","JPMorgan","Morgan Stanley",
     "Goldman Sachs","Norges","Temasek","GIC","Tiger Global","Millennium","Citadel",
     "Point72","Renaissance","Two Sigma","DE Shaw","Bridgewater","Baupost","Coatue",
     "Baillie Gifford","ARK","Schroders","Amundi","Carmignac",
-    "BARCLAYS","CITIGROUP","BANK_OF_AMERICA","JPMORGAN","MORGAN_STANLEY","GOLDMAN_SACHS","BLACKROCK","VANGUARD"];
-  const activists = ["Elliott","Starboard","Icahn","Pershing Square","ValueAct",
-    "Third Point","Jana","Legion Partners","Engine Capital","Trian"];
+    "BARCLAYS","CITIGROUP","BANK_OF_AMERICA","JPMORGAN","MORGAN_STANLEY","GOLDMAN_SACHS","BLACKROCK","VANGUARD","UBS","DEUTSCHE_BANK"];
+  const activists = ["Elliott","Starboard","Icahn","Pershing Square","ValueAct","Third Point","Jana","Legion Partners","Engine Capital","Trian"];
 
   const tier1Moves = moves.filter(m => m.verified && (m.isTier1 || tier1.some(f => (m.fund||"").toUpperCase().includes(f.toUpperCase()))));
   const activistMoves = moves.filter(m => m.verified && (m.isActivist || activists.some(f => (m.fund||"").includes(f))));
@@ -480,28 +394,25 @@ function calculateSCCT(result) {
   else if (activistMoves.length >= 1) score += 15;
   else if (result.criteria?.institutional) score += 5;
 
-  // 5. CATALYSEUR DATÉ (10 pts)
   if (result.criteria?.catalysts || result.criteria?.biotech) score += 10;
 
-  // 6. MOMENTUM (5 pts)
   const totalCriteria = Object.values(result.criteria || {}).filter(Boolean).length;
   if (totalCriteria >= 5) score += 5;
   else if (totalCriteria >= 3) score += 3;
   else if (totalCriteria >= 2) score += 1;
 
-  // BONUS GAMMA SQUEEZE (+5 pts)
   if (result.criteria?.gamma || result.gammaScore === "FORT") score += 5;
   else if (result.gammaScore === "MODÉRÉ") score += 2;
 
-  // BONUS PELOSI ACHAT (+8 pts)
   if (pelosiMoves.some(m => m.direction === "NEW" || m.direction === "↑")) score += 8;
-
-  // BONUS ACTIVISTE 13D (+7 pts)
   if (moves.some(m => m.verified && (m.source||"").includes("13D"))) score += 7;
+
+  // BONUS ACCUMULATION SYSTÉMIQUE (+5 pts)
+  const verifiedCount = moves.filter(m => m.verified === true).length;
+  if (verifiedCount >= 5) score += 5;
 
   return Math.min(score, 100);
 }
-
 
 function getSCCTLabel(scct) {
   if (scct >= 75) return { label: "EXPLOSIF", color: "#ff4757", bg: "#ff475722", border: "#ff475755" };
@@ -510,38 +421,27 @@ function getSCCTLabel(scct) {
   return { label: "À SURVEILLER", color: "#8b949e", bg: "#21262d", border: "#30363d" };
 }
 
-// ── AMF BDIF — Fetch real institutional crossings for .PA tickers ─────
+// ── AMF BDIF — CORRECTION 1: Returns also raisonSociale to fix Claude's hallucinated company names
 async function fetchAmfBdif(ticker) {
-  if (!ticker.includes(".PA") && !ticker.includes(".BE")) return [];
+  if (!ticker.includes(".PA") && !ticker.includes(".BE")) return { crossings: [], raisonSociale: null, isin: null };
   try {
     const r = await fetch(`${PROXY}/amf-bdif/ticker/${encodeURIComponent(ticker)}?limit=12`);
-    if (!r.ok) return [];
+    if (!r.ok) return { crossings: [], raisonSociale: null, isin: null };
     const data = await r.json();
-    if (!data.ok || !data.crossings?.length) return [];
+    if (!data.ok || !data.crossings?.length) return { crossings: [], raisonSociale: null, isin: null };
 
-    return data.crossings.map(c => {
-      // Use tier1 normalized name if available, otherwise raw declarant
-      const fundName = c.is_tier1_fund && c.tier1_match_name
-        ? c.tier1_match_name
-        : (c.declarant || "—");
+    const raisonSociale = data.crossings[0]?.raison_sociale || null;
+    const isin = data.crossings[0]?.isin || null;
 
-      // Direction: hausse = ↑, baisse = ↓
+    const crossings = data.crossings.map(c => {
+      const fundName = c.is_tier1_fund && c.tier1_match_name ? c.tier1_match_name : (c.declarant || "—");
       const dir = c.direction === "hausse" ? "↑" : (c.direction === "baisse" ? "↓" : "NEW");
-
-      // Format date as YYYY-MM-DD
       const dateStr = c.crossing_date ? c.crossing_date.split("T")[0] : "—";
-
-      // Position post-franchissement
       const pct = c.new_position_pct_capital
         ? parseFloat(c.new_position_pct_capital).toFixed(2) + "%"
         : (c.threshold_pct ? c.threshold_pct + "%" : "≥5%");
-
       return {
-        fund: fundName,
-        pct: pct,
-        prevPct: "—",
-        direction: dir,
-        date: dateStr,
+        fund: fundName, pct: pct, prevPct: "—", direction: dir, date: dateStr,
         source: "AMF BDIF",
         amount: c.cause ? c.cause.replace(/_/g, " ") : "—",
         verified: true,
@@ -550,9 +450,11 @@ async function fetchAmfBdif(ticker) {
         pdfUrl: c.pdf_url || null,
       };
     });
+
+    return { crossings, raisonSociale, isin };
   } catch(e) {
     console.warn(`[AMF BDIF] ${ticker} fetch failed:`, e.message);
-    return [];
+    return { crossings: [], raisonSociale: null, isin: null };
   }
 }
 
@@ -569,27 +471,32 @@ async function fetchTickerData(ticker) {
     ticker.endsWith('.BE') ? '&exchange=Euronext' : '';
   const cleanSymbol = ticker.replace(/\.[A-Z]+$/,'');
 
-  // Fetch non-Ortex data in parallel
+  // CORRECTION 1: Fetch BDIF FIRST so we have the real company name for the news query
+  const bdifResult = isFrench ? await fetchAmfBdif(ticker) : { crossings: [], raisonSociale: null, isin: null };
+  const realRaisonSociale = bdifResult.raisonSociale;
+
+  // CORRECTION 4: Build improved news query using real company name
+  const newsQuery = realRaisonSociale
+    ? `${realRaisonSociale} ${ticker} shareholder OR institutional`
+    : `${ticker} institutional shareholder`;
+
   const [quote, ts, news, filings13g, filings13f, amfData, pelositrades] = await Promise.all([
     proxyFetch(`/twelvedata/price?symbol=${encodeURIComponent(isEuropean ? ticker : cleanSymbol)}${exchParam}`),
     proxyFetch(`/twelvedata/timeseries?symbol=${encodeURIComponent(isEuropean ? ticker : cleanSymbol)}&interval=1day&outputsize=252${exchParam}`),
-    proxyFetch(`/news?query=${encodeURIComponent(ticker + " institutional shareholder")}`),
+    proxyFetch(`/news?query=${encodeURIComponent(newsQuery)}`),
     (!isEuropean && !isFrench) ? proxyFetch(`/edgar/filings13g?ticker=${encodeURIComponent(ticker.replace(/\.PA$|\.BE$/,''))}`) : Promise.resolve({filings:[]}),
     (!isEuropean && !isFrench) ? proxyFetch(`/edgar/institutional13f?ticker=${encodeURIComponent(ticker)}`) : Promise.resolve(null),
     isFrench ? proxyFetch(`/amf/franchissements?ticker=${encodeURIComponent(ticker)}`) : Promise.resolve(null),
     (!isFrench) ? proxyFetch(`/pelosi/trades?ticker=${encodeURIComponent(cleanSymbol)}`) : Promise.resolve(null),
   ]);
 
-  // Ortex fetched in series at batch level — not here
   const ortex = null;
   const optionsData = null;
   let realPrice = null, drawdown52w = null, priceChange = 0, hasRealData = false;
 
-  // Ortex short interest réel — format: { shortInterestPct, shortInterestShares, date }
   let shortInterestReal = null, daysTocover = null, borrowRate = null, ortexScore = null;
   if (ortex && !ortex.error && ortex.shortInterestPct != null) {
     shortInterestReal = parseFloat(ortex.shortInterestPct).toFixed(1) + "%";
-    console.log(`[${ticker}] Ortex VAD réelle: ${shortInterestReal} (${ortex.date})`);
   }
   if (quote && !quote.code) {
     const cur = quote.currency === "EUR" ? "€" : "$";
@@ -608,9 +515,7 @@ async function fetchTickerData(ticker) {
     content: (a.description || "").slice(0, 100),
     source: a.source?.name || "—",
   }));
-  // edgarFilings kept for compatibility (now empty — real data from filings13g)
   const edgarFilings = [];
-  // Combine real institutional data from all sources
   const real13g = (filings13g?.filings || []).slice(0, 5).map(f => ({
     fund: f.filer, pct: f.pct || "≥5%", prevPct: "0%", direction: "NEW",
     date: f.date, source: f.form?.includes("13G") ? "13G SEC" : "13D SEC", amount: "—", verified: true
@@ -623,48 +528,54 @@ async function fetchTickerData(ticker) {
     fund: f.filer, pct: f.pct || "≥5%", prevPct: "—", direction: "NEW",
     date: f.date, source: "AMF", amount: "—", verified: true
   }));
-  // Pelosi STOCK Act trades
   const pelosiTrades = (pelositrades?.trades || []).slice(0, 3).map(t => ({
-    fund: "🏛️ Nancy Pelosi",
-    pct: t.amount || "—",
-    prevPct: "—",
-    direction: t.type === "purchase" ? "NEW" : "↓",
-    date: t.date || "—",
-    source: "STOCK Act",
-    amount: t.amount || "—",
-    verified: true,
-    isPelosi: true,
-    description: t.description || "—",
+    fund: "🏛️ Nancy Pelosi", pct: t.amount || "—", prevPct: "—",
+    direction: t.type === "purchase" ? "NEW" : "↓", date: t.date || "—",
+    source: "STOCK Act", amount: t.amount || "—", verified: true,
+    isPelosi: true, description: t.description || "—",
   }));
 
-  // Fetch AMF BDIF crossings for .PA tickers (in addition to ESMA)
-  const amfBdif = await fetchAmfBdif(ticker);
+  const amfBdif = bdifResult.crossings;
   const realFilings = [...amfBdif, ...realAMF, ...real13g, ...real13f, ...pelosiTrades];
-  console.log(`[${ticker}] Real filings: BDIF=${amfBdif.length} AMF=${realAMF.length} 13G=${real13g.length} 13F=${real13f.length}`);
-  // Options data — Gamma Squeeze signals
+  console.log(`[${ticker}] Real filings: BDIF=${amfBdif.length} AMF=${realAMF.length} 13G=${real13g.length} 13F=${real13f.length}${realRaisonSociale ? ` · Société: ${realRaisonSociale}` : ''}${realPrice ? ` · Prix: ${realPrice}` : ' · ⚠️ Pas de prix TwelveData'}`);
+
+  // CORRECTION 5: Detect if ticker data is suspicious
+  // For .PA/.BE tickers: if BDIF returns nothing AND no price from TwelveData → suspicious
+  // For US tickers: if no price AND no 13G/13F → suspicious
+  let dataWarning = null;
+  if (isFrench) {
+    if (!realRaisonSociale && !realPrice && amfBdif.length === 0) {
+      dataWarning = `⚠️ Ticker ${ticker} non reconnu : aucune donnée AMF BDIF ni TwelveData. Vérifiez le format sur Yahoo Finance (ex: WLN.PA pour Worldline).`;
+    } else if (!realRaisonSociale && !realPrice) {
+      dataWarning = `⚠️ Pas de données prix pour ${ticker}. Le scoring sera incomplet (drawdown manquant).`;
+    }
+  } else {
+    if (!realPrice && real13g.length === 0 && real13f.length === 0) {
+      dataWarning = `⚠️ Ticker ${ticker} non reconnu : aucune donnée TwelveData ni EDGAR. Vérifiez le ticker.`;
+    }
+  }
+
   let putCallRatio = null, callOI = null, totalOI = null, impliedVolatility = null, gammaScore = null;
   if (optionsData && !optionsData.error) {
     putCallRatio = optionsData.putCallRatio;
     callOI = optionsData.callOI;
     totalOI = optionsData.totalOI;
     impliedVolatility = optionsData.impliedVolatility;
-    // Gamma score: P/C < 0.5 = bullish, high call OI = potential squeeze
     if (putCallRatio !== null) {
       if (putCallRatio < 0.4) gammaScore = "FORT";
       else if (putCallRatio < 0.6) gammaScore = "MODÉRÉ";
       else gammaScore = "FAIBLE";
     }
-    console.log(`[${ticker}] Options: P/C=${putCallRatio} OI=${totalOI} IV=${impliedVolatility} → ${gammaScore}`);
   }
-  return { realPrice, drawdown52w, priceChange, hasRealData, newsItems, edgarFilings, shortInterestReal, daysTocover, borrowRate, ortexScore, realFilings, putCallRatio, callOI, totalOI, impliedVolatility, gammaScore };
+  return { realPrice, drawdown52w, priceChange, hasRealData, newsItems, edgarFilings, shortInterestReal, daysTocover, borrowRate, ortexScore, realFilings, realRaisonSociale, dataWarning, putCallRatio, callOI, totalOI, impliedVolatility, gammaScore };
 }
 
 async function analyzeBatch(batch, universe, customTicker = null) {
-  const criteriaLabels = selectedCriteria.map(id => CRITERIA.find(c => c.id === id)?.label).join(", ");
   const context = batch.map(({ ticker, data }) => {
     const dd = data.drawdown52w ? `drawdown=${data.drawdown52w}[RÉEL]` : "drawdown=inconnu[ESTIMÉ]";
     const vad = data.shortInterestReal ? `VAD=${data.shortInterestReal}[ORTEX]` : "VAD=inconnu";
-    return `${ticker}: prix=${data.realPrice || "N/A"} ${dd} change=${data.priceChange}% ${vad}`;
+    const realName = data.realRaisonSociale ? ` société=${data.realRaisonSociale}[RÉEL]` : "";
+    return `${ticker}: prix=${data.realPrice || "N/A"} ${dd} change=${data.priceChange}% ${vad}${realName}`;
   }).join("\n");
 
   const universeLabel = customTicker ? `Ticker spécifique (${customTicker})` : (UNIVERSES[universe]?.label || universe);
@@ -677,18 +588,21 @@ CRITÈRES: price_drop(chute>20%), short_interest(VAD>10%), institutional(5%+), t
 JSON strict sans backticks — TOUS ces champs obligatoires:
 {"results":[{"ticker":"X","name":"Nom complet","market":"NASDAQ","universe":"${universe}","summary":"2 phrases max.","criteria":{"short_interest":true,"institutional":true,"threshold":false,"price_drop":true,"catalysts":true,"biotech":false,"special":false,"gamma":false},"shortInterest":"18%","shortSource":"Estimé","institutionalMoves":[],"conviction":8,"targetPrice":"65€","stopLoss":"36€","squeezeScore":7,"squeezeProbability":"42%"}]}
 
-IMPORTANT: Pour les tickers européens (.PA), les VAD sont généralement faibles (1-10%). Utilise les données VAD fournies si disponibles. Retourne les titres qui ont au moins 1 critère valide. institutionalMoves peut être vide []. JAMAIS de valeurs undefined ou null.`;
+IMPORTANT:
+- Si "société=XXX[RÉEL]" est fourni, utilise CE nom comme "name" (ne JAMAIS l'inventer).
+- Si tu ne reconnais pas le ticker et qu'aucune société n'est fournie, mets "name":"Société non identifiée".
+- Pour les tickers européens (.PA), les VAD sont généralement faibles (1-10%).
+- institutionalMoves peut être vide [].
+- JAMAIS de valeurs undefined ou null.`;
 
   try {
     const text = await callClaude("Analyste Smart Money. JSON uniquement sans backticks.", prompt, 2000);
     const parsed = parseJSON(text);
     const results = (parsed.results || []).filter(r =>
       customTicker || Object.values(r.criteria || {}).filter(Boolean).length >= minScore
-    );;
-    // Debug: log institutional moves
+    );
     results.forEach(r => {
       console.log(`%c[${r.ticker}] conviction:${r.conviction} target:${r.targetPrice} stop:${r.stopLoss} squeeze:${r.squeezeScore}`, "color:#2ed573;font-weight:bold");
-
     });
     return results;
   } catch(e) {
@@ -698,7 +612,6 @@ IMPORTANT: Pour les tickers européens (.PA), les VAD sont généralement faible
   }
 }
 
-// ── Scan principal ────────────────────────────────────────
 function stopScan() { stopRequested = true; }
 
 async function runScan() {
@@ -723,9 +636,7 @@ async function runScan() {
 
   const total = allTickers.length;
   const batches = [];
-  for (let i = 0; i < allTickers.length; i += BATCH_SIZE) {
-    batches.push(allTickers.slice(i, i + BATCH_SIZE));
-  }
+  for (let i = 0; i < allTickers.length; i += BATCH_SIZE) batches.push(allTickers.slice(i, i + BATCH_SIZE));
 
   setProgress(0, total, 0, `🚀 Démarrage — ${total} titres en ${batches.length} batches...`);
 
@@ -736,17 +647,13 @@ async function runScan() {
     if (stopRequested) break;
     const batch = batches[b];
 
-    setProgress(scanned, total, signalCount, `📡 Batch ${b+1}/${batches.length} — Récupération TwelveData...`);
+    setProgress(scanned, total, signalCount, `📡 Batch ${b+1}/${batches.length} — Récupération TwelveData + BDIF...`);
 
-    // Fetch TwelveData + EDGAR + AMF in parallel for all tickers
     const batchWithData = await Promise.all(
-      batch.map(async ({ ticker, universe }) => ({
-        ticker, universe, data: await fetchTickerData(ticker)
-      }))
+      batch.map(async ({ ticker, universe }) => ({ ticker, universe, data: await fetchTickerData(ticker) }))
     );
     scanned += batch.length;
 
-    // Fetch Ortex in SERIES to avoid 429 — one ticker at a time with delay
     for (const item of batchWithData) {
       if (stopRequested) break;
       const ticker = item.ticker;
@@ -756,18 +663,16 @@ async function runScan() {
         if (ortexData && !ortexData.error && ortexData.shortInterestPct != null) {
           item.data.shortInterestReal = parseFloat(ortexData.shortInterestPct).toFixed(1) + "%";
         }
-      } catch(e) { /* silent */ }
+      } catch(e) {}
       await new Promise(r => setTimeout(r, isEU ? 400 : 250));
     }
 
-    // Filtre drawdown — garde les vrais crashs ET les titres sans données TD
     const qualified = batchWithData.filter(({ data }) => {
-      if (customTicker) return true; // ticker spécifique → bypass drawdown filter
-      if (!data.drawdown52w) return true; // pas de données TD → Claude évalue
+      if (customTicker) return true;
+      if (!data.drawdown52w) return true;
       const val = parseFloat(data.drawdown52w);
-      return val <= -20; // drawdown confirmé > 20%
+      return val <= -20;
     });
-    console.log(`[Batch ${b+1}] ${batchWithData.length} titres → ${qualified.length} qualifiés (drawdown filter)`);
 
     setProgress(scanned, total, signalCount, `🤖 Batch ${b+1}/${batches.length} — ${qualified.length} qualifiés → Claude...`);
 
@@ -785,16 +690,49 @@ async function runScan() {
           const enriched = signals.map(s => {
             const found = items.find(i => i.ticker === s.ticker);
             const data = found?.data || {};
-            // ONLY real filings from EDGAR + AMF + AMF BDIF — NO Claude estimates
-const realMoves = (data.realFilings || []);
-// Never use Claude-generated institutional data — it hallucinate sources and fund names
-// ONLY real data from EDGAR/AMF/BDIF — Claude estimates completely removed
-// Claude invents fund names without any real source
-const mergedMoves = [...realMoves];
-if (realMoves.length > 0) {
-  console.log(`[${s.ticker}] Real filings: ${realMoves.length} verified`);
-}
-const base = { ...s, realPrice: data.realPrice, priceChange: data.priceChange || 0, drawdown52w: data.drawdown52w, dataSource: data.hasRealData ? "twelvedata" : "estimated", news: data.newsItems || [], edgarFilings: data.edgarFilings || [], shortInterestReal: data.shortInterestReal, daysTocover: data.daysTocover, borrowRate: data.borrowRate, ortexScore: data.ortexScore, institutionalMoves: mergedMoves, conviction: s.conviction || null, targetPrice: s.targetPrice || null, stopLoss: s.stopLoss || null, squeezeScore: s.squeezeScore || null, squeezeProbability: s.squeezeProbability || null, shortInterest: s.shortInterest || null, shortSource: s.shortSource || null, putCallRatio: data.putCallRatio, callOI: data.callOI, totalOI: data.totalOI, impliedVolatility: data.impliedVolatility, gammaScore: data.gammaScore };
+            const realMoves = (data.realFilings || []);
+            const mergedMoves = [...realMoves];
+            if (realMoves.length > 0) console.log(`[${s.ticker}] Real filings: ${realMoves.length} verified`);
+
+            // CORRECTION 1: Override Claude's hallucinated company name with real raison_sociale
+            const correctedName = data.realRaisonSociale || s.name;
+
+            // CORRECTION 2: Force-check institutional/threshold criteria when verified Tier 1 funds present
+            const tier1Keywords = ["BLACKROCK","VANGUARD","FIDELITY","STATE STREET","JPMORGAN","MORGAN STANLEY","GOLDMAN SACHS","NORGES","TEMASEK","GIC","TIGER GLOBAL","MILLENNIUM","CITADEL","POINT72","RENAISSANCE","TWO SIGMA","DE SHAW","BRIDGEWATER","BAUPOST","COATUE","BAILLIE GIFFORD","ARK","SCHRODERS","AMUNDI","CARMIGNAC","BARCLAYS","CITIGROUP","BANK_OF_AMERICA","BANK OF AMERICA","UBS","DEUTSCHE BANK","DEUTSCHE_BANK","CREDIT SUISSE","CREDIT_SUISSE","HSBC","BNP","SOCIETE GENERALE","CAISSE DES DEPOTS"];
+            const hasVerifiedTier1 = realMoves.some(m => m.verified && (m.isTier1 || tier1Keywords.some(k => (m.fund||"").toUpperCase().includes(k))));
+            const hasVerifiedThreshold = realMoves.some(m => m.verified && (
+              (m.source||"").includes("13G") || (m.source||"").includes("13D") ||
+              (m.source||"").includes("AMF") || (m.source||"").includes("ESMA") ||
+              (m.source||"").includes("BDIF") || (m.source||"").includes("STOCK Act")
+            ));
+            const correctedCriteria = { ...(s.criteria || {}) };
+            if (hasVerifiedTier1) {
+              correctedCriteria.institutional = true;
+              console.log(`[${s.ticker}] FORCE-CHECK: institutional=true (Tier 1 verified)`);
+            }
+            if (hasVerifiedThreshold) {
+              correctedCriteria.threshold = true;
+              console.log(`[${s.ticker}] FORCE-CHECK: threshold=true (filing verified)`);
+            }
+
+            const base = {
+              ...s, name: correctedName, criteria: correctedCriteria,
+              realPrice: data.realPrice, priceChange: data.priceChange || 0,
+              drawdown52w: data.drawdown52w,
+              dataSource: data.hasRealData ? "twelvedata" : "estimated",
+              news: data.newsItems || [], edgarFilings: data.edgarFilings || [],
+              shortInterestReal: data.shortInterestReal,
+              daysTocover: data.daysTocover, borrowRate: data.borrowRate, ortexScore: data.ortexScore,
+              institutionalMoves: mergedMoves,
+              realRaisonSociale: data.realRaisonSociale,
+              dataWarning: data.dataWarning,
+              conviction: s.conviction || null, targetPrice: s.targetPrice || null,
+              stopLoss: s.stopLoss || null, squeezeScore: s.squeezeScore || null,
+              squeezeProbability: s.squeezeProbability || null,
+              shortInterest: s.shortInterest || null, shortSource: s.shortSource || null,
+              putCallRatio: data.putCallRatio, callOI: data.callOI, totalOI: data.totalOI,
+              impliedVolatility: data.impliedVolatility, gammaScore: data.gammaScore
+            };
             base.scct = calculateSCCT(base);
             return base;
           });
@@ -803,7 +741,6 @@ const base = { ...s, realPrice: data.realPrice, priceChange: data.priceChange ||
           renderResults();
           setProgress(scanned, total, signalCount, `✨ ${signalCount} signal${signalCount > 1 ? "s" : ""} détecté${signalCount > 1 ? "s" : ""}...`);
 
-          // Auto Deep Dive for each signal — get precise target/stop/conviction immediately
           for (const result of enriched) {
             if (stopRequested) break;
             try {
@@ -823,7 +760,7 @@ JSON sans backticks:
                   allResults[idx].ddThesis = da.thesis || null;
                 }
               }
-            } catch(e) { /* silent fail — deep dive optional */ }
+            } catch(e) {}
             renderResults();
           }
         }
@@ -836,9 +773,7 @@ JSON sans backticks:
     }
   }
 
-  const finalMsg = stopRequested
-    ? `⏹️ Arrêté — ${signalCount} signaux sur ${scanned} titres`
-    : `✅ Terminé — ${total} titres analysés — ${signalCount} signaux`;
+  const finalMsg = stopRequested ? `⏹️ Arrêté — ${signalCount} signaux sur ${scanned} titres` : `✅ Terminé — ${total} titres analysés — ${signalCount} signaux`;
   setProgress(total, total, signalCount, finalMsg);
 
   if (allResults.length === 0) {
@@ -859,12 +794,10 @@ function setProgress(current, total, signals, step) {
   document.getElementById("progress-signals").textContent = signals > 0 ? `🎯 ${signals} signal${signals > 1 ? "s" : ""}` : "Scan en cours...";
 }
 
-// ── Render results ────────────────────────────────────────
 function renderResults() {
   const filtered = tripleLockOnly
     ? allResults.filter(r => Object.values(r.criteria || {}).filter(Boolean).length >= 3)
     : allResults;
-  // Sort by SCCT score (highest potential first)
   filtered.sort((a, b) => (b.scct || 0) - (a.scct || 0));
 
   const tripleLockCount = filtered.filter(r => Object.values(r.criteria || {}).filter(Boolean).length >= 3).length;
@@ -876,10 +809,8 @@ function renderResults() {
 function getScore(r) { return Object.values(r.criteria || {}).filter(Boolean).length; }
 
 function renderTopFunds(moves, r) {
-  // Only show verified real funds — no Claude estimates
   const realMoves = (moves || []).filter(m => m.verified === true);
   if (realMoves.length === 0) {
-    // Show only conviction/target/stop if available, no fake funds
     const extras = [];
     if (r && r.conviction) extras.push(`<div style="display:flex;align-items:center;gap:3px;padding:3px 8px;border-radius:6px;background:#eccc6822;border:1px solid #eccc6844"><span style="color:#484f58;font-size:8px">💎</span><span style="color:#eccc68;font-weight:700;font-size:11px;font-family:monospace">${r.conviction}/10</span></div>`);
     if (r && r.targetPrice) extras.push(`<div style="display:flex;align-items:center;gap:3px;padding:3px 8px;border-radius:6px;background:#2ed57322;border:1px solid #2ed57344"><span style="color:#484f58;font-size:8px">🎯</span><span style="color:#2ed573;font-weight:700;font-size:11px;font-family:monospace">${r.targetPrice}</span></div>`);
@@ -895,18 +826,15 @@ function renderTopFunds(moves, r) {
     if (extras.length === 0) return "";
     return `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;padding:8px 12px;background:#0d1117;border-radius:8px;border:1px solid #21262d;align-items:center"><span style="color:#484f58;font-size:9px;font-family:monospace;white-space:nowrap">📊 MÉTRIQUES :</span><div style="display:flex;gap:6px">${extras.join("")}</div></div>`;
   }
-  // Build items from real moves only
   const items = moves.slice(0, 3).map(m => {
-    const col = "#2ed573"; // all verified = green
+    const col = "#2ed573";
     const dir = m.direction === "NEW" ? "🆕" : (m.direction || "");
     return `<div style="display:flex;align-items:center;gap:3px;background:#21262d;padding:3px 8px;border-radius:6px;border:1px solid #2ed57333"><span style="color:#e6edf3;font-size:10px;font-weight:700;font-family:monospace">${m.fund}</span><span style="color:${col};font-size:10px;font-family:monospace"> ${m.pct}</span><span style="color:#484f58;font-size:8px"> ${dir}</span></div>`;
   }).join("");
-  // Add conviction/target/stop if available (from Reco or Deep Dive)
   const extras = [];
   if (r && r.conviction) extras.push(`<div style="display:flex;align-items:center;gap:3px;padding:3px 8px;border-radius:6px;background:#eccc6822;border:1px solid #eccc6844"><span style="color:#484f58;font-size:8px">💎</span><span style="color:#eccc68;font-weight:700;font-size:11px;font-family:monospace">${r.conviction}/10</span></div>`);
   if (r && r.targetPrice) extras.push(`<div style="display:flex;align-items:center;gap:3px;padding:3px 8px;border-radius:6px;background:#2ed57322;border:1px solid #2ed57344"><span style="color:#484f58;font-size:8px">🎯</span><span style="color:#2ed573;font-weight:700;font-size:11px;font-family:monospace">${r.targetPrice}</span></div>`);
   if (r && r.stopLoss) extras.push(`<div style="display:flex;align-items:center;gap:3px;padding:3px 8px;border-radius:6px;background:#ff475722;border:1px solid #ff475744"><span style="color:#484f58;font-size:8px">🛑</span><span style="color:#ff4757;font-weight:700;font-size:11px;font-family:monospace">${r.stopLoss}</span></div>`);
-  // Add VAD to extras if available
   const vadVal = r && (r.shortInterestReal || r.shortInterest);
   const vadColor = r && r.shortInterestReal ? "#ff4757" : "#ff6b3d";
   const vadBg = r && r.shortInterestReal ? "#ff475722" : "#ff6b3d15";
@@ -926,7 +854,7 @@ function renderCard(r) {
   const scctInfo = getSCCTLabel(scct);
   const univColor = r.universe === "sbf120" ? "#2ed573" : r.universe === "sp100" ? "#58a6ff" : "#a29bfe";
   const univBg = r.universe === "sbf120" ? "#1a2f1a" : r.universe === "sp100" ? "#1a1f2f" : "#2f1a2f";
-  const univLabel = r.universe === "sbf120" ? "SBF120" : r.universe === "sp100" ? "S&P100" : "RUSSELL";
+  const univLabel = r.universe === "sbf120" ? "SBF120" : r.universe === "sp100" ? "S&P100" : r.universe === "custom" ? "CUSTOM" : "RUSSELL";
   const changeColor = (r.priceChange || 0) < 0 ? "#ff4757" : "#2ed573";
   const dots = Array.from({length:7}, (_,i) => `<div class="score-dot" style="background:${i<score ? scoreColor : scoreColor+'33'}"></div>`).join("");
 
@@ -935,7 +863,18 @@ function renderCard(r) {
     return `<span class="pill" style="background:${active ? c.color+'22' : '#ffffff08'};border:1px solid ${active ? c.color+'66' : '#ffffff15'};color:${active ? c.color : '#444'};text-decoration:${active ? 'none' : 'line-through'}">${c.icon} ${c.label}</span>`;
   }).join("");
 
+  // CORRECTION 5: Display warning banner if data is suspicious
+  const warningHtml = r.dataWarning
+    ? `<div class="warning-banner">${r.dataWarning}</div>`
+    : "";
+
+  // CORRECTION 1: Visually distinguish real (BDIF-confirmed) names with green color + checkmark
+  const isRealName = !!r.realRaisonSociale;
+  const nameClass = isRealName ? "card-name real" : "card-name";
+  const nameSuffix = isRealName ? " ✓" : "";
+
   return `<div class="card" style="background:linear-gradient(135deg,#0d1117,#161b22);border:1px solid ${tl ? '#00d2ff44' : '#30363d'};box-shadow:${tl ? '0 0 24px #00d2ff0d' : 'none'}">
+    ${warningHtml}
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
       ${tl ? `<div class="triple-lock-badge" style="margin-bottom:0">🔒 TRIPLE LOCK — SIGNAL FORT</div>` : '<div></div>'}
       <div style="display:inline-flex;align-items:center;gap:6px;padding:4px 12px;border-radius:20px;background:${scctInfo.bg};border:1px solid ${scctInfo.border}">
@@ -952,7 +891,7 @@ function renderCard(r) {
           <span class="tag" style="background:#21262d;color:#8b949e">${r.market || "—"}</span>
           <span class="tag" style="background:${univBg};color:${univColor}">${univLabel}</span>
         </div>
-        <div class="card-name">${r.name || ""}</div>
+        <div class="${nameClass}">${r.name || ""}${nameSuffix}</div>
       </div>
       <div class="card-right">
         <div class="score-badge" style="background:${scoreColor}22;border:1px solid ${scoreColor}55">
@@ -978,8 +917,8 @@ function renderCard(r) {
       ${(r.news||[]).length > 0 ? `<div style="margin-bottom:12px"><div class="section-label" style="color:#58a6ff;margin-bottom:8px">📰 Actualités <span style="color:#484f58">(NewsAPI)</span></div>${(r.news||[]).map(n => `<div class="news-item"><div class="news-title-row"><span class="news-title">${n.title}</span><span class="news-date">${n.date}</span></div><div class="news-content">${n.content}</div><div class="news-source">${n.source}</div></div>`).join("")}</div>` : ""}
       ${(r.institutionalMoves||[]).length > 0 ? `<div style="margin-bottom:12px">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-          <div class="section-label" style="color:#3742fa;margin-bottom:0">🏛️ Mouvements Institutionnels</div>
-          <span style="background:#ffa50222;border:1px solid #ffa50255;color:#ffa502;font-size:8px;padding:2px 8px;border-radius:4px;font-weight:700;letter-spacing:1px">⚠️ USAGE INTERNE — EN COURS DE VÉRIFICATION</span>
+          <div class="section-label" style="color:#3742fa;margin-bottom:0">🔔 Franchissements de seuil récents (BDIF + ESMA)</div>
+          <span style="background:#2ed57322;border:1px solid #2ed57355;color:#2ed573;font-size:8px;padding:2px 8px;border-radius:4px;font-weight:700;letter-spacing:1px">✓ DONNÉES OFFICIELLES VÉRIFIÉES</span>
         </div>
         <table style="width:100%;border-collapse:collapse;font-size:11px;font-family:monospace">
           <tr style="color:#484f58;font-size:9px;text-transform:uppercase;letter-spacing:1px">
@@ -993,8 +932,6 @@ function renderCard(r) {
           </tr>
           ${(r.institutionalMoves||[]).map(m => {
             const src = m.source || "";
-            // STRICT: only show real badge if data comes from actual EDGAR/AMF endpoint (m.verified === true)
-            // Claude-estimated moves always get "Estimé ⚠️" regardless of source field content
             const isVerified = m.verified === true;
             const isBdif = isVerified && src.includes("BDIF");
             const isReal = isVerified && (src.includes("13D") || src.includes("13G") || src.includes("AMF") || isBdif);
@@ -1005,21 +942,14 @@ function renderCard(r) {
             const srcLabel = isPelosiRow ? "STOCK Act ✓" : isBdif ? "AMF BDIF ✓" : isReal ? src + " ✓" : isSemiReal ? src + " ✓" : "Estimé ⚠️";
             const daysAgo = m.date ? Math.floor((new Date() - new Date(m.date.replace(/[^0-9-]/g, '') || "")) / 86400000) : 999;
             const recenceColor = daysAgo < 30 ? "#ff4757" : daysAgo < 90 ? "#ffa502" : daysAgo < 180 ? "#eccc68" : "#8b949e";
-            // Calcul variation de participation
             const prevPctNum = parseFloat((m.prevPct || "0").replace(/[^0-9.-]/g, "")) || 0;
             const curPctNum = parseFloat((m.pct || "0").replace(/[^0-9.~]/g, "")) || 0;
             let varPct = "—";
             let varColor = "#484f58";
-            if (m.direction === "NEW") {
-              varPct = "🆕 NEW";
-              varColor = "#2ed573";
-            } else if (m.direction === "↑") {
-              varPct = "▲ HAUSSE";
-              varColor = "#2ed573";
-            } else if (m.direction === "↓") {
-              varPct = "▼ BAISSE";
-              varColor = "#ff4757";
-            } else if (prevPctNum > 0 && curPctNum > 0) {
+            if (m.direction === "NEW") { varPct = "🆕 NEW"; varColor = "#2ed573"; }
+            else if (m.direction === "↑") { varPct = "▲ HAUSSE"; varColor = "#2ed573"; }
+            else if (m.direction === "↓") { varPct = "▼ BAISSE"; varColor = "#ff4757"; }
+            else if (prevPctNum > 0 && curPctNum > 0) {
               const diff = (curPctNum - prevPctNum).toFixed(2);
               varPct = (diff > 0 ? "▲ +" : "▼ ") + diff + "%";
               varColor = diff > 0 ? "#2ed573" : "#ff4757";
@@ -1028,7 +958,6 @@ function renderCard(r) {
               varColor = m.direction === "↑" ? "#2ed573" : "#ff4757";
               varPct = sign + m.prevPct.replace(/[^0-9.]/g,"") + "%";
             }
-            // Cause / Amount column — clickable PDF link if available
             const amountCell = m.pdfUrl
               ? `<a href="${m.pdfUrl}" target="_blank" rel="noopener" style="color:#58a6ff;text-decoration:none">${m.amount||'—'} 📄</a>`
               : (m.amount||'—');
@@ -1043,7 +972,6 @@ function renderCard(r) {
                 if (!r || !r.priceChange || !m.date) return '—';
                 try {
                   let ds = m.date;
-                  // Convert "Q1 2026" -> "2026-01-01", "Janvier 2026" -> "2026-01-01", "Mars 2026" -> "2026-03-01"
                   const mois = {janvier:'01',février:'02',mars:'03',avril:'04',mai:'05',juin:'06',juillet:'07',août:'08',septembre:'09',octobre:'10',novembre:'11',décembre:'12'};
                   ds = ds.toLowerCase().replace(/q([1-4]) (\d{4})/, (_,q,y) => y+'-'+(q*3-2).toString().padStart(2,'0')+'-01');
                   Object.entries(mois).forEach(([fr,num]) => { ds = ds.replace(fr, num); });
@@ -1061,10 +989,9 @@ function renderCard(r) {
           }).join("")}
         </table>
       </div>` : ""}
-
       <div class="expand-toggle" onclick="toggleCard('${r.ticker}')">▲ Réduire</div>
     </div>
-    <div class="expand-toggle" id="expand-hint-${r.ticker}" onclick="toggleCard('${r.ticker}')">▼ Actualités & EDGAR</div>
+    <div class="expand-toggle" id="expand-hint-${r.ticker}" onclick="toggleCard('${r.ticker}')">▼ Détails (actualités & franchissements)</div>
   </div>`;
 }
 
@@ -1078,7 +1005,6 @@ function toggleCard(ticker) {
   }
 }
 
-// ── Modales ───────────────────────────────────────────────
 function closeModal() { document.getElementById("modal").style.display = "none"; }
 function showLoading(text) { document.getElementById("loading-text").textContent = text; document.getElementById("loading-overlay").style.display = "flex"; }
 function hideLoading() { document.getElementById("loading-overlay").style.display = "none"; }
@@ -1095,7 +1021,6 @@ JSON sans backticks:
 {"reco":{"signal":"FORT ACHAT","entryPrice":"XX€","tp1":"XX€","tp2":"XX€","stop":"XX€","tp1Upside":"35","tp2Upside":"65","horizon":"2-4 semaines","thesis":"3 phrases.","squeeze":{"score":7,"dtc":"8 jours","probability":"45%","analysis":"3 phrases.","trigger":"Déclencheur daté."}}}`;
     const text = await callClaude("Expert Smart Money. JSON uniquement.", prompt, 2000);
     const reco = parseJSON(text).reco;
-    // Reco shows in modal only — does NOT update card values
     const signalColor = reco.signal?.includes("FORT") ? "#2ed573" : reco.signal?.includes("ACHAT") ? "#58a6ff" : "#ffa502";
     const sim = (a) => ({ gain: Math.round(a * (parseFloat(reco.tp1Upside) / 100)), loss: Math.round(a * 0.2) });
     document.getElementById("modal-content").innerHTML = `
@@ -1120,11 +1045,7 @@ JSON sans backticks:
       <div class="info-box" style="background:linear-gradient(135deg,#ff475715,#ff6b3d15);border:1px solid #ff475744">
         <div class="info-label" style="color:#ff6b3d">🔥 Short Squeeze</div>
         <div class="grid-3" style="margin-bottom:10px">
-          ${[
-            ["Score Squeeze", reco.squeeze?.score+"/10", "#ff6b3d", "Intensité globale du setup. Combine VAD, DTC, CTB et catalyseur. 7+/10 = squeeze probable."],
-            ["DTC — Days To Cover", reco.squeeze?.dtc, "#ffa502", "Nb de jours pour que les shorts rachètent au volume quotidien moyen. DTC > 5j = forte pression."],
-            ["Probabilité Squeeze", reco.squeeze?.probability, "#eccc68", "Estimation de la probabilité qu'un catalyseur force les shorts à racheter en urgence sous 90 jours."]
-          ].map(([l,v,c,def])=>`<div class="stat-box"><div class="stat-label" style="font-size:9px">${l}</div><div class="stat-val" style="color:${c};font-size:15px;margin:4px 0">${v}</div><div style="color:#484f58;font-size:9px;line-height:1.4">${def}</div></div>`).join("")}
+          ${[["Score Squeeze", reco.squeeze?.score+"/10", "#ff6b3d", "Intensité globale du setup. Combine VAD, DTC, CTB et catalyseur. 7+/10 = squeeze probable."],["DTC — Days To Cover", reco.squeeze?.dtc, "#ffa502", "Nb de jours pour que les shorts rachètent au volume quotidien moyen. DTC > 5j = forte pression."],["Probabilité Squeeze", reco.squeeze?.probability, "#eccc68", "Estimation de la probabilité qu'un catalyseur force les shorts à racheter en urgence sous 90 jours."]].map(([l,v,c,def])=>`<div class="stat-box"><div class="stat-label" style="font-size:9px">${l}</div><div class="stat-val" style="color:${c};font-size:15px;margin:4px 0">${v}</div><div style="color:#484f58;font-size:9px;line-height:1.4">${def}</div></div>`).join("")}
         </div>
         <div class="info-text">${reco.squeeze?.analysis || ""}</div>
         ${reco.squeeze?.trigger ? `<div style="margin-top:8px;padding:6px 10px;background:#ff475718;border-radius:6px"><span style="color:#ff4757;font-size:11px;font-weight:700">⚡ Déclencheur : </span><span style="color:#c9d1d9;font-size:11px">${reco.squeeze.trigger}</span></div>` : ""}
@@ -1142,7 +1063,6 @@ JSON sans backticks:
   hideLoading();
 }
 
-
 async function openDeepDive(ticker) {
   const result = getResult(ticker);
   if (!result) return;
@@ -1155,7 +1075,6 @@ JSON sans backticks:
     const text = await callClaude("Expert Smart Money. JSON uniquement.", prompt, 2000);
     const data = parseJSON(text);
     const da = data.deepAnalysis;
-    // Deep Dive shows in modal only — does NOT update card values
     document.getElementById("modal-content").innerHTML = `
       <div class="modal-header">
         <div><div class="modal-title">${ticker}</div><div class="modal-sub">DEEP DIVE · CLAUDE AI</div></div>
@@ -1168,11 +1087,7 @@ JSON sans backticks:
         </div>
       `).join("")}
       <div class="grid-3" style="margin-top:16px;padding-top:14px;border-top:1px solid #21262d">
-        ${[
-          ["🎯 Objectif de cours", da?.targetPrice, "#2ed573", "Prix cible si la thèse se confirme. Niveau de prise de profits recommandé par Mark Elias."],
-          ["🛑 Stop mental", da?.stopLoss, "#ff4757", "Niveau d'invalidation de la thèse. En dessous = sortie de position. Ne jamais dépasser ce niveau."],
-          ["💎 Conviction", da?.conviction+"/10", "#eccc68", "9-10: Configuration exceptionnelle · 7-8: Signal fort · 5-6: À surveiller · <5: Signal faible"]
-        ].map(([l,v,c,def])=>`<div class="stat-box"><div class="stat-label" style="font-size:9px">${l}</div><div class="stat-val" style="color:${c};margin:6px 0">${v}</div><div style="color:#484f58;font-size:9px;line-height:1.4;text-align:left">${def}</div></div>`).join("")}
+        ${[["🎯 Objectif de cours", da?.targetPrice, "#2ed573", "Prix cible si la thèse se confirme. Niveau de prise de profits recommandé par Mark Elias."],["🛑 Stop mental", da?.stopLoss, "#ff4757", "Niveau d'invalidation de la thèse. En dessous = sortie de position. Ne jamais dépasser ce niveau."],["💎 Conviction", da?.conviction+"/10", "#eccc68", "9-10: Configuration exceptionnelle · 7-8: Signal fort · 5-6: À surveiller · <5: Signal faible"]].map(([l,v,c,def])=>`<div class="stat-box"><div class="stat-label" style="font-size:9px">${l}</div><div class="stat-val" style="color:${c};margin:6px 0">${v}</div><div style="color:#484f58;font-size:9px;line-height:1.4;text-align:left">${def}</div></div>`).join("")}
       </div>
     `;
     document.getElementById("modal").style.display = "flex";
@@ -1180,10 +1095,7 @@ JSON sans backticks:
   hideLoading();
 }
 
-// ── Scan button wiring ────────────────────────────────────
 document.getElementById("scan-btn").addEventListener("click", runScan);
-
-// ── Boot ──────────────────────────────────────────────────
 init();
 </script>
 </body>
