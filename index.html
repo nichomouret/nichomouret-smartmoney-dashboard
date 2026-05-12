@@ -594,7 +594,7 @@ async function fetchTickerData(ticker) {
     ? `${realRaisonSociale} ${ticker} shareholder OR institutional`
     : `${ticker} institutional shareholder`;
 
-  const [quote, ts, news, filings13g, filings13f, amfData, pelositrades] = await Promise.all([
+  const [quote, ts, news, filings13g, filings13f, amfData, pelositrades, sec13fHolders] = await Promise.all([
 proxyFetch(`/twelvedata/price?symbol=${encodeURIComponent(cleanSymbol)}`),
     proxyFetch(`/twelvedata/timeseries?symbol=${encodeURIComponent(cleanSymbol)}&interval=1day&outputsize=252`),
     proxyFetch(`/news?query=${encodeURIComponent(newsQuery)}`),
@@ -602,7 +602,19 @@ proxyFetch(`/twelvedata/price?symbol=${encodeURIComponent(cleanSymbol)}`),
     (!isEuropean && !isFrench) ? proxyFetch(`/edgar/institutional13f?ticker=${encodeURIComponent(ticker)}`) : Promise.resolve(null),
     isFrench ? proxyFetch(`/amf/franchissements?ticker=${encodeURIComponent(ticker)}`) : Promise.resolve(null),
     (!isFrench) ? proxyFetch(`/pelosi/trades?ticker=${encodeURIComponent(cleanSymbol)}`) : Promise.resolve(null),
+    proxyFetch(`/sec-13f/ticker/${encodeURIComponent(cleanSymbol)}?limit=20`),
   ]);
+
+  // SEC 13F holders (top 20 Tier 1 fonds qui detiennent ce ticker)
+  const holders13f = (sec13fHolders?.holders || []).map(h => ({
+    fund: h.fund_name,
+    tier: h.fund_tier,
+    valueUsd: h.value_usd,
+    shares: h.shares,
+    change: h.position_change,
+    changePct: h.change_pct,
+    period: h.reporting_period,
+  }));
 
   const ortex = null;
   const optionsData = null;
@@ -681,7 +693,7 @@ proxyFetch(`/twelvedata/price?symbol=${encodeURIComponent(cleanSymbol)}`),
       else gammaScore = "FAIBLE";
     }
   }
-  return { realPrice, drawdown52w, priceChange, hasRealData, newsItems, edgarFilings, shortInterestReal, daysTocover, borrowRate, ortexScore, realFilings, realRaisonSociale, dataWarning, putCallRatio, callOI, totalOI, impliedVolatility, gammaScore };
+  return { realPrice, drawdown52w, priceChange, hasRealData, newsItems, edgarFilings, shortInterestReal, daysTocover, borrowRate, ortexScore, realFilings, realRaisonSociale, dataWarning, putCallRatio, callOI, totalOI, impliedVolatility, gammaScore, holders13f };
 }
 
 async function analyzeBatch(batch, universe, customTicker = null) {
@@ -845,7 +857,8 @@ async function runScan() {
               squeezeProbability: s.squeezeProbability || null,
               shortInterest: s.shortInterest || null, shortSource: s.shortSource || null,
               putCallRatio: data.putCallRatio, callOI: data.callOI, totalOI: data.totalOI,
-              impliedVolatility: data.impliedVolatility, gammaScore: data.gammaScore
+              impliedVolatility: data.impliedVolatility, gammaScore: data.gammaScore,
+              holders13f: data.holders13f || []
             };
             base.scct = calculateSCCT(base);
             return base;
@@ -1029,6 +1042,57 @@ function renderCard(r) {
     </div>
     <div id="expanded-${r.ticker}" style="display:none" class="card-expanded">
       ${(r.news||[]).length > 0 ? `<div style="margin-bottom:12px"><div class="section-label" style="color:#58a6ff;margin-bottom:8px">📰 Actualités <span style="color:#484f58">(NewsAPI)</span></div>${(r.news||[]).map(n => `<div class="news-item"><div class="news-title-row"><span class="news-title">${n.title}</span><span class="news-date">${n.date}</span></div><div class="news-content">${n.content}</div><div class="news-source">${n.source}</div></div>`).join("")}</div>` : ""}
+      ${(r.holders13f||[]).length > 0 ? `<div style="margin-bottom:12px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <div class="section-label" style="color:#a855f7;margin-bottom:0">🏛️ Top Holders 13F · qui détient ce titre</div>
+          <span style="background:#a855f722;border:1px solid #a855f755;color:#a855f7;font-size:8px;padding:2px 8px;border-radius:4px;font-weight:700;letter-spacing:1px">✓ SEC 13F-HR</span>
+        </div>
+        <table style="width:100%;border-collapse:collapse;font-size:11px;font-family:monospace">
+          <tr style="color:#484f58;font-size:9px;text-transform:uppercase;letter-spacing:1px">
+            <td style="padding:4px 8px">Fonds (Tier 1)</td>
+            <td style="padding:4px 8px;text-align:center">Catégorie</td>
+            <td style="padding:4px 8px;text-align:center">Valeur</td>
+            <td style="padding:4px 8px;text-align:center">Actions</td>
+            <td style="padding:4px 8px;text-align:center">Variation Q</td>
+            <td style="padding:4px 8px;text-align:right">Période</td>
+          </tr>
+          ${(r.holders13f||[]).slice(0, 20).map(h => {
+            const tierColors = {
+              passive_giant: ["#58a6ff","#58a6ff22"],
+              active_giant: ["#2ed573","#2ed57322"],
+              bank: ["#ffa502","#ffa50222"],
+              hedge: ["#ff4757","#ff475722"],
+              activist: ["#ff6b3d","#ff6b3d22"],
+              quant: ["#a29bfe","#a29bfe22"],
+              sovereign: ["#eccc68","#eccc6822"],
+              thematic: ["#a855f7","#a855f722"],
+            };
+            const [tierColor, tierBg] = tierColors[h.tier] || ["#8b949e","#21262d"];
+            const valueFmt = h.valueUsd >= 1e9
+              ? (h.valueUsd / 1e9).toFixed(1) + "B$"
+              : h.valueUsd >= 1e6
+                ? (h.valueUsd / 1e6).toFixed(1) + "M$"
+                : (h.valueUsd / 1e3).toFixed(0) + "K$";
+            const sharesFmt = h.shares >= 1e6 ? (h.shares / 1e6).toFixed(2) + "M" : h.shares >= 1e3 ? (h.shares / 1e3).toFixed(0) + "K" : h.shares;
+            let changeFmt = "—";
+            let changeColor = "#484f58";
+            if (h.change === "NEW") { changeFmt = "🆕 NEW"; changeColor = "#2ed573"; }
+            else if (h.change === "INCREASED") { changeFmt = "▲ +" + (h.changePct ? h.changePct.toFixed(0) : "?") + "%"; changeColor = "#2ed573"; }
+            else if (h.change === "DECREASED") { changeFmt = "▼ " + (h.changePct ? h.changePct.toFixed(0) : "?") + "%"; changeColor = "#ff4757"; }
+            else if (h.change === "EXITED") { changeFmt = "× EXIT"; changeColor = "#ff4757"; }
+            else if (h.change === "UNCHANGED") { changeFmt = "═ stable"; changeColor = "#8b949e"; }
+            const periodFmt = h.period ? new Date(h.period).toISOString().split("T")[0].replace(/(\d{4})-(\d{2})-\d{2}/, (_, y, m) => "Q" + Math.ceil(parseInt(m, 10) / 3) + " " + y) : "—";
+            return `<tr style="background:#21262d;border-bottom:1px solid #161b22">
+              <td style="padding:6px 8px;color:#e6edf3;font-weight:700">${h.fund}</td>
+              <td style="padding:6px 8px;text-align:center"><span style="background:${tierBg};color:${tierColor};padding:2px 6px;border-radius:4px;font-size:9px;font-weight:700">${(h.tier || "—").replace(/_/g, " ")}</span></td>
+              <td style="padding:6px 8px;text-align:center;color:#58a6ff;font-weight:700">${valueFmt}</td>
+              <td style="padding:6px 8px;text-align:center;color:#8b949e">${sharesFmt}</td>
+              <td style="padding:6px 8px;text-align:center;color:${changeColor};font-weight:700">${changeFmt}</td>
+              <td style="padding:6px 8px;text-align:right;color:#8b949e">${periodFmt}</td>
+            </tr>`;
+          }).join("")}
+        </table>
+      </div>` : ""}
       ${(r.institutionalMoves||[]).length > 0 ? `<div style="margin-bottom:12px">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
           <div class="section-label" style="color:#3742fa;margin-bottom:0">🔔 Franchissements de seuil récents (BDIF + ESMA)</div>
