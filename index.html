@@ -99,10 +99,117 @@
   .loading-overlay { position: fixed; inset: 0; background: #010409f2; display: flex; align-items: center; justify-content: center; z-index: 300; flex-direction: column; gap: 14px; }
   .loading-text { color: #8b949e; font-size: 12px; letter-spacing: 2px; }
   .ticker-helper { font-size: 10px; color: #58a6ff; margin-top: 4px; cursor: help; }
+
+  /* ============================================================ */
+  /* SEC 13F BANNER — Breaking news style                          */
+  /* ============================================================ */
+  #sec-13f-banner {
+    display: none;
+    position: relative;
+    background: linear-gradient(135deg, #6b46c1 0%, #4c1d95 100%);
+    color: white;
+    padding: 12px 18px;
+    margin-bottom: 16px;
+    border-radius: 10px;
+    box-shadow: 0 4px 14px rgba(108, 70, 193, 0.35);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 13px;
+    line-height: 1.5;
+    animation: fadeIn 0.4s ease;
+  }
+  #sec-13f-banner.visible { display: block; }
+  #sec-13f-banner .s13f-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+    font-weight: 600;
+    font-size: 13px;
+    letter-spacing: 0.5px;
+  }
+  #sec-13f-banner .s13f-title { display: flex; align-items: center; gap: 8px; }
+  #sec-13f-banner .s13f-bell { font-size: 17px; animation: s13f-pulse 2s infinite; }
+  @keyframes s13f-pulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.18); }
+  }
+  #sec-13f-banner .s13f-close {
+    background: rgba(255, 255, 255, 0.12);
+    border: none;
+    color: white;
+    width: 26px; height: 26px;
+    border-radius: 50%;
+    cursor: pointer;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s;
+  }
+  #sec-13f-banner .s13f-close:hover { background: rgba(255, 255, 255, 0.25); }
+  #sec-13f-banner .s13f-filings { display: flex; flex-direction: column; gap: 6px; }
+  #sec-13f-banner .s13f-filing {
+    background: rgba(0, 0, 0, 0.22);
+    padding: 8px 12px;
+    border-radius: 6px;
+    border-left: 3px solid rgba(255, 255, 255, 0.5);
+  }
+  #sec-13f-banner .s13f-fund {
+    font-weight: 700;
+    color: #fef3c7;
+    text-transform: uppercase;
+    font-size: 11px;
+    letter-spacing: 0.5px;
+  }
+  #sec-13f-banner .s13f-period {
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 10px;
+    margin-left: 8px;
+  }
+  #sec-13f-banner .s13f-stats {
+    margin-top: 4px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 11px;
+    font-size: 11px;
+  }
+  #sec-13f-banner .s13f-stat-new { color: #6ee7b7; font-weight: 600; }
+  #sec-13f-banner .s13f-stat-inc { color: #93c5fd; font-weight: 600; }
+  #sec-13f-banner .s13f-stat-dec { color: #fdba74; font-weight: 600; }
+  #sec-13f-banner .s13f-stat-exit { color: #fca5a5; font-weight: 600; }
+  #sec-13f-banner .s13f-tickers {
+    margin-top: 4px;
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.85);
+  }
+  #sec-13f-banner .s13f-tickers strong { color: #fef3c7; font-weight: 600; }
+  #sec-13f-banner .s13f-loading,
+  #sec-13f-banner .s13f-error,
+  #sec-13f-banner .s13f-empty {
+    text-align: center; padding: 6px; font-size: 11px;
+  }
+  #sec-13f-banner .s13f-loading { color: rgba(255, 255, 255, 0.6); }
+  #sec-13f-banner .s13f-error { color: #fca5a5; }
+  #sec-13f-banner .s13f-empty { color: rgba(255, 255, 255, 0.7); }
 </style>
 </head>
 <body>
 <div class="container">
+
+  <!-- ========================================================= -->
+  <!-- SEC 13F LIVE BANNER (auto-hides if no recent filings)       -->
+  <!-- ========================================================= -->
+  <div id="sec-13f-banner">
+    <div class="s13f-header">
+      <div class="s13f-title">
+        <span class="s13f-bell">🔔</span>
+        <span>Publications SEC 13F récentes</span>
+      </div>
+      <button class="s13f-close" title="Masquer">×</button>
+    </div>
+    <div class="s13f-filings"></div>
+  </div>
+
   <div class="header">
     <div class="header-top">
       <div class="header-icon">🎯</div>
@@ -173,7 +280,7 @@
 
   <div class="footer">
     SMART MONEY SCANNER · MARK ELIAS · CLAUDE AI<br>
-    Sources: TwelveData · NewsAPI · EDGAR SEC · AMF BDIF · ESMA<br>
+    Sources: TwelveData · NewsAPI · EDGAR SEC · AMF BDIF · ESMA · SEC 13F<br>
     Outil éducatif — Ne constitue pas un conseil en investissement
   </div>
 </div>
@@ -246,7 +353,7 @@ let stopRequested = false;
 let allResults = [];
 
 function init() {
-  const sources = [["TwelveData","#58a6ff","live"],["NewsAPI","#58a6ff","live"],["EDGAR SEC","#2ed573","gratuit"],["AMF BDIF","#2ed573","live"],["ESMA","#2ed573","gratuit"],["Ortex","#ff4757","live"],["Pelosi STOCK Act","#a855f7","live"]];
+  const sources = [["TwelveData","#58a6ff","live"],["NewsAPI","#58a6ff","live"],["EDGAR SEC","#2ed573","gratuit"],["AMF BDIF","#2ed573","live"],["ESMA","#2ed573","gratuit"],["Ortex","#ff4757","live"],["Pelosi STOCK Act","#a855f7","live"],["SEC 13F","#6b46c1","live"]];
   document.getElementById("sources").innerHTML = sources.map(([n,c,s]) =>
     `<span class="source-badge" style="background:${c}15;border:1px solid ${c}44;color:${c};">${n} <span style="opacity:0.6">· ${s}</span></span>`
   ).join("");
@@ -475,7 +582,7 @@ async function fetchAmfBdif(ticker) {
 async function fetchTickerData(ticker) {
   const isFrench = ticker.includes(".PA") || ticker.includes(".BE");
   const isEuropean = isFrench;
- 
+
   const cleanSymbol = ticker.replace(/\.[A-Z]+$/,'');
 
   // CORRECTION 1: Fetch BDIF FIRST so we have the real company name for the news query
@@ -1104,6 +1211,114 @@ JSON sans backticks:
 
 document.getElementById("scan-btn").addEventListener("click", runScan);
 init();
+</script>
+
+<!-- ============================================================ -->
+<!-- SEC 13F BANNER — Auto-fetch /sec-13f/banner et affiche       -->
+<!-- ============================================================ -->
+<script>
+(function() {
+  const PROXY_BASE = "https://nichomouret-smartmoney-proxy-production.up.railway.app";
+  const BANNER_DAYS = 7;
+  const STORAGE_KEY = "sec13f_banner_dismissed_at";
+  const REFRESH_INTERVAL_MS = 30 * 60 * 1000;
+
+  const banner = document.getElementById("sec-13f-banner");
+  if (!banner) return;
+  const filingsEl = banner.querySelector(".s13f-filings");
+  const closeBtn = banner.querySelector(".s13f-close");
+
+  closeBtn.addEventListener("click", () => {
+    banner.classList.remove("visible");
+    try { localStorage.setItem(STORAGE_KEY, Date.now().toString()); } catch {}
+  });
+
+  function fmtBigNumber(n) {
+    if (!n || n === 0) return "0";
+    if (n >= 1e9) return (n / 1e9).toFixed(1) + "B$";
+    if (n >= 1e6) return (n / 1e6).toFixed(1) + "M$";
+    if (n >= 1e3) return (n / 1e3).toFixed(0) + "K$";
+    return n.toString();
+  }
+
+  function fmtPeriod(iso) {
+    if (!iso) return "—";
+    const d = new Date(iso);
+    const q = Math.floor(d.getUTCMonth() / 3) + 1;
+    return "Q" + q + " " + d.getUTCFullYear();
+  }
+
+  function buildFilingHtml(f) {
+    const topNewTickers = (f.top_new || []).slice(0, 3)
+      .map(p => `<strong>${p.ticker || (p.issuer||"").substring(0, 16)}</strong> (${fmtBigNumber(p.value_usd)})`)
+      .join(" · ");
+    const topIncTickers = (f.top_increased || []).slice(0, 2)
+      .map(p => `<strong>${p.ticker || (p.issuer||"").substring(0, 16)}</strong> +${p.change_pct ? p.change_pct.toFixed(0) : "?"}%`)
+      .join(" · ");
+
+    const totalVal = fmtBigNumber(f.total_value_usd);
+    const period = fmtPeriod(f.reporting_period);
+
+    let stats = "";
+    if (f.count_new > 0) stats += `<span class="s13f-stat-new">+${f.count_new} NEW</span>`;
+    if (f.count_increased > 0) stats += `<span class="s13f-stat-inc">↑${f.count_increased}</span>`;
+    if (f.count_decreased > 0) stats += `<span class="s13f-stat-dec">↓${f.count_decreased}</span>`;
+    if (f.count_exited > 0) stats += `<span class="s13f-stat-exit">×${f.count_exited} exit</span>`;
+
+    let tickers = "";
+    if (topNewTickers) tickers += "Top NEW: " + topNewTickers;
+    if (topIncTickers) {
+      if (tickers) tickers += " · ";
+      tickers += "Top ↑: " + topIncTickers;
+    }
+
+    return `
+      <div class="s13f-filing">
+        <div>
+          <span class="s13f-fund">${f.fund_name}</span>
+          <span class="s13f-period">${period} · ${totalVal} AUM · ${f.positions_count} positions</span>
+        </div>
+        <div class="s13f-stats">${stats}</div>
+        ${tickers ? `<div class="s13f-tickers">${tickers}</div>` : ""}
+      </div>
+    `;
+  }
+
+  async function loadBanner() {
+    filingsEl.innerHTML = '<div class="s13f-loading">Chargement…</div>';
+    try {
+      const r = await fetch(`${PROXY_BASE}/sec-13f/banner?days=${BANNER_DAYS}`);
+      if (!r.ok) {
+        filingsEl.innerHTML = `<div class="s13f-error">Erreur ${r.status}</div>`;
+        banner.classList.add("visible");
+        return;
+      }
+      const data = await r.json();
+      if (!data.ok || !data.notable_changes || data.notable_changes.length === 0) {
+        banner.classList.remove("visible");
+        return;
+      }
+
+      const lastIngested = Math.max(
+        ...data.notable_changes.map(f => new Date(f.ingested_at).getTime())
+      );
+      let dismissedAt = 0;
+      try { dismissedAt = parseInt(localStorage.getItem(STORAGE_KEY) || "0", 10); } catch {}
+
+      if (dismissedAt > lastIngested) return;
+
+      filingsEl.innerHTML = data.notable_changes.slice(0, 6).map(buildFilingHtml).join("");
+      banner.classList.add("visible");
+    } catch (e) {
+      console.error("[sec13f-banner]", e);
+      filingsEl.innerHTML = `<div class="s13f-error">Erreur réseau</div>`;
+      banner.classList.add("visible");
+    }
+  }
+
+  loadBanner();
+  setInterval(loadBanner, REFRESH_INTERVAL_MS);
+})();
 </script>
 </body>
 </html>
