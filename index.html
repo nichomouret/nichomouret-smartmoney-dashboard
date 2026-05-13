@@ -655,7 +655,11 @@ async function fetchTickerData(ticker) {
   const isFrench = ticker.includes(".PA") || ticker.includes(".BE");
   const isEuropean = isFrench;
 
+  // CORRECTION: pour les tickers Euronext (.PA/.BE), garder le suffixe pour eviter
+  // les collisions avec des tickers US homonymes (ex: NANO -> NanoLabs US au lieu de Nanobiotix)
   const cleanSymbol = ticker.replace(/\.[A-Z]+$/,'');
+  // Symbole pour TwelveData : conserve le suffixe pour les marches non-US
+  const priceSymbol = isFrench ? ticker : cleanSymbol;
 
   // CORRECTION 1: Fetch BDIF FIRST so we have the real company name for the news query
   const bdifResult = isFrench ? await fetchAmfBdif(ticker) : { crossings: [], raisonSociale: null, isin: null };
@@ -667,8 +671,8 @@ async function fetchTickerData(ticker) {
     : `${ticker} institutional shareholder`;
 
   const [quote, ts, news, filings13g, filings13f, amfData, pelositrades, sec13fHolders] = await Promise.all([
-proxyFetch(`/twelvedata/price?symbol=${encodeURIComponent(cleanSymbol)}`),
-    proxyFetch(`/twelvedata/timeseries?symbol=${encodeURIComponent(cleanSymbol)}&interval=1day&outputsize=252`),
+proxyFetch(`/twelvedata/price?symbol=${encodeURIComponent(priceSymbol)}`),
+    proxyFetch(`/twelvedata/timeseries?symbol=${encodeURIComponent(priceSymbol)}&interval=1day&outputsize=252`),
     proxyFetch(`/news?query=${encodeURIComponent(newsQuery)}`),
     (!isEuropean && !isFrench) ? proxyFetch(`/edgar/filings13g?ticker=${encodeURIComponent(ticker.replace(/\.PA$|\.BE$/,''))}`) : Promise.resolve({filings:[]}),
     (!isEuropean && !isFrench) ? proxyFetch(`/edgar/institutional13f?ticker=${encodeURIComponent(ticker)}`) : Promise.resolve(null),
