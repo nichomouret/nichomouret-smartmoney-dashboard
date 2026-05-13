@@ -160,6 +160,13 @@
     text-transform: uppercase;
     font-size: 11px;
     letter-spacing: 0.5px;
+    cursor: pointer;
+    text-decoration: underline;
+    text-decoration-color: rgba(254, 243, 199, 0.3);
+    transition: text-decoration-color 0.2s;
+  }
+  #sec-13f-banner .s13f-fund:hover {
+    text-decoration-color: rgba(254, 243, 199, 1);
   }
   #sec-13f-banner .s13f-period {
     color: rgba(255, 255, 255, 0.7);
@@ -1273,6 +1280,130 @@ JSON sans backticks:
   hideLoading();
 }
 
+// ============================================================
+// SEC 13F — Modal "détails fonds" (clic sur nom dans bannière)
+// ============================================================
+async function openFundDetails(cik, fundName) {
+  showLoading(`Chargement des positions de ${fundName}…`);
+  try {
+    const r = await fetch(`${PROXY}/sec-13f/fund/${encodeURIComponent(cik)}?limit=100`);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const data = await r.json();
+    if (!data.ok) throw new Error("Pas de données pour ce fonds");
+
+    const tierColors = {
+      passive_giant: ["#58a6ff","#58a6ff22"],
+      active_giant:  ["#2ed573","#2ed57322"],
+      bank:          ["#ffa502","#ffa50222"],
+      hedge:         ["#ff4757","#ff475722"],
+      activist:      ["#ff6b3d","#ff6b3d22"],
+      quant:         ["#a29bfe","#a29bfe22"],
+      sovereign:     ["#eccc68","#eccc6822"],
+      thematic:      ["#a855f7","#a855f722"],
+    };
+    const [tierColor, tierBg] = tierColors[data.fund_tier] || ["#8b949e","#21262d"];
+
+    const fmtBig = n => {
+      if (!n || n === 0) return "0";
+      if (n >= 1e9) return (n / 1e9).toFixed(1) + "B$";
+      if (n >= 1e6) return (n / 1e6).toFixed(1) + "M$";
+      if (n >= 1e3) return (n / 1e3).toFixed(0) + "K$";
+      return n.toString();
+    };
+    const fmtShares = s => {
+      if (!s) return "—";
+      if (s >= 1e6) return (s / 1e6).toFixed(2) + "M";
+      if (s >= 1e3) return (s / 1e3).toFixed(0) + "K";
+      return s.toString();
+    };
+
+    const period = data.reporting_period
+      ? `Q${Math.ceil((new Date(data.reporting_period).getUTCMonth() + 1) / 3)} ${new Date(data.reporting_period).getUTCFullYear()}`
+      : "—";
+
+    const counts = {
+      new: data.holdings.filter(h => h.position_change === "NEW").length,
+      increased: data.holdings.filter(h => h.position_change === "INCREASED").length,
+      decreased: data.holdings.filter(h => h.position_change === "DECREASED").length,
+      exited: data.holdings.filter(h => h.position_change === "EXITED").length,
+      unchanged: data.holdings.filter(h => h.position_change === "UNCHANGED").length,
+    };
+
+    const rowsHtml = data.holdings.map((h, idx) => {
+      let changeFmt = "—";
+      let changeColor = "#484f58";
+      if (h.position_change === "NEW") { changeFmt = "🆕 NEW"; changeColor = "#2ed573"; }
+      else if (h.position_change === "INCREASED") { changeFmt = "▲ +" + (h.change_pct ? Math.round(h.change_pct) : "?") + "%"; changeColor = "#2ed573"; }
+      else if (h.position_change === "DECREASED") { changeFmt = "▼ " + (h.change_pct ? Math.round(h.change_pct) : "?") + "%"; changeColor = "#ff4757"; }
+      else if (h.position_change === "EXITED") { changeFmt = "× EXIT"; changeColor = "#ff4757"; }
+      else if (h.position_change === "UNCHANGED") { changeFmt = "═ stable"; changeColor = "#8b949e"; }
+
+      const portfolioPct = data.total_value_usd > 0 ? ((Number(h.value_usd) / Number(data.total_value_usd)) * 100).toFixed(2) : "—";
+
+      return `<tr style="background:${idx % 2 === 0 ? '#21262d' : '#161b22'};border-bottom:1px solid #161b22">
+        <td style="padding:6px 8px;color:#484f58;font-size:10px;text-align:center">${idx + 1}</td>
+        <td style="padding:6px 8px;color:#e6edf3;font-weight:700">${h.issuer}${h.ticker ? ` <span style="color:#58a6ff;font-size:10px">(${h.ticker})</span>` : ''}</td>
+        <td style="padding:6px 8px;text-align:right;color:#58a6ff;font-weight:700">${fmtBig(h.value_usd)}</td>
+        <td style="padding:6px 8px;text-align:right;color:#8b949e">${portfolioPct}%</td>
+        <td style="padding:6px 8px;text-align:right;color:#8b949e">${fmtShares(h.shares)}</td>
+        <td style="padding:6px 8px;text-align:right;color:${changeColor};font-weight:700">${changeFmt}</td>
+      </tr>`;
+    }).join("");
+
+    document.getElementById("modal-content").innerHTML = `
+      <div class="modal-header">
+        <div>
+          <div class="modal-title">${data.fund_name}</div>
+          <div class="modal-sub">${period} · ${fmtBig(data.total_value_usd)} AUM · ${data.positions_count} positions au total</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-shrink:0">
+          <span style="padding:5px 14px;border-radius:6px;font-weight:700;font-size:10px;background:${tierBg};border:1px solid ${tierColor}66;color:${tierColor};text-transform:uppercase;letter-spacing:1px">${(data.fund_tier || '—').replace(/_/g, ' ')}</span>
+          <button class="modal-close" onclick="closeModal()">✕</button>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
+        <span style="background:#2ed57322;color:#2ed573;padding:4px 10px;border-radius:6px;font-size:11px;font-weight:700">+${counts.new} NEW</span>
+        <span style="background:#58a6ff22;color:#58a6ff;padding:4px 10px;border-radius:6px;font-size:11px;font-weight:700">↑${counts.increased} INCREASED</span>
+        <span style="background:#ffa50222;color:#ffa502;padding:4px 10px;border-radius:6px;font-size:11px;font-weight:700">↓${counts.decreased} DECREASED</span>
+        <span style="background:#ff475722;color:#ff4757;padding:4px 10px;border-radius:6px;font-size:11px;font-weight:700">×${counts.exited} EXITED</span>
+        <span style="background:#21262d;color:#8b949e;padding:4px 10px;border-radius:6px;font-size:11px;font-weight:700">═${counts.unchanged} stable</span>
+      </div>
+      <div style="margin-bottom:8px;color:#8b949e;font-size:10px;font-style:italic">Top ${data.count} positions par valeur. Cliquer sur ✕ pour fermer.</div>
+      <div style="max-height:60vh;overflow-y:auto;border:1px solid #30363d;border-radius:8px">
+        <table style="width:100%;border-collapse:collapse;font-size:11px;font-family:monospace">
+          <thead style="position:sticky;top:0;background:#0d1117;z-index:1">
+            <tr style="color:#484f58;font-size:9px;text-transform:uppercase;letter-spacing:1px;border-bottom:1px solid #30363d">
+              <td style="padding:6px 8px;text-align:center">#</td>
+              <td style="padding:6px 8px">Émetteur</td>
+              <td style="padding:6px 8px;text-align:right">Valeur</td>
+              <td style="padding:6px 8px;text-align:right">% portfolio</td>
+              <td style="padding:6px 8px;text-align:right">Actions</td>
+              <td style="padding:6px 8px;text-align:right">Variation Q</td>
+            </tr>
+          </thead>
+          <tbody>
+            ${rowsHtml}
+          </tbody>
+        </table>
+      </div>
+    `;
+    document.getElementById("modal").style.display = "flex";
+  } catch (e) {
+    console.error("[openFundDetails]", e);
+    document.getElementById("modal-content").innerHTML = `
+      <div class="modal-header">
+        <div><div class="modal-title">Erreur</div><div class="modal-sub">${fundName}</div></div>
+        <button class="modal-close" onclick="closeModal()">✕</button>
+      </div>
+      <div style="color:#ff4757;padding:12px;background:#ff475715;border-radius:8px">Impossible de charger les positions : ${e.message}</div>
+    `;
+    document.getElementById("modal").style.display = "flex";
+  }
+  hideLoading();
+}
+// Expose pour onclick depuis la bannière (IIFE séparée)
+window.openFundDetails = openFundDetails;
+
 document.getElementById("scan-btn").addEventListener("click", runScan);
 init();
 </script>
@@ -1336,10 +1467,12 @@ init();
       tickers += "Top ↑: " + topIncTickers;
     }
 
+    const cikEsc = String(f.fund_cik || "").replace(/[^0-9]/g, "");
+    const fundNameEsc = (f.fund_name || "").replace(/'/g, "&#39;").replace(/"/g, "&quot;");
     return `
       <div class="s13f-filing">
         <div>
-          <span class="s13f-fund">${f.fund_name}</span>
+          <span class="s13f-fund" onclick="window.openFundDetails('${cikEsc}', '${fundNameEsc}')" title="Clique pour voir toutes les positions">${f.fund_name}</span>
           <span class="s13f-period">${period} · ${totalVal} AUM · ${f.positions_count} positions</span>
         </div>
         <div class="s13f-stats">${stats}</div>
