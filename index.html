@@ -1329,14 +1329,41 @@ async function openFundDetails(cik, fundName) {
       unchanged: data.holdings.filter(h => h.position_change === "UNCHANGED").length,
     };
 
+    // Calcul du shares-based change pct si dispo (= signal pur achat/vente)
+    // Pour les anciennes donnees sans previous_shares, on utilise change_pct (value-based) en fallback
+    function computeSharesVariation(h) {
+      // Priorite a shares_change_pct (nouveau, propre)
+      if (h.shares_change_pct !== null && h.shares_change_pct !== undefined && h.previous_shares > 0) {
+        return h.shares_change_pct;
+      }
+      // Fallback: change_pct value-based (mais bruité par les mouvements de cours)
+      return h.change_pct;
+    }
+
     const rowsHtml = data.holdings.map((h, idx) => {
       let changeFmt = "—";
       let changeColor = "#484f58";
-      if (h.position_change === "NEW") { changeFmt = "🆕 NEW"; changeColor = "#2ed573"; }
-      else if (h.position_change === "INCREASED") { changeFmt = "▲ +" + (h.change_pct ? Math.round(h.change_pct) : "?") + "%"; changeColor = "#2ed573"; }
-      else if (h.position_change === "DECREASED") { changeFmt = "▼ " + (h.change_pct ? Math.round(h.change_pct) : "?") + "%"; changeColor = "#ff4757"; }
-      else if (h.position_change === "EXITED") { changeFmt = "× EXIT"; changeColor = "#ff4757"; }
-      else if (h.position_change === "UNCHANGED") { changeFmt = "═ stable"; changeColor = "#8b949e"; }
+      let changeTooltip = "";
+      const sharesVar = computeSharesVariation(h);
+
+      if (h.position_change === "NEW") {
+        changeFmt = "🆕 NEW";
+        changeColor = "#2ed573";
+        changeTooltip = "Nouvelle position ce trimestre";
+      } else if (h.position_change === "EXITED") {
+        changeFmt = "× EXIT";
+        changeColor = "#ff4757";
+        changeTooltip = "Position vendue completement";
+      } else if (h.position_change === "UNCHANGED") {
+        changeFmt = "═ stable";
+        changeColor = "#8b949e";
+        changeTooltip = "Position inchangee";
+      } else if (sharesVar !== null && sharesVar !== undefined) {
+        const sign = sharesVar > 0 ? "▲ +" : "▼ ";
+        changeColor = sharesVar > 0 ? "#2ed573" : "#ff4757";
+        changeFmt = sign + Math.round(sharesVar) + "%";
+        changeTooltip = `Variation du nombre d'actions detenues : ${sharesVar > 0 ? 'achete' : 'vendu'} ${Math.abs(Math.round(sharesVar))}% du trimestre precedent`;
+      }
 
       const portfolioPct = data.total_value_usd > 0 ? ((Number(h.value_usd) / Number(data.total_value_usd)) * 100).toFixed(2) : "—";
 
@@ -1346,7 +1373,7 @@ async function openFundDetails(cik, fundName) {
         <td style="padding:6px 8px;text-align:right;color:#58a6ff;font-weight:700">${fmtBig(h.value_usd)}</td>
         <td style="padding:6px 8px;text-align:right;color:#8b949e">${portfolioPct}%</td>
         <td style="padding:6px 8px;text-align:right;color:#8b949e">${fmtShares(h.shares)}</td>
-        <td style="padding:6px 8px;text-align:right;color:${changeColor};font-weight:700">${changeFmt}</td>
+        <td style="padding:6px 8px;text-align:right;color:${changeColor};font-weight:700" title="${changeTooltip}">${changeFmt}</td>
       </tr>`;
     }).join("");
 
@@ -1378,7 +1405,7 @@ async function openFundDetails(cik, fundName) {
               <td style="padding:6px 8px;text-align:right">Valeur</td>
               <td style="padding:6px 8px;text-align:right">% portfolio</td>
               <td style="padding:6px 8px;text-align:right">Actions</td>
-              <td style="padding:6px 8px;text-align:right">Variation Q</td>
+              <td style="padding:6px 8px;text-align:right" title="Variation du nombre d'actions vs trimestre precedent (signal pur achat/vente)">Acheté/Vendu Q</td>
             </tr>
           </thead>
           <tbody>
