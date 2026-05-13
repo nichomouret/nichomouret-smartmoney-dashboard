@@ -1340,6 +1340,24 @@ async function openFundDetails(cik, fundName) {
       return h.change_pct;
     }
 
+    // Calcul du prix moyen approximatif pendant le trimestre
+    // PM = midpoint entre prix Q-1 (prev_value/prev_shares) et prix Q (value/shares)
+    // C'est une approximation : on suppose une accumulation uniforme pendant le trimestre
+    function computePmQ(h) {
+      const curPrice = h.shares > 0 ? Number(h.value_usd) / Number(h.shares) : null;
+      const prevPrice = h.previous_shares > 0 ? Number(h.previous_value_usd) / Number(h.previous_shares) : null;
+      if (curPrice && prevPrice) return (curPrice + prevPrice) / 2;
+      return curPrice || null; // si NEW, on a que cur_price
+    }
+
+    function fmtPrice(p) {
+      if (!p || p <= 0) return "—";
+      if (p >= 1000) return p.toFixed(0) + "$";
+      if (p >= 100) return p.toFixed(1) + "$";
+      if (p >= 10) return p.toFixed(2) + "$";
+      return p.toFixed(3) + "$";
+    }
+
     const rowsHtml = data.holdings.map((h, idx) => {
       let changeFmt = "—";
       let changeColor = "#484f58";
@@ -1366,6 +1384,8 @@ async function openFundDetails(cik, fundName) {
       }
 
       const portfolioPct = data.total_value_usd > 0 ? ((Number(h.value_usd) / Number(data.total_value_usd)) * 100).toFixed(2) : "—";
+      const pmQ = computePmQ(h);
+      const tickerKey = (h.ticker || "").trim();
 
       return `<tr style="background:${idx % 2 === 0 ? '#21262d' : '#161b22'};border-bottom:1px solid #161b22">
         <td style="padding:6px 8px;color:#484f58;font-size:10px;text-align:center">${idx + 1}</td>
@@ -1373,6 +1393,8 @@ async function openFundDetails(cik, fundName) {
         <td style="padding:6px 8px;text-align:right;color:#58a6ff;font-weight:700">${fmtBig(h.value_usd)}</td>
         <td style="padding:6px 8px;text-align:right;color:#8b949e">${portfolioPct}%</td>
         <td style="padding:6px 8px;text-align:right;color:#8b949e">${fmtShares(h.shares)}</td>
+        <td style="padding:6px 8px;text-align:right;color:#eccc68;font-weight:700" title="Prix moyen approximatif pendant le trimestre (midpoint Q-1 et Q)">${fmtPrice(pmQ)}</td>
+        <td style="padding:6px 8px;text-align:right;color:#a29bfe;font-weight:700" id="curprice-${tickerKey}-${idx}" data-ticker="${tickerKey}" data-pm="${pmQ || ''}" title="Cours actuel — sera charge automatiquement">—</td>
         <td style="padding:6px 8px;text-align:right;color:${changeColor};font-weight:700" title="${changeTooltip}">${changeFmt}</td>
       </tr>`;
     }).join("");
@@ -1405,6 +1427,8 @@ async function openFundDetails(cik, fundName) {
               <td style="padding:6px 8px;text-align:right">Valeur</td>
               <td style="padding:6px 8px;text-align:right">% portfolio</td>
               <td style="padding:6px 8px;text-align:right">Actions</td>
+              <td style="padding:6px 8px;text-align:right;color:#eccc68" title="Prix moyen approximatif acheté pendant le trimestre">PM Q ($)</td>
+              <td style="padding:6px 8px;text-align:right;color:#a29bfe" title="Cours actuel — top 20 chargés automatiquement">Cours actuel</td>
               <td style="padding:6px 8px;text-align:right" title="Variation du nombre d'actions vs trimestre precedent (signal pur achat/vente)">Acheté/Vendu Q</td>
             </tr>
           </thead>
@@ -1415,6 +1439,44 @@ async function openFundDetails(cik, fundName) {
       </div>
     `;
     document.getElementById("modal").style.display = "flex";
+
+    // Lazy fetch des cours actuels pour les top 20 positions (avec ticker)
+    const top20WithTicker = data.holdings
+      .slice(0, 20)
+      .map((h, idx) => ({ idx, ticker: h.ticker, pm: computePmQ(h) }))
+      .filter(x => x.ticker);
+
+    // Batch fetch avec rate limit (5 par seconde max pour ne pas saturer TwelveData)
+    for (let i = 0; i < top20WithTicker.length; i++) {
+      const { idx, ticker, pm } = top20WithTicker[i];
+      try {
+        const cleanSymbol = ticker.replace(/\.[A-Z]+$/, '');
+        const r = await fetch(`${PROXY}/twelvedata/price?symbol=${encodeURIComponent(cleanSymbol)}`);
+        if (r.ok) {
+          const quote = await r.json();
+          if (quote && !quote.code && quote.close) {
+            const cur = parseFloat(quote.close);
+            const cell = document.getElementById(`curprice-${ticker}-${idx}`);
+            if (cell && cur > 0) {
+              // Comparer cours actuel vs PM Q (achat ARK)
+              let deltaHtml = "";
+              if (pm && pm > 0) {
+                const deltaPct = ((cur - pm) / pm) * 100;
+                const sign = deltaPct > 0 ? "+" : "";
+                const color = deltaPct > 0 ? "#ff6b3d" : "#2ed573";
+                const label = deltaPct > 0 ? "(plus cher qu'ARK)" : "(moins cher qu'ARK)";
+                deltaHtml = `<div style="font-size:9px;color:${color};font-weight:600">${sign}${deltaPct.toFixed(1)}% ${label}</div>`;
+              }
+              cell.innerHTML = `<div style="color:#a29bfe">${fmtPrice(cur)}</div>${deltaHtml}`;
+            }
+          }
+        }
+      } catch (err) {
+        // skip silently
+      }
+      // Rate limit : 200ms entre chaque appel (5 req/sec max)
+      await new Promise(r => setTimeout(r, 200));
+    }
   } catch (e) {
     console.error("[openFundDetails]", e);
     document.getElementById("modal-content").innerHTML = `
