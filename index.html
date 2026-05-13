@@ -318,6 +318,71 @@ const TOP_DRAWDOWN = ["AGEN","RUBY","AKRO","ALDX","INVA","DMTK","NVRO","RCUS","T
 
  const KNOWN_US_TICKERS = new Set([...SP100, ...NASDAQ100, ...RUSSELL, ...NASDAQ150_EXT, ...SP500_EXTRA, ...TOP_DRAWDOWN]);
 
+// Mapping issuer_name SEC -> ticker (pour fetch cours actuel quand h.ticker est null)
+// SEC 13F ne fournit que CUSIP, pas tickers. On enrichit avec ce dictionnaire.
+const ISSUER_TO_TICKER = {
+  // Mega-caps
+  "TESLA INC":"TSLA","TESLA":"TSLA",
+  "APPLE INC":"AAPL","APPLE":"AAPL",
+  "MICROSOFT CORP":"MSFT","MICROSOFT":"MSFT",
+  "NVIDIA CORP":"NVDA","NVIDIA CORPORATION":"NVDA","NVIDIA":"NVDA",
+  "AMAZON COM INC":"AMZN","AMAZON.COM INC":"AMZN","AMAZON":"AMZN",
+  "ALPHABET INC":"GOOGL","ALPHABET":"GOOGL","ALPHABET INC CLASS A":"GOOGL",
+  "META PLATFORMS INC":"META","META PLATFORMS I":"META","META PLATFORMS":"META",
+  "BERKSHIRE HATHAWAY INC":"BRK.B","BERKSHIRE HATHAWAY":"BRK.B",
+  // Tech / Semi
+  "ADVANCED MICRO DEVICES INC":"AMD","ADVANCED MICRO DEVICES":"AMD",
+  "INTEL CORP":"INTC","BROADCOM INC":"AVGO","QUALCOMM INC":"QCOM",
+  "TEXAS INSTRUMENTS":"TXN","TEXAS INSTRUMENTS INC":"TXN",
+  "CISCO SYSTEMS INC":"CSCO","ORACLE CORP":"ORCL","SALESFORCE INC":"CRM",
+  "ADOBE INC":"ADBE","SHOPIFY INC":"SHOP","SHOPIFY":"SHOP",
+  "PALANTIR TECHNOLOGIES INC":"PLTR","PALANTIR TECHNOLOGIES":"PLTR",
+  "CRISPR THERAPEUTICS AG":"CRSP","CRISPR THERAPEUTICS":"CRSP",
+  "TEMPUS AI INC":"TEM","CIRCLE INTERNET GROUP INC":"CRCL","CIRCLE INTERNET":"CRCL",
+  "ROBINHOOD MARKETS INC":"HOOD","COINBASE GLOBAL INC":"COIN",
+  "TERADYNE INC":"TER","ROKU INC":"ROKU","ROBLOX CORP":"RBLX","ROBLOX":"RBLX",
+  "TWIST BIOSCIENCE CORP":"TWST","BEAM THERAPEUTICS INC":"BEAM",
+  // Finance
+  "JPMORGAN CHASE & CO":"JPM","JPMORGAN CHASE":"JPM","JP MORGAN CHASE":"JPM",
+  "BANK OF AMERICA CORP":"BAC","BANK OF AMERICA":"BAC",
+  "GOLDMAN SACHS GROUP INC":"GS","GOLDMAN SACHS":"GS",
+  "MORGAN STANLEY":"MS","WELLS FARGO & CO":"WFC","WELLS FARGO":"WFC",
+  "CITIGROUP INC":"C","BLACKROCK INC":"BLK","BLACKROCK":"BLK",
+  "BERKSHIRE HATHAWAY INC CL B":"BRK.B","VISA INC":"V","MASTERCARD INC":"MA",
+  // Healthcare / Pharma
+  "JOHNSON & JOHNSON":"JNJ","ELI LILLY & CO":"LLY","ELI LILLY":"LLY",
+  "PFIZER INC":"PFE","ABBVIE INC":"ABBV","ABBVIE":"ABBV",
+  "MERCK & CO INC":"MRK","UNITEDHEALTH GROUP INC":"UNH","UNITEDHEALTH":"UNH",
+  "BRISTOL MYERS SQUIBB CO":"BMY","BRISTOL MYERS":"BMY",
+  "MODERNA INC":"MRNA","BIOGEN INC":"BIIB","REGENERON PHARMACEUTICALS":"REGN",
+  "GILEAD SCIENCES INC":"GILD","AMGEN INC":"AMGN","ABBOTT LABORATORIES":"ABT",
+  // Consumer
+  "PROCTER & GAMBLE CO":"PG","COCA COLA CO":"KO","COCA-COLA CO":"KO",
+  "PEPSICO INC":"PEP","WALMART INC":"WMT","COSTCO WHOLESALE CORP":"COST",
+  "HOME DEPOT INC":"HD","MCDONALDS CORP":"MCD","STARBUCKS CORP":"SBUX",
+  "NIKE INC":"NKE","DISNEY (WALT) CO":"DIS","WALT DISNEY":"DIS",
+  "NETFLIX INC":"NFLX","SPOTIFY TECHNOLOGY SA":"SPOT",
+  "AIRBNB INC":"ABNB","UBER TECHNOLOGIES INC":"UBER","LYFT INC":"LYFT",
+  "DOORDASH INC":"DASH","PINTEREST INC":"PINS","SNAP INC":"SNAP",
+  // Energy
+  "EXXON MOBIL CORP":"XOM","CHEVRON CORP":"CVX","CONOCOPHILLIPS":"COP",
+  "EOG RESOURCES INC":"EOG","OCCIDENTAL PETROLEUM":"OXY",
+  // Industrial
+  "BOEING CO":"BA","CATERPILLAR INC":"CAT","HONEYWELL INTERNATIONAL":"HON",
+  "GENERAL ELECTRIC CO":"GE","3M CO":"MMM","DEERE & CO":"DE",
+  // ETFs
+  "SPDR S&P 500 ETF TRUST":"SPY","SPDR S&P 500":"SPY",
+  "VANGUARD INDEX F":"VTI","VANGUARD STAR FD":"VTSAX",
+  "ISHARES TR":"IVV","INVESCO QQQ TR":"QQQ","INVESCO QQQ":"QQQ",
+};
+
+function resolveTicker(issuerName, existingTicker) {
+  if (existingTicker && existingTicker.trim()) return existingTicker.trim();
+  if (!issuerName) return null;
+  const key = issuerName.toUpperCase().trim();
+  return ISSUER_TO_TICKER[key] || null;
+}
+
 const BDIF_SUGGESTIONS = {
   "WLN":{s:"WLN.PA",n:"Worldline"},"UBI":{s:"UBI.PA",n:"Ubisoft"},"IVA":{s:"IVA.PA",n:"Inventiva"},
   "AF":{s:"AF.PA",n:"Air France-KLM"},"EXA":{s:"EXA.PA",n:"Exail"},"ABVX":{s:"ABVX.PA",n:"Abivax"},
@@ -1385,7 +1450,7 @@ async function openFundDetails(cik, fundName) {
 
       const portfolioPct = data.total_value_usd > 0 ? ((Number(h.value_usd) / Number(data.total_value_usd)) * 100).toFixed(2) : "—";
       const pmQ = computePmQ(h);
-      const tickerKey = (h.ticker || "").trim();
+      const tickerKey = resolveTicker(h.issuer, h.ticker) || "";
 
       return `<tr style="background:${idx % 2 === 0 ? '#21262d' : '#161b22'};border-bottom:1px solid #161b22">
         <td style="padding:6px 8px;color:#484f58;font-size:10px;text-align:center">${idx + 1}</td>
@@ -1443,7 +1508,7 @@ async function openFundDetails(cik, fundName) {
     // Lazy fetch des cours actuels pour les top 20 positions (avec ticker)
     const top20WithTicker = data.holdings
       .slice(0, 20)
-      .map((h, idx) => ({ idx, ticker: h.ticker, pm: computePmQ(h) }))
+      .map((h, idx) => ({ idx, ticker: resolveTicker(h.issuer, h.ticker), pm: computePmQ(h) }))
       .filter(x => x.ticker);
 
     // Batch fetch avec rate limit (5 par seconde max pour ne pas saturer TwelveData)
