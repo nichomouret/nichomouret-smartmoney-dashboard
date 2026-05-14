@@ -616,15 +616,16 @@ function calculateSCCT(result) {
     else if (dd >= 20) score += 6;
   }
 
+  // VAD scoring : utilise la valeur (reelle Ortex OU estimee Claude type "15-20%")
+  // parseFloat("15-20%") = 15 (low bound, conservateur)
+  // VAD reelle Ortex = 100% du poids ; VAD estimee Claude = 70% du poids
   const siValue = parseFloat(result.shortInterestReal || result.shortInterest) || 0;
-  if (result.shortInterestReal) {
-    if (siValue >= 20) score += 20;
-    else if (siValue >= 15) score += 16;
-    else if (siValue >= 10) score += 10;
-    else if (siValue > 0) score += 5;
-  } else if (result.criteria?.short_interest) {
-    score += 6;
-  }
+  const isRealSi = !!result.shortInterestReal;
+  if (siValue >= 20) score += isRealSi ? 20 : 14;
+  else if (siValue >= 15) score += isRealSi ? 16 : 11;
+  else if (siValue >= 10) score += isRealSi ? 10 : 7;
+  else if (siValue > 0) score += isRealSi ? 5 : 3;
+  else if (result.criteria?.short_interest) score += 4;
 
   const hasRealThreshold = moves.some(m =>
     m.verified === true && (
@@ -647,11 +648,22 @@ function calculateSCCT(result) {
   const activistMoves = moves.filter(m => m.verified && (m.isActivist || activists.some(f => (m.fund||"").includes(f))));
   const pelosiMoves = moves.filter(m => m.isPelosi || (m.fund||"").includes("Pelosi"));
 
+  // Fallback : holders13f (SEC 13F current holdings) si pas de mouvements verifies <18mo
+  // C'est une donnee fiable (deposee a la SEC) meme si plus ancienne que 18 mois
+  const holders = result.holders13f || [];
+  const tier1Holders = holders.filter(h => tier1.some(f => (h.fund||"").toUpperCase().includes(f.toUpperCase())));
+  const activistHolders = holders.filter(h => activists.some(f => (h.fund||"").toUpperCase().includes(f.toUpperCase())));
+
   if (tier1Moves.length >= 2) score += 25;
   else if (tier1Moves.length >= 1 && activistMoves.length >= 1) score += 23;
   else if (tier1Moves.length >= 1 && pelosiMoves.length >= 1) score += 22;
   else if (tier1Moves.length >= 1) score += 18;
   else if (activistMoves.length >= 1) score += 15;
+  // Fallback 13F holders : poids ~80% car non-mouvement mais detention verifiee
+  else if (tier1Holders.length >= 3) score += 20;
+  else if (tier1Holders.length >= 1 && activistHolders.length >= 1) score += 18;
+  else if (tier1Holders.length >= 1) score += 14;
+  else if (activistHolders.length >= 1) score += 12;
   else if (result.criteria?.institutional) score += 5;
 
   if (result.criteria?.catalysts || result.criteria?.biotech) score += 10;
@@ -947,10 +959,14 @@ async function runScan() {
       if (stopRequested) break;
       const ticker = item.ticker;
       const isEU = ticker.includes(".PA") || ticker.includes(".BE");
-      // Ortex endpoint cassé (404) — desactivé pour eviter le spam console
-      // Le VAD reel reviendra quand l'endpoint sera fixe cote proxy
-      // try { const ortexData = await proxyFetch(`/ortex/shortinterest?ticker=${encodeURIComponent(ticker)}`); ... } catch(e) {}
-      await new Promise(r => setTimeout(r, isEU ? 100 : 50));
+      // REACTIVATION : Ortex endpoint repare (try nasdaq/nyse/amex au lieu de hardcode nyse)
+      try {
+        const ortexData = await proxyFetch(`/ortex/shortinterest?ticker=${encodeURIComponent(ticker)}`);
+        if (ortexData && !ortexData.error && ortexData.shortInterestPct != null) {
+          item.data.shortInterestReal = parseFloat(ortexData.shortInterestPct).toFixed(1) + "%";
+        }
+      } catch(e) {}
+      await new Promise(r => setTimeout(r, isEU ? 400 : 250));
     }
 
     const qualified = batchWithData.filter(({ data }) => {
