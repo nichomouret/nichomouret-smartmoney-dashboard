@@ -1088,6 +1088,29 @@ function getScore(r) { return Object.values(r.criteria || {}).filter(Boolean).le
 function renderTopFunds(moves, r) {
   const realMoves = (moves || []).filter(m => m.verified === true);
   if (realMoves.length === 0) {
+    // FALLBACK 1 : si pas de mouvements recents (18 mois), basculer sur les TOP HOLDERS SEC 13F
+    const holders = (r && r.holders13f) || [];
+    if (holders.length > 0) {
+      const fmtAum = (v) => {
+        if (!v || v <= 0) return "";
+        if (v >= 1e9) return (v/1e9).toFixed(1) + "B$";
+        if (v >= 1e6) return (v/1e6).toFixed(0) + "M$";
+        return v.toFixed(0) + "$";
+      };
+      const items = holders.slice(0, 3).map(h => {
+        const aum = fmtAum(Number(h.valueUsd) || 0);
+        const ch = h.change === "INCREASED" ? "↑" : h.change === "DECREASED" ? "↓" : h.change === "NEW" ? "🆕" : h.change === "EXITED" ? "×" : "═";
+        const col = h.change === "INCREASED" || h.change === "NEW" ? "#2ed573" : h.change === "DECREASED" ? "#ffa502" : "#8b949e";
+        return `<div style="display:flex;align-items:center;gap:3px;background:#21262d;padding:3px 8px;border-radius:6px;border:1px solid #6b46c133" title="${(h.tier||'').replace(/_/g,' ')} · ${h.period||''}"><span style="color:#e6edf3;font-size:10px;font-weight:700;font-family:monospace">${h.fund}</span><span style="color:#a29bfe;font-size:10px;font-family:monospace"> ${aum}</span><span style="color:${col};font-size:9px"> ${ch}</span></div>`;
+      }).join("");
+      const extras = [];
+      if (r.conviction) extras.push(`<div style="display:flex;align-items:center;gap:3px;padding:3px 8px;border-radius:6px;background:#eccc6822;border:1px solid #eccc6844"><span style="color:#484f58;font-size:8px">💎</span><span style="color:#eccc68;font-weight:700;font-size:11px;font-family:monospace">${r.conviction}/10</span></div>`);
+      if (r.targetPrice) extras.push(`<div style="display:flex;align-items:center;gap:3px;padding:3px 8px;border-radius:6px;background:#2ed57322;border:1px solid #2ed57344"><span style="color:#484f58;font-size:8px">🎯</span><span style="color:#2ed573;font-weight:700;font-size:11px;font-family:monospace">${r.targetPrice}</span></div>`);
+      if (r.stopLoss) extras.push(`<div style="display:flex;align-items:center;gap:3px;padding:3px 8px;border-radius:6px;background:#ff475722;border:1px solid #ff475744"><span style="color:#484f58;font-size:8px">🛑</span><span style="color:#ff4757;font-weight:700;font-size:11px;font-family:monospace">${r.stopLoss}</span></div>`);
+      const extrasHtml = extras.length > 0 ? `<div style="margin-left:auto;display:flex;gap:6px">${extras.join("")}</div>` : "";
+      return `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;padding:8px 12px;background:#0d1117;border-radius:8px;border:1px solid #6b46c133;align-items:center"><span style="color:#6b46c1;font-size:9px;font-family:monospace;white-space:nowrap">🏛️ TOP HOLDERS 13F :</span>${items}${extrasHtml}</div>`;
+    }
+    // FALLBACK 2 : aucun fonds, juste les metriques
     const extras = [];
     if (r && r.conviction) extras.push(`<div style="display:flex;align-items:center;gap:3px;padding:3px 8px;border-radius:6px;background:#eccc6822;border:1px solid #eccc6844"><span style="color:#484f58;font-size:8px">💎</span><span style="color:#eccc68;font-weight:700;font-size:11px;font-family:monospace">${r.conviction}/10</span></div>`);
     if (r && r.targetPrice) extras.push(`<div style="display:flex;align-items:center;gap:3px;padding:3px 8px;border-radius:6px;background:#2ed57322;border:1px solid #2ed57344"><span style="color:#484f58;font-size:8px">🎯</span><span style="color:#2ed573;font-weight:700;font-size:11px;font-family:monospace">${r.targetPrice}</span></div>`);
