@@ -1862,12 +1862,14 @@ if (fundExplorerBtn) fundExplorerBtn.addEventListener("click", openFundExplorer)
 // CONSENSUS SMART MONEY : tickers ou >= 3 fonds Tier 1 ont
 // NEW ou INCREASED leurs positions au dernier trimestre
 // ============================================================
-async function openConsensusModal() {
+async function openConsensusModal(state) {
+  state = state || { minFunds: 3, maxCoverage: 15, excludePassive: 1 };
   const modal = document.getElementById("modal");
   document.getElementById("modal-content").innerHTML = `<div class="modal-header"><div><div class="modal-title">🔥 Consensus Smart Money</div><div class="modal-sub">Chargement...</div></div><button class="modal-close" onclick="closeModal()">✕</button></div>`;
   modal.style.display = "flex";
   try {
-    const r = await fetch(`${PROXY}/sec-13f/consensus?minFunds=3&months=6&limit=200`);
+    const url = `${PROXY}/sec-13f/consensus?minFunds=${state.minFunds}&months=6&limit=200&maxCoverage=${state.maxCoverage}&excludePassive=${state.excludePassive}`;
+    const r = await fetch(url);
     const data = await r.json();
     if (!data.ok) throw new Error(data.error || "endpoint error");
     const items = data.consensus || [];
@@ -1890,6 +1892,9 @@ async function openConsensusModal() {
       const conviction = it.fund_count >= 5 ? "🔥🔥🔥" : it.fund_count >= 4 ? "🔥🔥" : "🔥";
       const bgColor = it.fund_count >= 5 ? "#dc262622" : it.fund_count >= 4 ? "#ea580c22" : "#21262d";
 
+      const coverageBadge = it.total_coverage > 0
+        ? `<span style="background:#0d1117;color:#8b949e;border:1px solid #30363d;padding:2px 6px;border-radius:4px;font-size:9px;font-family:monospace" title="Couverture totale (tous tiers) - plus c'est bas, plus la perle est cachee">cov: ${it.total_coverage}</span>`
+        : '';
       return `<div style="background:${bgColor};border:1px solid #30363d;border-radius:8px;padding:10px;margin-bottom:8px">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:6px">
           <div style="flex:1;min-width:0">
@@ -1898,6 +1903,7 @@ async function openConsensusModal() {
           <div style="display:flex;gap:6px;flex-shrink:0;align-items:center">
             <span style="font-size:14px">${conviction}</span>
             <span style="background:#0d1117;color:#a29bfe;border:1px solid #a29bfe44;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;font-family:monospace">${it.fund_count} fonds</span>
+            ${coverageBadge}
           </div>
         </div>
         <div style="display:flex;gap:8px;margin-bottom:6px;font-size:10px;font-family:monospace">
@@ -1909,43 +1915,62 @@ async function openConsensusModal() {
       </div>`;
     }).join("");
 
+    const modeLabel = state.excludePassive == 1 && state.maxCoverage < 100
+      ? `<span style="color:#f59e0b;font-weight:700">🔍 Mode Perles cachees</span> (sans passifs, couverture ≤ ${state.maxCoverage})`
+      : `<span style="color:#8b949e">Mode Consensus large</span> (tous fonds confondus)`;
+
     document.getElementById("modal-content").innerHTML = `
       <div class="modal-header">
         <div>
           <div class="modal-title">🔥 Consensus Smart Money</div>
-          <div class="modal-sub">${items.length} titres ou ≥ <span id="consensus-min">3</span> fonds Tier 1 ont NEW/INCREASED · 6 derniers mois</div>
+          <div class="modal-sub">${items.length} titres &middot; ${modeLabel} &middot; 6 derniers mois</div>
         </div>
         <button class="modal-close" onclick="closeModal()">✕</button>
       </div>
-      <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center;flex-wrap:wrap;font-size:12px">
-        <span style="color:#8b949e">Min fonds :</span>
-        <select id="consensus-filter" style="background:#0d1117;border:1px solid #30363d;color:#e6edf3;padding:5px 10px;border-radius:6px;font-family:inherit;cursor:pointer">
-          <option value="3" selected>≥ 3 fonds</option>
-          <option value="4">≥ 4 fonds</option>
-          <option value="5">≥ 5 fonds</option>
-          <option value="7">≥ 7 fonds</option>
-          <option value="10">≥ 10 fonds</option>
+      <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center;flex-wrap:wrap;font-size:12px;padding:10px;background:#0d1117;border:1px solid #21262d;border-radius:8px">
+        <label style="display:flex;align-items:center;gap:6px;color:#e6edf3;cursor:pointer">
+          <input type="checkbox" id="consensus-perles" ${state.excludePassive == 1 && state.maxCoverage < 100 ? 'checked' : ''} style="cursor:pointer">
+          <span><strong style="color:#f59e0b">🔍 Mode Perles cachees</strong> <span style="color:#8b949e;font-size:10px">(exclut Vanguard/BlackRock/State Street + max 15 fonds total)</span></span>
+        </label>
+        <div style="flex-basis:100%;height:0"></div>
+        <span style="color:#8b949e">Min smart funds :</span>
+        <select id="consensus-min-funds" style="background:#0d1117;border:1px solid #30363d;color:#e6edf3;padding:5px 10px;border-radius:6px;font-family:inherit;cursor:pointer">
+          <option value="3" ${state.minFunds==3?'selected':''}>≥ 3</option>
+          <option value="4" ${state.minFunds==4?'selected':''}>≥ 4</option>
+          <option value="5" ${state.minFunds==5?'selected':''}>≥ 5</option>
+          <option value="7" ${state.minFunds==7?'selected':''}>≥ 7</option>
         </select>
-        <input id="consensus-search" type="text" placeholder="🔍 Rechercher un emetteur..." style="background:#0d1117;border:1px solid #30363d;color:#e6edf3;padding:6px 10px;border-radius:6px;font-size:12px;flex:1;min-width:180px;font-family:inherit">
+        <span style="color:#8b949e;margin-left:8px">Couverture max :</span>
+        <select id="consensus-max-cov" style="background:#0d1117;border:1px solid #30363d;color:#e6edf3;padding:5px 10px;border-radius:6px;font-family:inherit;cursor:pointer">
+          <option value="10" ${state.maxCoverage==10?'selected':''}>≤ 10 fonds (très cache)</option>
+          <option value="15" ${state.maxCoverage==15?'selected':''}>≤ 15 fonds (cache)</option>
+          <option value="25" ${state.maxCoverage==25?'selected':''}>≤ 25 fonds (peu connu)</option>
+          <option value="999" ${state.maxCoverage>=999?'selected':''}>illimite</option>
+        </select>
+        <input id="consensus-search" type="text" placeholder="🔍 Rechercher..." style="background:#0d1117;border:1px solid #30363d;color:#e6edf3;padding:6px 10px;border-radius:6px;font-size:12px;flex:1;min-width:150px;font-family:inherit">
       </div>
-      <div id="consensus-grid" style="max-height:65vh;overflow-y:auto;padding-right:8px">
-        ${items.length > 0 ? rowsHtml : '<div style="color:#8b949e;text-align:center;padding:24px">Pas de consensus detecte. Reessaie apres l\'ingest Q1 2026 (16 mai matin).</div>'}
+      <div id="consensus-grid" style="max-height:60vh;overflow-y:auto;padding-right:8px">
+        ${items.length > 0 ? rowsHtml : '<div style="color:#8b949e;text-align:center;padding:24px">Aucune perle detectee avec ces criteres. Essaie de relacher la couverture max ou attendre l\'ingest Q1 2026 (16 mai matin).</div>'}
       </div>
     `;
 
-    // Filtre min fonds en re-fetchant
-    document.getElementById("consensus-filter").addEventListener("change", async (e) => {
-      const newMin = parseInt(e.target.value, 10);
-      document.getElementById("consensus-grid").innerHTML = '<div style="color:#8b949e;text-align:center;padding:24px">Chargement...</div>';
-      try {
-        const r2 = await fetch(`${PROXY}/sec-13f/consensus?minFunds=${newMin}&months=6&limit=200`);
-        const d2 = await r2.json();
-        if (d2.ok) {
-          openConsensusModal._lastData = d2;
-          // Reuse rendering : reopen modal entirely is simplest
-          openConsensusModal();
-        }
-      } catch {}
+    // Toggle mode perles
+    document.getElementById("consensus-perles").addEventListener("change", (e) => {
+      if (e.target.checked) {
+        openConsensusModal({ minFunds: state.minFunds, maxCoverage: 15, excludePassive: 1 });
+      } else {
+        openConsensusModal({ minFunds: state.minFunds, maxCoverage: 999, excludePassive: 0 });
+      }
+    });
+
+    // Filtre min smart funds
+    document.getElementById("consensus-min-funds").addEventListener("change", (e) => {
+      openConsensusModal({ ...state, minFunds: parseInt(e.target.value, 10) });
+    });
+
+    // Filtre couverture max
+    document.getElementById("consensus-max-cov").addEventListener("change", (e) => {
+      openConsensusModal({ ...state, maxCoverage: parseInt(e.target.value, 10) });
     });
 
     // Recherche texte
