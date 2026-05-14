@@ -217,6 +217,14 @@
     <div class="s13f-filings"></div>
   </div>
 
+  <!-- Bouton explorer fonds 13F (toujours visible) -->
+  <div style="display:flex;justify-content:flex-end;margin-bottom:12px">
+    <button id="open-fund-explorer" style="background:linear-gradient(135deg,#6b46c1 0%,#4c1d95 100%);color:white;border:none;padding:8px 16px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;box-shadow:0 2px 8px rgba(108,70,193,0.25);display:flex;align-items:center;gap:6px">
+      <span>📋</span>
+      <span>Explorer tous les fonds 13F</span>
+    </button>
+  </div>
+
   <div class="header">
     <div class="header-top">
       <div class="header-icon">🎯</div>
@@ -1690,6 +1698,119 @@ async function openFundDetails(cik, fundName) {
 // Expose pour onclick depuis la bannière (IIFE séparée)
 window.openFundDetails = openFundDetails;
 
+// ============================================================
+// EXPLORATEUR DE FONDS 13F : grille searchable de tous les fonds
+// independante de la fenetre ingested_at du banner
+// ============================================================
+function tierColorFor(tier) {
+  const map = {
+    passive_giant:'#58a6ff', active_giant:'#2ed573', bank:'#eccc68',
+    sovereign:'#a29bfe', hedge:'#ff6b3d', quant:'#00d2ff',
+    activist:'#ff4757', thematic:'#a855f7'
+  };
+  return map[tier] || '#8b949e';
+}
+
+function fmtPeriodShort(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  const q = Math.floor(d.getUTCMonth() / 3) + 1;
+  return `Q${q} ${d.getUTCFullYear()}`;
+}
+
+function fmtBigAum(n) {
+  const v = Number(n) || 0;
+  if (v >= 1e12) return (v/1e12).toFixed(1) + "T$";
+  if (v >= 1e9) return (v/1e9).toFixed(1) + "B$";
+  if (v >= 1e6) return (v/1e6).toFixed(0) + "M$";
+  return v > 0 ? v.toFixed(0) + "$" : "—";
+}
+
+async function openFundExplorer() {
+  const modal = document.getElementById("modal");
+  document.getElementById("modal-content").innerHTML = `<div class="modal-header"><div><div class="modal-title">📋 Tous les fonds 13F</div><div class="modal-sub">Chargement...</div></div><button class="modal-close" onclick="closeModal()">✕</button></div>`;
+  modal.style.display = "flex";
+  try {
+    // 2 ans de fenetre pour voir tous les fonds avec un Q4 2025 ou plus recent
+    const r = await fetch(`${PROXY}/sec-13f/recent?days=730`);
+    const data = await r.json();
+    const filings = (data.filings || []);
+    // Dedupe par fund_cik, garde le filing avec le reporting_period le plus recent
+    const byFund = {};
+    for (const f of filings) {
+      const cur = byFund[f.fund_cik];
+      if (!cur || new Date(f.reporting_period) > new Date(cur.reporting_period)) {
+        byFund[f.fund_cik] = f;
+      }
+    }
+    const funds = Object.values(byFund).sort((a, b) => Number(b.total_value_usd) - Number(a.total_value_usd));
+
+    const tiers = [...new Set(funds.map(f => f.fund_tier).filter(Boolean))].sort();
+    const tierFilterHtml = tiers.map(t => `<option value="${t}">${t.replace(/_/g, ' ')}</option>`).join('');
+
+    const cardsHtml = funds.map(f => {
+      const tc = tierColorFor(f.fund_tier);
+      const tier = (f.fund_tier || '—').replace(/_/g, ' ');
+      const aum = fmtBigAum(f.total_value_usd);
+      const period = fmtPeriodShort(f.reporting_period);
+      const cikEsc = String(f.fund_cik).replace(/'/g, "\\'");
+      const nameEsc = String(f.fund_name).replace(/'/g, "\\'");
+      return `<div class="fund-card" data-fund-name="${(f.fund_name||'').toLowerCase()}" data-fund-tier="${f.fund_tier||''}" onclick="closeModal();setTimeout(()=>window.openFundDetails('${cikEsc}','${nameEsc}'),120)" style="background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:12px;cursor:pointer;transition:transform 0.15s,border-color 0.15s" onmouseover="this.style.borderColor='${tc}';this.style.transform='translateY(-2px)'" onmouseout="this.style.borderColor='#30363d';this.style.transform='none'">
+        <div style="font-weight:700;color:#e6edf3;font-size:13px;margin-bottom:6px;line-height:1.3">${f.fund_name}</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
+          <span style="background:${tc}22;color:${tc};border:1px solid ${tc}44;padding:2px 8px;border-radius:4px;font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px">${tier}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;font-family:monospace;font-size:11px">
+          <span style="color:#58a6ff;font-weight:700">${aum}</span>
+          <span style="color:#8b949e">${period} · ${f.positions_count||0} pos.</span>
+        </div>
+      </div>`;
+    }).join('');
+
+    document.getElementById("modal-content").innerHTML = `
+      <div class="modal-header">
+        <div>
+          <div class="modal-title">📋 Tous les fonds SEC 13F</div>
+          <div class="modal-sub">${funds.length} fonds suivis · clique sur un fonds pour voir son portfolio</div>
+        </div>
+        <button class="modal-close" onclick="closeModal()">✕</button>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center;flex-wrap:wrap">
+        <input id="fund-search" type="text" placeholder="🔍 Rechercher un fonds..." style="background:#0d1117;border:1px solid #30363d;color:#e6edf3;padding:7px 12px;border-radius:6px;font-size:12px;flex:1;min-width:200px;font-family:inherit">
+        <select id="fund-tier-filter" style="background:#0d1117;border:1px solid #30363d;color:#e6edf3;padding:7px 12px;border-radius:6px;font-size:12px;font-family:inherit;cursor:pointer">
+          <option value="">Tous les tiers</option>
+          ${tierFilterHtml}
+        </select>
+        <span id="fund-count-label" style="color:#8b949e;font-size:11px;font-family:monospace">${funds.length} affichés</span>
+      </div>
+      <div id="fund-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px;max-height:65vh;overflow-y:auto;padding-right:8px">
+        ${cardsHtml}
+      </div>
+    `;
+
+    const applyFilters = () => {
+      const q = (document.getElementById("fund-search").value || "").toLowerCase();
+      const tierFilter = document.getElementById("fund-tier-filter").value;
+      let visible = 0;
+      document.querySelectorAll('#fund-grid .fund-card').forEach(card => {
+        const matchesName = !q || card.dataset.fundName.includes(q);
+        const matchesTier = !tierFilter || card.dataset.fundTier === tierFilter;
+        const show = matchesName && matchesTier;
+        card.style.display = show ? '' : 'none';
+        if (show) visible++;
+      });
+      document.getElementById("fund-count-label").textContent = `${visible} affichés`;
+    };
+    document.getElementById("fund-search").addEventListener('input', applyFilters);
+    document.getElementById("fund-tier-filter").addEventListener('change', applyFilters);
+  } catch (e) {
+    document.getElementById("modal-content").innerHTML = `<div class="modal-header"><div class="modal-title">Erreur</div><button class="modal-close" onclick="closeModal()">✕</button></div><div style="color:#ff4757;padding:12px;background:#ff475715;border-radius:8px">Impossible de charger les fonds : ${e.message}</div>`;
+  }
+}
+window.openFundExplorer = openFundExplorer;
+const fundExplorerBtn = document.getElementById("open-fund-explorer");
+if (fundExplorerBtn) fundExplorerBtn.addEventListener("click", openFundExplorer);
+
 document.getElementById("scan-btn").addEventListener("click", runScan);
 init();
 </script>
@@ -1700,7 +1821,7 @@ init();
 <script>
 (function() {
   const PROXY_BASE = "https://nichomouret-smartmoney-proxy-production.up.railway.app";
-  const BANNER_DAYS = 7;
+  const BANNER_DAYS = 30; // elargi de 7 a 30 pour voir tous les fonds ingeres recemment
   const STORAGE_KEY = "sec13f_banner_dismissed_at";
   const REFRESH_INTERVAL_MS = 30 * 60 * 1000;
 
@@ -1790,7 +1911,7 @@ init();
 
       if (dismissedAt > lastIngested) return;
 
-      filingsEl.innerHTML = data.notable_changes.slice(0, 6).map(buildFilingHtml).join("");
+      filingsEl.innerHTML = data.notable_changes.slice(0, 10).map(buildFilingHtml).join("");
       banner.classList.add("visible");
     } catch (e) {
       console.error("[sec13f-banner]", e);
