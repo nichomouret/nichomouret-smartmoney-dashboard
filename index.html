@@ -873,7 +873,9 @@ IMPORTANT:
 - Si tu ne reconnais pas le ticker et qu'aucune société n'est fournie, mets "name":"Société non identifiée".
 - Pour les tickers européens (.PA), les VAD sont généralement faibles (1-10%).
 - institutionalMoves peut être vide [].
-- JAMAIS de valeurs undefined ou null.`;
+- JAMAIS de valeurs undefined ou null.
+- shortInterest OBLIGATOIRE : donne TOUJOURS une fourchette estimée meme sans donnees Ortex. Format strict : "<5%", "5-10%", "10-15%", "15-20%", "20-30%", ">30%". NE JAMAIS mettre "Inconnu", "Donnees indisponibles", "N/A" ou null. Base ton estimation sur le secteur, la cap boursiere et le profil du titre (small-cap volatile = plus haut, mega-cap stable = bas).
+- shortSource : "Estime" si pas de donnees Ortex fournies, "Ortex" si VAD=X%[ORTEX] dans le contexte.`;
 
   try {
     const text = await callClaude("Analyste Smart Money. JSON uniquement sans backticks.", prompt, 2000);
@@ -1521,15 +1523,32 @@ async function openFundDetails(cik, fundName) {
       return h.change_pct;
     }
 
+    // HEURISTIQUE : detecte si le filing utilise la convention SEC historique (valeurs en milliers $)
+    // ou la convention moderne (dollars directs). Calcul du prix median sur 20 positions principales :
+    // - median < $1   -> convention "thousands", multiplier par 1000
+    // - median > $10000 -> incoherent (probable bug)
+    // - sinon         -> dollars modernes (correct)
+    const priceMedianSample = data.holdings.slice(0, 30)
+      .filter(h => h.shares > 0 && h.value_usd > 0 && h.put_call == null)
+      .map(h => Number(h.value_usd) / Number(h.shares))
+      .sort((a, b) => a - b);
+    const medianPrice = priceMedianSample.length > 0
+      ? priceMedianSample[Math.floor(priceMedianSample.length / 2)]
+      : null;
+    const valueScale = (medianPrice !== null && medianPrice < 1) ? 1000 : 1;
+    if (valueScale === 1000) {
+      console.warn(`[Modal ${data.fund_name}] Convention SEC "thousands" detectee (prix median=$${medianPrice.toFixed(3)}). Multiplication des valeurs par 1000.`);
+    }
+
     // Calcul du prix moyen approximatif pendant le trimestre
     // PM = midpoint entre prix Q-1 (prev_value/prev_shares) et prix Q (value/shares)
-    // C'est une approximation : on suppose une accumulation uniforme pendant le trimestre
     function computePmQ(h) {
-      const curPrice = h.shares > 0 ? Number(h.value_usd) / Number(h.shares) : null;
-      const prevPrice = h.previous_shares > 0 ? Number(h.previous_value_usd) / Number(h.previous_shares) : null;
+      const curPrice = h.shares > 0 ? (Number(h.value_usd) * valueScale) / Number(h.shares) : null;
+      const prevPrice = h.previous_shares > 0 ? (Number(h.previous_value_usd) * valueScale) / Number(h.previous_shares) : null;
       if (curPrice && prevPrice) return (curPrice + prevPrice) / 2;
-      return curPrice || null; // si NEW, on a que cur_price
+      return curPrice || null;
     }
+    function scaledValue(v) { return Number(v || 0) * valueScale; }
 
     function fmtPrice(p) {
       if (!p || p <= 0) return "—";
@@ -1564,14 +1583,16 @@ async function openFundDetails(cik, fundName) {
         changeTooltip = `Variation du nombre d'actions detenues : ${sharesVar > 0 ? 'achete' : 'vendu'} ${Math.abs(Math.round(sharesVar))}% du trimestre precedent`;
       }
 
-      const portfolioPct = data.total_value_usd > 0 ? ((Number(h.value_usd) / Number(data.total_value_usd)) * 100).toFixed(2) : "—";
+      const scaledVal = scaledValue(h.value_usd);
+      const scaledTotal = scaledValue(data.total_value_usd);
+      const portfolioPct = scaledTotal > 0 ? ((scaledVal / scaledTotal) * 100).toFixed(2) : "—";
       const pmQ = computePmQ(h);
       const tickerKey = resolveTicker(h.issuer, h.ticker) || "";
 
       return `<tr style="background:${idx % 2 === 0 ? '#21262d' : '#161b22'};border-bottom:1px solid #161b22">
         <td style="padding:6px 8px;color:#484f58;font-size:10px;text-align:center">${idx + 1}</td>
         <td style="padding:6px 8px;color:#e6edf3;font-weight:700">${h.issuer}${h.ticker ? ` <span style="color:#58a6ff;font-size:10px">(${h.ticker})</span>` : ''}</td>
-        <td style="padding:6px 8px;text-align:right;color:#58a6ff;font-weight:700">${fmtBig(h.value_usd)}</td>
+        <td style="padding:6px 8px;text-align:right;color:#58a6ff;font-weight:700">${fmtBig(scaledVal)}</td>
         <td style="padding:6px 8px;text-align:right;color:#8b949e">${portfolioPct}%</td>
         <td style="padding:6px 8px;text-align:right;color:#8b949e">${fmtShares(h.shares)}</td>
         <td style="padding:6px 8px;text-align:right;color:#eccc68;font-weight:700" title="Prix moyen approximatif pendant le trimestre (midpoint Q-1 et Q)">${fmtPrice(pmQ)}</td>
@@ -1584,7 +1605,7 @@ async function openFundDetails(cik, fundName) {
       <div class="modal-header">
         <div>
           <div class="modal-title">${data.fund_name}</div>
-          <div class="modal-sub">${period} · ${fmtBig(data.total_value_usd)} AUM · ${data.positions_count} positions au total</div>
+          <div class="modal-sub">${period} · ${fmtBig(scaledValue(data.total_value_usd))} AUM · ${data.positions_count} positions au total${valueScale > 1 ? ' · <span style="color:#ff6b3d">⚠ valeurs SEC en milliers, ajustees ×1000</span>' : ''}</div>
         </div>
         <div style="display:flex;gap:8px;align-items:center;flex-shrink:0">
           <span style="padding:5px 14px;border-radius:6px;font-weight:700;font-size:10px;background:${tierBg};border:1px solid ${tierColor}66;color:${tierColor};text-transform:uppercase;letter-spacing:1px">${(data.fund_tier || '—').replace(/_/g, ' ')}</span>
