@@ -641,7 +641,13 @@ function calculateSCCT(result) {
     "Goldman Sachs","Norges","Temasek","GIC","Tiger Global","Millennium","Citadel",
     "Point72","Renaissance","Two Sigma","DE Shaw","Bridgewater","Baupost","Coatue",
     "Baillie Gifford","ARK","Schroders","Amundi","Carmignac",
-    "BARCLAYS","CITIGROUP","BANK_OF_AMERICA","JPMORGAN","MORGAN_STANLEY","GOLDMAN_SACHS","BLACKROCK","VANGUARD","UBS","DEUTSCHE_BANK"];
+    "BARCLAYS","CITIGROUP","BANK_OF_AMERICA","JPMORGAN","MORGAN_STANLEY","GOLDMAN_SACHS","BLACKROCK","VANGUARD","UBS","DEUTSCHE_BANK",
+    "Northern Trust","NORTHERN TRUST","Berkshire","BERKSHIRE","Pershing","PERSHING","Elliott","ELLIOTT","Icahn","ICAHN","Third Point","THIRD POINT",
+    "Viking","VIKING","Maverick","MAVERICK","Whale Rock","WHALE ROCK","D1 Capital","D1 CAPITAL","Tybourne","TYBOURNE","Lone Pine","LONE PINE",
+    "FMR","Fidelity Management","FIDELITY MANAGEMENT","Geode","GEODE","Wellington","WELLINGTON","Capital Group","CAPITAL GROUP",
+    "Dimensional","DIMENSIONAL","Invesco","INVESCO","T. Rowe","T ROWE","Franklin","FRANKLIN","PIMCO","Pimco","Nuveen","NUVEEN",
+    "AllianceBernstein","Janus","JANUS","Lazard","LAZARD","Lord Abbett","LORD ABBETT","Hartford","HARTFORD","Putnam","PUTNAM",
+    "Charles Schwab","SCHWAB","Bank of New York","BANK OF NEW YORK","BNY Mellon","BNY MELLON","Mellon"];
   const activists = ["Elliott","Starboard","Icahn","Pershing Square","ValueAct","Third Point","Jana","Legion Partners","Engine Capital","Trian"];
 
   const tier1Moves = moves.filter(m => m.verified && (m.isTier1 || tier1.some(f => (m.fund||"").toUpperCase().includes(f.toUpperCase()))));
