@@ -1571,7 +1571,7 @@ async function openFundDetails(cik, fundName) {
               <td style="padding:6px 8px;text-align:right">% portfolio</td>
               <td style="padding:6px 8px;text-align:right">Actions</td>
               <td style="padding:6px 8px;text-align:right;color:#eccc68" title="Prix moyen approximatif acheté pendant le trimestre">PM Q ($)</td>
-              <td style="padding:6px 8px;text-align:right;color:#a29bfe" title="Cours actuel — top 20 chargés automatiquement">Cours actuel</td>
+              <td style="padding:6px 8px;text-align:right;color:#a29bfe" title="Cours actuel — chargé au scroll">Cours actuel</td>
               <td style="padding:6px 8px;text-align:right" title="Variation du nombre d'actions vs trimestre precedent (signal pur achat/vente)">Acheté/Vendu Q</td>
             </tr>
           </thead>
@@ -1583,43 +1583,61 @@ async function openFundDetails(cik, fundName) {
     `;
     document.getElementById("modal").style.display = "flex";
 
-    // Lazy fetch des cours actuels pour les top 20 positions (avec ticker)
-    const top20WithTicker = data.holdings
-      .slice(0, 20)
-      .map((h, idx) => ({ idx, ticker: resolveTicker(h.issuer, h.ticker), pm: computePmQ(h) }))
-      .filter(x => x.ticker);
-
-    // Batch fetch avec rate limit (5 par seconde max pour ne pas saturer TwelveData)
-    for (let i = 0; i < top20WithTicker.length; i++) {
-      const { idx, ticker, pm } = top20WithTicker[i];
+    // Lazy fetch avec IntersectionObserver : le cours se charge quand la ligne devient visible
+    // Queue serialisee avec 200ms entre appels pour respecter le rate limit TwelveData
+    const priceFetchQueue = [];
+    let isProcessingPriceQueue = false;
+    const fetchPriceForCell = async (cell, ticker, pm) => {
       try {
         const cleanSymbol = ticker.replace(/\.[A-Z]+$/, '');
         const r = await fetch(`${PROXY}/twelvedata/price?symbol=${encodeURIComponent(cleanSymbol)}`);
-        if (r.ok) {
-          const quote = await r.json();
-          if (quote && !quote.code && quote.close) {
-            const cur = parseFloat(quote.close);
-            const cell = document.getElementById(`curprice-${ticker}-${idx}`);
-            if (cell && cur > 0) {
-              // Comparer cours actuel vs PM Q (achat ARK)
-              let deltaHtml = "";
-              if (pm && pm > 0) {
-                const deltaPct = ((cur - pm) / pm) * 100;
-                const sign = deltaPct > 0 ? "+" : "";
-                const color = deltaPct > 0 ? "#ff6b3d" : "#2ed573";
-                const label = deltaPct > 0 ? "(plus cher qu'ARK)" : "(moins cher qu'ARK)";
-                deltaHtml = `<div style="font-size:9px;color:${color};font-weight:600">${sign}${deltaPct.toFixed(1)}% ${label}</div>`;
-              }
-              cell.innerHTML = `<div style="color:#a29bfe">${fmtPrice(cur)}</div>${deltaHtml}`;
-            }
-          }
+        if (!r.ok) return;
+        const quote = await r.json();
+        if (!quote || quote.code || !quote.close) return;
+        const cur = parseFloat(quote.close);
+        if (!(cur > 0)) return;
+        let deltaHtml = "";
+        if (pm && pm > 0) {
+          const deltaPct = ((cur - pm) / pm) * 100;
+          const sign = deltaPct > 0 ? "+" : "";
+          const color = deltaPct > 0 ? "#ff6b3d" : "#2ed573";
+          const label = deltaPct > 0 ? "(plus cher qu'achat fond)" : "(moins cher qu'achat fond)";
+          deltaHtml = `<div style="font-size:9px;color:${color};font-weight:600">${sign}${deltaPct.toFixed(1)}% ${label}</div>`;
         }
-      } catch (err) {
-        // skip silently
+        cell.innerHTML = `<div style="color:#a29bfe">${fmtPrice(cur)}</div>${deltaHtml}`;
+      } catch {}
+    };
+    const processPriceQueue = async () => {
+      if (isProcessingPriceQueue) return;
+      isProcessingPriceQueue = true;
+      while (priceFetchQueue.length > 0) {
+        const task = priceFetchQueue.shift();
+        await fetchPriceForCell(task.cell, task.ticker, task.pm);
+        await new Promise(r => setTimeout(r, 200));
       }
-      // Rate limit : 200ms entre chaque appel (5 req/sec max)
-      await new Promise(r => setTimeout(r, 200));
-    }
+      isProcessingPriceQueue = false;
+    };
+    const fetchedCellIds = new Set();
+    const priceObserver = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        const cell = entry.target;
+        if (fetchedCellIds.has(cell.id)) continue;
+        const ticker = cell.dataset.ticker;
+        if (!ticker) continue;
+        fetchedCellIds.add(cell.id);
+        const pm = parseFloat(cell.dataset.pm) || null;
+        priceFetchQueue.push({ cell, ticker, pm });
+        processPriceQueue();
+        priceObserver.unobserve(cell);
+      }
+    }, { rootMargin: '200px', threshold: 0 });
+    // Attache observer a toutes les cellules avec un ticker
+    document.querySelectorAll('#modal-content td[data-ticker]').forEach(cell => {
+      if (cell.dataset.ticker && cell.dataset.ticker.trim()) {
+        priceObserver.observe(cell);
+      }
+    });
   } catch (e) {
     console.error("[openFundDetails]", e);
     document.getElementById("modal-content").innerHTML = `
