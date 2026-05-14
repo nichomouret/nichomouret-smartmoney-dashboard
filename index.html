@@ -974,21 +974,28 @@ async function runScan() {
             const correctedName = data.realRaisonSociale || s.name;
 
             // CORRECTION 2: Force-check institutional/threshold criteria when verified Tier 1 funds present
-            const tier1Keywords = ["BLACKROCK","VANGUARD","FIDELITY","STATE STREET","JPMORGAN","MORGAN STANLEY","GOLDMAN SACHS","NORGES","TEMASEK","GIC","TIGER GLOBAL","MILLENNIUM","CITADEL","POINT72","RENAISSANCE","TWO SIGMA","DE SHAW","BRIDGEWATER","BAUPOST","COATUE","BAILLIE GIFFORD","ARK","SCHRODERS","AMUNDI","CARMIGNAC","BARCLAYS","CITIGROUP","BANK_OF_AMERICA","BANK OF AMERICA","UBS","DEUTSCHE BANK","DEUTSCHE_BANK","CREDIT SUISSE","CREDIT_SUISSE","HSBC","BNP","SOCIETE GENERALE","CAISSE DES DEPOTS"];
+            const tier1Keywords = ["BLACKROCK","VANGUARD","FIDELITY","STATE STREET","JPMORGAN","MORGAN STANLEY","GOLDMAN SACHS","NORGES","TEMASEK","GIC","TIGER GLOBAL","MILLENNIUM","CITADEL","POINT72","RENAISSANCE","TWO SIGMA","DE SHAW","BRIDGEWATER","BAUPOST","COATUE","BAILLIE GIFFORD","ARK","SCHRODERS","AMUNDI","CARMIGNAC","BARCLAYS","CITIGROUP","BANK_OF_AMERICA","BANK OF AMERICA","UBS","DEUTSCHE BANK","DEUTSCHE_BANK","CREDIT SUISSE","CREDIT_SUISSE","HSBC","BNP","SOCIETE GENERALE","CAISSE DES DEPOTS","BERKSHIRE","PERSHING","ELLIOTT","ICAHN","THIRD POINT","VIKING","MAVERICK","D1 CAPITAL","WHALE ROCK","TYBOURNE","LONE PINE"];
             const hasVerifiedTier1 = realMoves.some(m => m.verified && (m.isTier1 || tier1Keywords.some(k => (m.fund||"").toUpperCase().includes(k))));
             const hasVerifiedThreshold = realMoves.some(m => m.verified && (
               (m.source||"").includes("13G") || (m.source||"").includes("13D") ||
               (m.source||"").includes("AMF") || (m.source||"").includes("ESMA") ||
               (m.source||"").includes("BDIF") || (m.source||"").includes("STOCK Act")
             ));
+            // CORRECTION 6: Force-check via SEC 13F holders (Q1 2026 toujours frais, pas affecte par filtre 18 mois)
+            const holders = data.holders13f || [];
+            const hasTier1Holder = holders.some(h => tier1Keywords.some(k => (h.fund||"").toUpperCase().includes(k)));
+            const hasRecentNewHolder = holders.some(h => h.change === "NEW" || h.change === "INCREASED");
             const correctedCriteria = { ...(s.criteria || {}) };
-            if (hasVerifiedTier1) {
+            if (hasVerifiedTier1 || hasTier1Holder) {
               correctedCriteria.institutional = true;
-              console.log(`[${s.ticker}] FORCE-CHECK: institutional=true (Tier 1 verified)`);
+              console.log(`[${s.ticker}] FORCE-CHECK: institutional=true (${hasVerifiedTier1 ? 'filing' : '13F holder'} Tier 1 verified)`);
             }
             if (hasVerifiedThreshold) {
               correctedCriteria.threshold = true;
               console.log(`[${s.ticker}] FORCE-CHECK: threshold=true (filing verified)`);
+            } else if (hasRecentNewHolder) {
+              correctedCriteria.threshold = true;
+              console.log(`[${s.ticker}] FORCE-CHECK: threshold=true (13F NEW/INCREASED holder)`);
             }
 
             const base = {
@@ -1622,10 +1629,16 @@ async function openFundDetails(cik, fundName) {
         let deltaHtml = "";
         if (pm && pm > 0) {
           const deltaPct = ((cur - pm) / pm) * 100;
-          const sign = deltaPct > 0 ? "+" : "";
-          const color = deltaPct > 0 ? "#ff6b3d" : "#2ed573";
-          const label = deltaPct > 0 ? "(plus cher qu'achat fond)" : "(moins cher qu'achat fond)";
-          deltaHtml = `<div style="font-size:9px;color:${color};font-weight:600">${sign}${deltaPct.toFixed(1)}% ${label}</div>`;
+          // Sanity check : si |delta| > 200%, c'est probablement un mismatch (split, HK vs US ADR, bond/preferred)
+          // On masque pour eviter d'induire en erreur
+          if (Math.abs(deltaPct) > 200) {
+            deltaHtml = `<div style="font-size:9px;color:#8b949e;font-weight:600" title="Comparaison desactivee : ecart >200% indique probablement un split, une difference de listing (ADR vs ordinary) ou un instrument non-equity">⚠️ ecart anormal</div>`;
+          } else {
+            const sign = deltaPct > 0 ? "+" : "";
+            const color = deltaPct > 0 ? "#ff6b3d" : "#2ed573";
+            const label = deltaPct > 0 ? "(plus cher qu'achat fond)" : "(moins cher qu'achat fond)";
+            deltaHtml = `<div style="font-size:9px;color:${color};font-weight:600">${sign}${deltaPct.toFixed(1)}% ${label}</div>`;
+          }
         }
         cell.innerHTML = `<div style="color:#a29bfe">${fmtPrice(cur)}</div>${deltaHtml}`;
       } catch {}
