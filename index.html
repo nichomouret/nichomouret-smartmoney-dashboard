@@ -1867,12 +1867,13 @@ if (fundExplorerBtn) fundExplorerBtn.addEventListener("click", openFundExplorer)
 // NEW ou INCREASED leurs positions au dernier trimestre
 // ============================================================
 async function openConsensusModal(state) {
-  state = state || { minFunds: 3, maxCoverage: 15, excludePassive: 1 };
+  state = state || { minFunds: 3, maxCoverage: 15, excludePassive: 1, excludeEtf: 1 };
+  if (state.excludeEtf === undefined) state.excludeEtf = 1; // par defaut on filtre les ETFs
   const modal = document.getElementById("modal");
   document.getElementById("modal-content").innerHTML = `<div class="modal-header"><div><div class="modal-title">🔥 Consensus Smart Money</div><div class="modal-sub">Chargement...</div></div><button class="modal-close" onclick="closeModal()">✕</button></div>`;
   modal.style.display = "flex";
   try {
-    const url = `${PROXY}/sec-13f/consensus?minFunds=${state.minFunds}&months=6&limit=200&maxCoverage=${state.maxCoverage}&excludePassive=${state.excludePassive}`;
+    const url = `${PROXY}/sec-13f/consensus?minFunds=${state.minFunds}&months=6&limit=200&maxCoverage=${state.maxCoverage}&excludePassive=${state.excludePassive}&excludeEtf=${state.excludeEtf}`;
     const r = await fetch(url);
     const data = await r.json();
     if (!data.ok) throw new Error(data.error || "endpoint error");
@@ -1934,7 +1935,11 @@ async function openConsensusModal(state) {
       <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center;flex-wrap:wrap;font-size:12px;padding:10px;background:#0d1117;border:1px solid #21262d;border-radius:8px">
         <label style="display:flex;align-items:center;gap:6px;color:#e6edf3;cursor:pointer">
           <input type="checkbox" id="consensus-perles" ${state.excludePassive == 1 && state.maxCoverage < 100 ? 'checked' : ''} style="cursor:pointer">
-          <span><strong style="color:#f59e0b">🔍 Mode Perles cachees</strong> <span style="color:#8b949e;font-size:10px">(exclut Vanguard/BlackRock/State Street + max 15 fonds total)</span></span>
+          <span><strong style="color:#f59e0b">🔍 Mode Perles cachees</strong> <span style="color:#8b949e;font-size:10px">(exclut passifs + max 15 fonds total)</span></span>
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;color:#e6edf3;cursor:pointer;margin-left:12px">
+          <input type="checkbox" id="consensus-noetf" ${state.excludeEtf == 1 ? 'checked' : ''} style="cursor:pointer">
+          <span><strong style="color:#10b981">🚫 Exclure ETFs/Index</strong> <span style="color:#8b949e;font-size:10px">(iShares, SPDR, Vanguard funds...)</span></span>
         </label>
         <div style="flex-basis:100%;height:0"></div>
         <span style="color:#8b949e">Min smart funds :</span>
@@ -1961,10 +1966,15 @@ async function openConsensusModal(state) {
     // Toggle mode perles
     document.getElementById("consensus-perles").addEventListener("change", (e) => {
       if (e.target.checked) {
-        openConsensusModal({ minFunds: state.minFunds, maxCoverage: 15, excludePassive: 1 });
+        openConsensusModal({ minFunds: state.minFunds, maxCoverage: 15, excludePassive: 1, excludeEtf: state.excludeEtf });
       } else {
-        openConsensusModal({ minFunds: state.minFunds, maxCoverage: 999, excludePassive: 0 });
+        openConsensusModal({ minFunds: state.minFunds, maxCoverage: 999, excludePassive: 0, excludeEtf: state.excludeEtf });
       }
+    });
+
+    // Toggle exclure ETFs
+    document.getElementById("consensus-noetf").addEventListener("change", (e) => {
+      openConsensusModal({ ...state, excludeEtf: e.target.checked ? 1 : 0 });
     });
 
     // Filtre min smart funds
@@ -1990,12 +2000,12 @@ async function openConsensusModal(state) {
   }
 }
 window.openConsensusModal = openConsensusModal;
-// Bouton "Consensus large" : tous fonds confondus, pas de cap coverage
+// Bouton "Consensus large" : tous fonds confondus, pas de cap coverage, ETFs filtres par defaut
 const consensusBtn = document.getElementById("open-consensus");
-if (consensusBtn) consensusBtn.addEventListener("click", () => openConsensusModal({ minFunds: 5, maxCoverage: 999, excludePassive: 0 }));
-// Bouton "Perles cachees" : smart funds actifs uniquement, max 15 coverage
+if (consensusBtn) consensusBtn.addEventListener("click", () => openConsensusModal({ minFunds: 5, maxCoverage: 999, excludePassive: 0, excludeEtf: 1 }));
+// Bouton "Perles cachees" : smart funds actifs uniquement, max 15 coverage, ETFs exclus
 const perlesBtn = document.getElementById("open-perles");
-if (perlesBtn) perlesBtn.addEventListener("click", () => openConsensusModal({ minFunds: 3, maxCoverage: 15, excludePassive: 1 }));
+if (perlesBtn) perlesBtn.addEventListener("click", () => openConsensusModal({ minFunds: 3, maxCoverage: 15, excludePassive: 1, excludeEtf: 1 }));
 
 document.getElementById("scan-btn").addEventListener("click", runScan);
 init();
