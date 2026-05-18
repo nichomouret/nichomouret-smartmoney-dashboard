@@ -642,7 +642,14 @@ function calculateSCCT(result) {
       (m.source||"").includes("BDIF") || (m.source||"").includes("STOCK Act")
     )
   );
-  if (hasRealThreshold) score += 20;
+  // Equivalent threshold pour US stocks : SEC 13F NEW/INCREASED de Tier 1 fund
+  // = signal aussi fort qu'un filing AMF/BDIF verifie. Compense le manque de
+  // verified moves pour les actions US ou la donnee 13G est rare ou ancienne.
+  const tier1HoldersAction = (result.holders13f || []).filter(h =>
+    (h.change === 'NEW' || h.change === 'INCREASED')
+  );
+  const hasRealThresholdEquivalent = hasRealThreshold || tier1HoldersAction.length >= 1;
+  if (hasRealThresholdEquivalent) score += 20;
   else if (result.criteria?.threshold) score += 8;
 
   const tier1 = ["BlackRock","Vanguard","Fidelity","State Street","JPMorgan","Morgan Stanley",
@@ -671,17 +678,25 @@ function calculateSCCT(result) {
   const holders = result.holders13f || [];
   const tier1Holders = holders.filter(h => tier1.some(f => (h.fund||"").toUpperCase().includes(f.toUpperCase())));
   const activistHolders = holders.filter(h => activists.some(f => (h.fund||"").toUpperCase().includes(f.toUpperCase())));
+  // 13F NEW/INCREASED de Tier 1 = signal de mouvement smart money equivalent
+  // aux tier1Moves verified pour les actions US (parite EU/US)
+  const tier1NewMoves = tier1Holders.filter(h => h.change === 'NEW' || h.change === 'INCREASED');
+  const activistNewMoves = activistHolders.filter(h => h.change === 'NEW' || h.change === 'INCREASED');
 
   if (tier1Moves.length >= 2) score += 25;
   else if (tier1Moves.length >= 1 && activistMoves.length >= 1) score += 23;
   else if (tier1Moves.length >= 1 && pelosiMoves.length >= 1) score += 22;
   else if (tier1Moves.length >= 1) score += 18;
   else if (activistMoves.length >= 1) score += 15;
-  // Fallback 13F holders : poids ~80% car non-mouvement mais detention verifiee
-  else if (tier1Holders.length >= 3) score += 20;
-  else if (tier1Holders.length >= 1 && activistHolders.length >= 1) score += 18;
-  else if (tier1Holders.length >= 1) score += 14;
-  else if (activistHolders.length >= 1) score += 12;
+  // 13F NEW/INCREASED = vrai signal smart money mouvement (parite avec tier1Moves)
+  else if (tier1NewMoves.length >= 2) score += 25;
+  else if (tier1NewMoves.length >= 1 && activistNewMoves.length >= 1) score += 23;
+  else if (tier1NewMoves.length >= 1) score += 18;
+  // Fallback 13F holders existants (detention sans action recente)
+  else if (tier1Holders.length >= 3) score += 14;
+  else if (tier1Holders.length >= 1 && activistHolders.length >= 1) score += 12;
+  else if (tier1Holders.length >= 1) score += 10;
+  else if (activistHolders.length >= 1) score += 10;
   // BDIF/AMF Tier 1 moves (titres europeens) : equivalent du holders13f pour les EU
   else if (bdifTier1Moves.length >= 2) score += 18;
   else if (bdifTier1Moves.length >= 1) score += 12;
