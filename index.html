@@ -1588,7 +1588,8 @@ async function openFundDetails(cik, fundName) {
       return p.toFixed(3) + "$";
     }
 
-    const rowsHtml = data.holdings.map((h, idx) => {
+    // Fonction de generation d'une ligne, reutilisable pour les onglets
+    function buildRowHtml(h, idx) {
       let changeFmt = "—";
       let changeColor = "#484f58";
       let changeTooltip = "";
@@ -1623,13 +1624,48 @@ async function openFundDetails(cik, fundName) {
         <td style="padding:6px 8px;color:#484f58;font-size:10px;text-align:center">${idx + 1}</td>
         <td style="padding:6px 8px;color:#e6edf3;font-weight:700">${h.issuer}${h.ticker ? ` <span style="color:#58a6ff;font-size:10px">(${h.ticker})</span>` : ''}</td>
         <td style="padding:6px 8px;text-align:right;color:#58a6ff;font-weight:700">${fmtBig(scaledVal)}</td>
-        <td style="padding:6px 8px;text-align:right;color:#8b949e">${portfolioPct}%</td>
+        <td style="padding:6px 8px;text-align:right;color:#8b949e" title="Poids dans le portfolio du fonds">${portfolioPct}%</td>
         <td style="padding:6px 8px;text-align:right;color:#8b949e">${fmtShares(h.shares)}</td>
+        <td style="padding:6px 8px;text-align:right;color:#10b981;font-weight:700" id="pctcompany-${tickerKey}-${idx}" data-ticker="${tickerKey}" data-shares="${Number(h.shares)||0}" title="% des actions en circulation de la societe detenu par ce fonds — charge au scroll">—</td>
         <td style="padding:6px 8px;text-align:right;color:#eccc68;font-weight:700" title="Prix moyen approximatif pendant le trimestre (midpoint Q-1 et Q)">${fmtPrice(pmQ)}</td>
         <td style="padding:6px 8px;text-align:right;color:#a29bfe;font-weight:700" id="curprice-${tickerKey}-${idx}" data-ticker="${tickerKey}" data-pm="${pmQ || ''}" title="Cours actuel — sera charge automatiquement">—</td>
         <td style="padding:6px 8px;text-align:right;color:${changeColor};font-weight:700" title="${changeTooltip}">${changeFmt}</td>
       </tr>`;
-    }).join("");
+    }
+
+    // Filtres par onglet : retourne le sous-ensemble + tri approprie
+    function filterByTab(tab) {
+      let list = data.holdings.slice();
+      switch (tab) {
+        case 'new':
+          list = list.filter(h => h.position_change === 'NEW').sort((a, b) => Number(b.value_usd) - Number(a.value_usd));
+          break;
+        case 'increased':
+          list = list.filter(h => h.position_change === 'INCREASED').sort((a, b) => {
+            const av = computeSharesVariation(a) || 0;
+            const bv = computeSharesVariation(b) || 0;
+            return bv - av; // % de hausse desc (signal le plus fort en tete)
+          });
+          break;
+        case 'decreased':
+          list = list.filter(h => h.position_change === 'DECREASED').sort((a, b) => {
+            const av = computeSharesVariation(a) || 0;
+            const bv = computeSharesVariation(b) || 0;
+            return av - bv; // % de baisse asc (les plus gros allegements en tete)
+          });
+          break;
+        case 'exited':
+          list = list.filter(h => h.position_change === 'EXITED').sort((a, b) => Number(b.previous_value_usd || 0) - Number(a.previous_value_usd || 0));
+          break;
+        case 'all':
+        default:
+          // Deja trie par valeur dans la reponse proxy
+          break;
+      }
+      return list;
+    }
+
+    const rowsHtml = data.holdings.map((h, idx) => buildRowHtml(h, idx)).join("");
 
     document.getElementById("modal-content").innerHTML = `
       <div class="modal-header">
@@ -1649,8 +1685,15 @@ async function openFundDetails(cik, fundName) {
         <span style="background:#ff475722;color:#ff4757;padding:4px 10px;border-radius:6px;font-size:11px;font-weight:700">×${counts.exited} EXITED</span>
         <span style="background:#21262d;color:#8b949e;padding:4px 10px;border-radius:6px;font-size:11px;font-weight:700">═${counts.unchanged} stable</span>
       </div>
-      <div style="margin-bottom:8px;color:#8b949e;font-size:10px;font-style:italic">Top ${data.count} positions par valeur. Cliquer sur ✕ pour fermer.</div>
-      <div style="max-height:60vh;overflow-y:auto;border:1px solid #30363d;border-radius:8px">
+      <div id="fund-tabs" style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap">
+        <button data-tab="all" class="fund-tab active" style="background:#21262d;border:1px solid #58a6ff;color:#58a6ff;padding:6px 12px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit">📊 Toutes positions</button>
+        <button data-tab="new" class="fund-tab" style="background:#21262d;border:1px solid #30363d;color:#8b949e;padding:6px 12px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit">🆕 Top achats Q (NEW)</button>
+        <button data-tab="increased" class="fund-tab" style="background:#21262d;border:1px solid #30363d;color:#8b949e;padding:6px 12px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit">↑ Renforcements</button>
+        <button data-tab="decreased" class="fund-tab" style="background:#21262d;border:1px solid #30363d;color:#8b949e;padding:6px 12px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit">↓ Allègements</button>
+        <button data-tab="exited" class="fund-tab" style="background:#21262d;border:1px solid #30363d;color:#8b949e;padding:6px 12px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit">× Sorties</button>
+      </div>
+      <div id="fund-tab-summary" style="margin-bottom:8px;color:#8b949e;font-size:10px;font-style:italic">Top ${data.count} positions par valeur. Cliquer sur ✕ pour fermer.</div>
+      <div style="max-height:55vh;overflow-y:auto;border:1px solid #30363d;border-radius:8px">
         <table style="width:100%;border-collapse:collapse;font-size:11px;font-family:monospace">
           <thead style="position:sticky;top:0;background:#0d1117;z-index:1">
             <tr style="color:#484f58;font-size:9px;text-transform:uppercase;letter-spacing:1px;border-bottom:1px solid #30363d">
@@ -1659,17 +1702,56 @@ async function openFundDetails(cik, fundName) {
               <td style="padding:6px 8px;text-align:right">Valeur</td>
               <td style="padding:6px 8px;text-align:right">% portfolio</td>
               <td style="padding:6px 8px;text-align:right">Actions</td>
+              <td style="padding:6px 8px;text-align:right;color:#10b981" title="% des actions en circulation détenu par ce fonds — signal d'activisme si > 5%">% société</td>
               <td style="padding:6px 8px;text-align:right;color:#eccc68" title="Prix moyen approximatif acheté pendant le trimestre">PM Q ($)</td>
               <td style="padding:6px 8px;text-align:right;color:#a29bfe" title="Cours actuel — chargé au scroll">Cours actuel</td>
               <td style="padding:6px 8px;text-align:right" title="Variation du nombre d'actions vs trimestre precedent (signal pur achat/vente)">Acheté/Vendu Q</td>
             </tr>
           </thead>
-          <tbody>
+          <tbody id="fund-tbody">
             ${rowsHtml}
           </tbody>
         </table>
       </div>
     `;
+
+    // Onglets : filtre + re-render
+    const tabSummaries = {
+      all:       `Top ${data.count} positions du fonds par valeur. La vue par defaut.`,
+      new:       `🆕 Nouvelles positions ouvertes ce trimestre (Q1 2026), triees par valeur. Signal opportuniste majeur si le fonds est actif/hedge.`,
+      increased: `↑ Positions renforcees ce trimestre, triees par % d'augmentation des actions. Conviction grandissante du fonds.`,
+      decreased: `↓ Positions allegees ce trimestre, triees par % de reduction. Le fonds prend ses profits ou perd confiance.`,
+      exited:    `× Positions vendues completement ce trimestre, triees par valeur Q-1. Le fonds tourne le dos a la these.`,
+    };
+    document.querySelectorAll('#fund-tabs .fund-tab').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const tab = btn.dataset.tab;
+        // Reset all
+        document.querySelectorAll('#fund-tabs .fund-tab').forEach(b => {
+          b.style.borderColor = '#30363d';
+          b.style.color = '#8b949e';
+        });
+        // Highlight active
+        btn.style.borderColor = '#58a6ff';
+        btn.style.color = '#58a6ff';
+        // Filter and re-render
+        const filtered = filterByTab(tab);
+        const tbody = document.getElementById('fund-tbody');
+        if (filtered.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="8" style="padding:30px;text-align:center;color:#8b949e;font-style:italic">Aucune position dans cette categorie pour ce trimestre.</td></tr>`;
+        } else {
+          tbody.innerHTML = filtered.map((h, i) => buildRowHtml(h, i)).join("");
+          // Re-observer pour les nouvelles cellules cours actuel (qui declenchent aussi le fetch % societe)
+          document.querySelectorAll('#fund-tbody td[id^="curprice-"][data-ticker]').forEach(cell => {
+            if (cell.dataset.ticker && cell.dataset.ticker.trim() && !fetchedCellIds.has(cell.id)) {
+              priceObserver.observe(cell);
+            }
+          });
+        }
+        const summary = document.getElementById('fund-tab-summary');
+        if (summary) summary.innerHTML = `${tabSummaries[tab]} <span style="color:#58a6ff">· ${filtered.length} resultats</span>`;
+      });
+    });
     document.getElementById("modal").style.display = "flex";
 
     // Lazy fetch avec IntersectionObserver : le cours se charge quand la ligne devient visible
@@ -1679,27 +1761,59 @@ async function openFundDetails(cik, fundName) {
     const fetchPriceForCell = async (cell, ticker, pm) => {
       try {
         const cleanSymbol = ticker.replace(/\.[A-Z]+$/, '');
-        const r = await fetch(`${PROXY}/twelvedata/price?symbol=${encodeURIComponent(cleanSymbol)}`);
-        if (!r.ok) return;
-        const quote = await r.json();
-        if (!quote || quote.code || !quote.close) return;
-        const cur = parseFloat(quote.close);
-        if (!(cur > 0)) return;
-        let deltaHtml = "";
-        if (pm && pm > 0) {
-          const deltaPct = ((cur - pm) / pm) * 100;
-          // Sanity check : si |delta| > 200%, c'est probablement un mismatch (split, HK vs US ADR, bond/preferred)
-          // On masque pour eviter d'induire en erreur
-          if (Math.abs(deltaPct) > 200) {
-            deltaHtml = `<div style="font-size:9px;color:#8b949e;font-weight:600" title="Comparaison desactivee : ecart >200% indique probablement un split, une difference de listing (ADR vs ordinary) ou un instrument non-equity">⚠️ ecart anormal</div>`;
-          } else {
-            const sign = deltaPct > 0 ? "+" : "";
-            const color = deltaPct > 0 ? "#ff6b3d" : "#2ed573";
-            const label = deltaPct > 0 ? "(plus cher qu'achat fond)" : "(moins cher qu'achat fond)";
-            deltaHtml = `<div style="font-size:9px;color:${color};font-weight:600">${sign}${deltaPct.toFixed(1)}% ${label}</div>`;
+        // En parallele : prix + statistiques (shares_outstanding)
+        const [priceR, statsR] = await Promise.all([
+          fetch(`${PROXY}/twelvedata/price?symbol=${encodeURIComponent(cleanSymbol)}`),
+          fetch(`${PROXY}/twelvedata/statistics?symbol=${encodeURIComponent(cleanSymbol)}`),
+        ]);
+        // === COURS ACTUEL ===
+        if (priceR.ok) {
+          const quote = await priceR.json();
+          if (quote && !quote.code && quote.close) {
+            const cur = parseFloat(quote.close);
+            if (cur > 0) {
+              let deltaHtml = "";
+              if (pm && pm > 0) {
+                const deltaPct = ((cur - pm) / pm) * 100;
+                if (Math.abs(deltaPct) > 200) {
+                  deltaHtml = `<div style="font-size:9px;color:#8b949e;font-weight:600" title="Comparaison desactivee : ecart >200% indique probablement un split, une difference de listing (ADR vs ordinary) ou un instrument non-equity">⚠️ ecart anormal</div>`;
+                } else {
+                  const sign = deltaPct > 0 ? "+" : "";
+                  const color = deltaPct > 0 ? "#ff6b3d" : "#2ed573";
+                  const label = deltaPct > 0 ? "(plus cher qu'achat fond)" : "(moins cher qu'achat fond)";
+                  deltaHtml = `<div style="font-size:9px;color:${color};font-weight:600">${sign}${deltaPct.toFixed(1)}% ${label}</div>`;
+                }
+              }
+              cell.innerHTML = `<div style="color:#a29bfe">${fmtPrice(cur)}</div>${deltaHtml}`;
+            }
           }
         }
-        cell.innerHTML = `<div style="color:#a29bfe">${fmtPrice(cur)}</div>${deltaHtml}`;
+        // === % DE LA SOCIETE ===
+        if (statsR.ok) {
+          const stats = await statsR.json();
+          // TwelveData : statistics.statistics.shares_statistics.shares_outstanding (chemin imbrique)
+          // Fallback : essayer plusieurs chemins selon les versions de reponse
+          const shOut = stats?.statistics?.shares_statistics?.shares_outstanding
+                     ?? stats?.shares_statistics?.shares_outstanding
+                     ?? stats?.statistics?.statistics?.shares_outstanding
+                     ?? null;
+          const fundShares = parseFloat(cell.dataset.shares) || 0;
+          // Trouve la cellule % societe par convention d'ID (meme idx que la cellule prix)
+          const idMatch = /^curprice-(.+)-(\d+)$/.exec(cell.id);
+          if (idMatch && shOut && fundShares > 0) {
+            const pctCompanyCell = document.getElementById(`pctcompany-${idMatch[1]}-${idMatch[2]}`);
+            if (pctCompanyCell) {
+              const pct = (fundShares / Number(shOut)) * 100;
+              let color = "#10b981", label = "";
+              if (pct >= 10)      { color = "#dc2626"; label = " (controle)"; }
+              else if (pct >= 5)  { color = "#f97316"; label = " (activiste)"; }
+              else if (pct >= 1)  { color = "#f59e0b"; label = ""; }
+              else                { color = "#10b981"; label = ""; }
+              const fmt = pct >= 1 ? pct.toFixed(2) : pct.toFixed(3);
+              pctCompanyCell.innerHTML = `<span style="color:${color}">${fmt}%</span>${label ? `<div style="font-size:9px;color:${color};font-weight:600">${label}</div>` : ''}`;
+            }
+          }
+        }
       } catch {}
     };
     const processPriceQueue = async () => {
@@ -1727,8 +1841,10 @@ async function openFundDetails(cik, fundName) {
         priceObserver.unobserve(cell);
       }
     }, { rootMargin: '200px', threshold: 0 });
-    // Attache observer a toutes les cellules avec un ticker
-    document.querySelectorAll('#modal-content td[data-ticker]').forEach(cell => {
+    // Attache observer SEULEMENT aux cellules cours actuel (curprice-...)
+    // pour eviter de double-fetcher : la cellule % societe est mise a jour
+    // dans le meme call que la cellule cours actuel.
+    document.querySelectorAll('#modal-content td[id^="curprice-"][data-ticker]').forEach(cell => {
       if (cell.dataset.ticker && cell.dataset.ticker.trim()) {
         priceObserver.observe(cell);
       }
