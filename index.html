@@ -1259,7 +1259,9 @@ function renderCard(r) {
     <div class="card-actions">
       <button class="action-btn" onclick="openReco('${r.ticker}')" style="background:linear-gradient(135deg,#2ed57318,#00d2ff18);border:1px solid #2ed57355;color:#2ed573">📈 Recommandation</button>
       <button class="action-btn" onclick="openDeepDive('${r.ticker}')" style="background:linear-gradient(135deg,#7c3aed18,#a29bfe18);border:1px solid #7c3aed55;color:#a29bfe">🔍 Deep Dive</button>
+      <button class="action-btn" onclick="loadBuzzForTicker('${r.ticker}')" style="background:linear-gradient(135deg,#dc262618,#f59e0b18);border:1px solid #dc262655;color:#f59e0b">📢 Buzz Social</button>
     </div>
+    <div id="buzz-${r.ticker}" style="display:none;margin-top:8px"></div>
     <div id="expanded-${r.ticker}" style="display:none" class="card-expanded">
       ${(r.news||[]).length > 0 ? `<div style="margin-bottom:12px"><div class="section-label" style="color:#58a6ff;margin-bottom:8px">📰 Actualités <span style="color:#484f58">(NewsAPI)</span></div>${(r.news||[]).map(n => `<div class="news-item"><div class="news-title-row"><span class="news-title">${n.title}</span><span class="news-date">${n.date}</span></div><div class="news-content">${n.content}</div><div class="news-source">${n.source}</div></div>`).join("")}</div>` : ""}
       ${(r.holders13f||[]).length > 0 ? `<div style="margin-bottom:12px">
@@ -1864,6 +1866,127 @@ async function openFundDetails(cik, fundName) {
 }
 // Expose pour onclick depuis la bannière (IIFE séparée)
 window.openFundDetails = openFundDetails;
+
+// ============================================================
+// BUZZ SOCIAL : Reddit + StockTwits + NewsAPI agreges
+// Appel a la demande (1 par card via le bouton 📢)
+// ============================================================
+async function loadBuzzForTicker(ticker) {
+  const container = document.getElementById(`buzz-${ticker}`);
+  if (!container) return;
+  // Toggle si deja affiche
+  if (container.style.display === 'block' && container.dataset.loaded === '1') {
+    container.style.display = 'none';
+    return;
+  }
+  container.style.display = 'block';
+  container.innerHTML = '<div style="color:#8b949e;padding:12px;text-align:center;font-size:11px">📢 Chargement buzz social...</div>';
+  try {
+    const r = await fetch(`${PROXY}/social/buzz?ticker=${encodeURIComponent(ticker)}`);
+    const data = await r.json();
+    if (!data.ok) throw new Error(data.error || 'erreur endpoint');
+    container.dataset.loaded = '1';
+
+    const s = data.buzz_score;
+    const lvl = data.level;
+    const config = {
+      silent:   { icon: '🔇', label: 'Silencieux',  color: '#8b949e' },
+      moderate: { icon: '🔉', label: 'Modere',      color: '#58a6ff' },
+      strong:   { icon: '🔊', label: 'Fort',        color: '#f59e0b' },
+      viral:    { icon: '📢', label: 'Viral',       color: '#dc2626' },
+    }[lvl] || { icon: '🔇', label: '—', color: '#8b949e' };
+
+    const st = data.stocktwits;
+    const stSentiment = st.bullish_ratio !== null
+      ? (st.bullish_ratio >= 60 ? `<span style="color:#2ed573">${st.bullish_ratio}% bullish</span>`
+        : st.bullish_ratio <= 40 ? `<span style="color:#ff4757">${100 - st.bullish_ratio}% bearish</span>`
+        : `<span style="color:#8b949e">${st.bullish_ratio}% bull / ${100 - st.bullish_ratio}% bear</span>`)
+      : '<span style="color:#484f58">pas de sentiment</span>';
+
+    // Top subreddits par mentions
+    const topSubs = (data.reddit.by_subreddit || [])
+      .filter(s => s.count > 0)
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 4)
+      .map(s => `<span style="background:#161b22;border:1px solid #30363d;padding:2px 6px;border-radius:4px;font-size:10px;margin-right:4px">r/${s.sub} <strong style="color:#e6edf3">${s.count}</strong></span>`)
+      .join('');
+
+    // Sentiment Claude Haiku
+    const renderSentiment = (sent, label) => {
+      if (!sent) return '';
+      const bull = sent.bullish_pct || 0;
+      const bear = sent.bearish_pct || 0;
+      const neutral = sent.neutral_pct || 0;
+      const themes = (sent.themes || []).slice(0, 4).map(t =>
+        `<span style="background:#161b22;border:1px solid #30363d;padding:1px 6px;border-radius:4px;font-size:9px;color:#a29bfe;margin-right:3px">${t}</span>`
+      ).join('');
+      // Barre stacked bull/neutral/bear
+      const total = bull + bear + neutral;
+      if (total === 0) return '';
+      return `<div style="background:#161b22;padding:8px;border-radius:6px;border:1px solid #30363d;margin-top:6px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">
+          <span style="color:#8b949e;font-size:9px;text-transform:uppercase;letter-spacing:1px">${label}</span>
+          <span style="font-size:10px;color:#e6edf3"><span style="color:#2ed573">${bull}%↑</span> · <span style="color:#8b949e">${neutral}%═</span> · <span style="color:#ff4757">${bear}%↓</span></span>
+        </div>
+        <div style="display:flex;height:6px;border-radius:3px;overflow:hidden;margin-bottom:6px">
+          <div style="width:${bull}%;background:#2ed573"></div>
+          <div style="width:${neutral}%;background:#484f58"></div>
+          <div style="width:${bear}%;background:#ff4757"></div>
+        </div>
+        ${themes ? `<div style="margin-bottom:4px">${themes}</div>` : ''}
+        ${sent.summary ? `<div style="font-size:10px;color:#e6edf3;font-style:italic;line-height:1.4">"${sent.summary}"</div>` : ''}
+      </div>`;
+    };
+    const redditSentHtml = renderSentiment(data.reddit.sentiment, '🔴 Sentiment Reddit (Claude Haiku)');
+    const newsSentHtml = renderSentiment(data.news.sentiment, '📰 Sentiment Presse (Claude Haiku)');
+
+    container.innerHTML = `
+      <div style="background:#0d1117;border:1px solid ${config.color}33;border-radius:8px;padding:12px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-size:20px">${config.icon}</span>
+            <div>
+              <div style="color:${config.color};font-weight:700;font-size:13px">${config.label}</div>
+              <div style="color:#8b949e;font-size:10px">Buzz score base sur Reddit + StockTwits + Press 7j</div>
+            </div>
+          </div>
+          <div style="background:${config.color}22;color:${config.color};padding:6px 14px;border-radius:8px;font-weight:700;font-family:monospace;font-size:18px">${s}<span style="font-size:11px;opacity:0.7">/100</span></div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;font-size:11px;margin-bottom:10px">
+          <div style="background:#161b22;padding:10px;border-radius:6px;border:1px solid #30363d">
+            <div style="color:#ff6b3d;font-size:9px;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">🔴 Reddit (7j)</div>
+            <div style="color:#e6edf3;font-weight:700;font-size:16px">${data.reddit.total_mentions} posts</div>
+            <div style="color:#8b949e;font-size:9px">${data.reddit.total_upvotes} upvotes cumules</div>
+            <div style="margin-top:6px;line-height:1.5">${topSubs || '<span style="color:#484f58;font-size:9px">aucune mention</span>'}</div>
+          </div>
+          <div style="background:#161b22;padding:10px;border-radius:6px;border:1px solid #30363d">
+            <div style="color:#10b981;font-size:9px;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">🟢 StockTwits</div>
+            <div style="color:#e6edf3;font-weight:700;font-size:16px">${st.messages} msgs</div>
+            <div style="font-size:10px;margin-top:2px">${stSentiment}</div>
+            <div style="color:#484f58;font-size:9px;margin-top:4px">${st.bullish} bullish · ${st.bearish} bearish · ${st.neutral} neutre</div>
+          </div>
+          <div style="background:#161b22;padding:10px;border-radius:6px;border:1px solid #30363d">
+            <div style="color:#58a6ff;font-size:9px;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">📰 Presse (7j)</div>
+            <div style="color:#e6edf3;font-weight:700;font-size:16px">${data.news.count_7d}</div>
+            <div style="color:#8b949e;font-size:9px">articles indexes NewsAPI</div>
+          </div>
+        </div>
+        ${redditSentHtml}
+        ${newsSentHtml}
+        <div style="display:flex;gap:10px;font-size:9px;color:#484f58;justify-content:flex-end;margin-top:8px">
+          <span>Reddit: ${data.breakdown.reddit_score}/100</span>
+          <span>·</span>
+          <span>ST: ${data.breakdown.stocktwits_score}/100</span>
+          <span>·</span>
+          <span>News: ${data.breakdown.news_score}/100</span>
+        </div>
+      </div>
+    `;
+  } catch (e) {
+    container.innerHTML = `<div style="color:#ff4757;padding:8px;font-size:11px;background:#ff475715;border-radius:6px">⚠️ Erreur buzz social: ${e.message}</div>`;
+  }
+}
+window.loadBuzzForTicker = loadBuzzForTicker;
 
 // ============================================================
 // EXPLORATEUR DE FONDS 13F : grille searchable de tous les fonds
