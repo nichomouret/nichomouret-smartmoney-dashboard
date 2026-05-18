@@ -1954,10 +1954,11 @@ async function loadBuzzForTicker(ticker) {
         </div>
         <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;font-size:11px;margin-bottom:10px">
           <div style="background:#161b22;padding:10px;border-radius:6px;border:1px solid #30363d">
-            <div style="color:#ff6b3d;font-size:9px;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">🔴 Reddit (7j)</div>
-            <div style="color:#e6edf3;font-weight:700;font-size:16px">${data.reddit.total_mentions} posts</div>
-            <div style="color:#8b949e;font-size:9px">${data.reddit.total_upvotes} upvotes cumules</div>
-            <div style="margin-top:6px;line-height:1.5">${topSubs || '<span style="color:#484f58;font-size:9px">aucune mention</span>'}</div>
+            <div style="color:#ff6b3d;font-size:9px;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">🔴 Reddit (24h)${data.reddit.rank ? ` <span style="color:#fbbf24">· #${data.reddit.rank}</span>` : ''}</div>
+            <div style="color:#e6edf3;font-weight:700;font-size:16px">${data.reddit.total_mentions} mentions</div>
+            <div style="color:#8b949e;font-size:9px">${data.reddit.mentions_24h_ago !== undefined ? `vs ${data.reddit.mentions_24h_ago} hier` : ''} · ${data.reddit.total_upvotes} upvotes</div>
+            <div style="margin-top:6px;line-height:1.5">${topSubs || '<span style="color:#484f58;font-size:9px">pas dans top 100 ApeWisdom</span>'}</div>
+            <div style="margin-top:4px;color:#484f58;font-size:8px">Source : ApeWisdom (multi-sub)</div>
           </div>
           <div style="background:#161b22;padding:10px;border-radius:6px;border:1px solid #30363d">
             <div style="color:#10b981;font-size:9px;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">🟢 StockTwits</div>
