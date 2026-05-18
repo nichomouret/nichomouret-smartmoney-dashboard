@@ -1282,7 +1282,7 @@ function renderCard(r) {
     <div class="card-actions">
       <button class="action-btn" onclick="openReco('${r.ticker}')" style="background:linear-gradient(135deg,#2ed57318,#00d2ff18);border:1px solid #2ed57355;color:#2ed573">📈 Recommandation</button>
       <button class="action-btn" onclick="openDeepDive('${r.ticker}')" style="background:linear-gradient(135deg,#7c3aed18,#a29bfe18);border:1px solid #7c3aed55;color:#a29bfe">🔍 Deep Dive</button>
-      <button class="action-btn" onclick="loadBuzzForTicker('${r.ticker}')" style="background:linear-gradient(135deg,#dc262618,#f59e0b18);border:1px solid #dc262655;color:#f59e0b">📢 Buzz Social</button>
+      <button class="action-btn" onclick="loadBuzzForTicker('${r.ticker}', ${JSON.stringify(r.name || '').replace(/"/g, '&quot;')})" style="background:linear-gradient(135deg,#dc262618,#f59e0b18);border:1px solid #dc262655;color:#f59e0b">📢 Buzz Social</button>
     </div>
     <div id="buzz-${r.ticker}" style="display:none;margin-top:8px"></div>
     <div id="expanded-${r.ticker}" style="display:none" class="card-expanded">
@@ -1894,7 +1894,7 @@ window.openFundDetails = openFundDetails;
 // BUZZ SOCIAL : Reddit + StockTwits + NewsAPI agreges
 // Appel a la demande (1 par card via le bouton 📢)
 // ============================================================
-async function loadBuzzForTicker(ticker) {
+async function loadBuzzForTicker(ticker, name) {
   const container = document.getElementById(`buzz-${ticker}`);
   if (!container) return;
   // Toggle si deja affiche
@@ -1905,7 +1905,8 @@ async function loadBuzzForTicker(ticker) {
   container.style.display = 'block';
   container.innerHTML = '<div style="color:#8b949e;padding:12px;text-align:center;font-size:11px">📢 Chargement buzz social...</div>';
   try {
-    const r = await fetch(`${PROXY}/social/buzz?ticker=${encodeURIComponent(ticker)}`);
+    const nameParam = name ? `&name=${encodeURIComponent(name)}` : '';
+    const r = await fetch(`${PROXY}/social/buzz?ticker=${encodeURIComponent(ticker)}${nameParam}`);
     const data = await r.json();
     if (!data.ok) throw new Error(data.error || 'erreur endpoint');
     container.dataset.loaded = '1';
