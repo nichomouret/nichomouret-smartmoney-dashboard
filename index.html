@@ -662,8 +662,12 @@ function calculateSCCT(result) {
   const activistMoves = moves.filter(m => m.verified && (m.isActivist || activists.some(f => (m.fund||"").includes(f))));
   const pelosiMoves = moves.filter(m => m.isPelosi || (m.fund||"").includes("Pelosi"));
 
-  // Fallback : holders13f (SEC 13F current holdings) si pas de mouvements verifies <18mo
-  // C'est une donnee fiable (deposee a la SEC) meme si plus ancienne que 18 mois
+  // BDIF/AMF moves Tier 1 specifique aux titres europeens (BlackRock, BNP, AXA,
+  // Norges, Amundi, Carmignac qui ont declare a l'AMF). Avant le fix on perdait
+  // ce signal car ces fonds n'apparaissent pas dans SEC 13F (US-only).
+  const bdifTier1Moves = moves.filter(m => m.verified && (m.source||"").match(/AMF|BDIF|ESMA/i) && tier1.some(f => (m.fund||"").toUpperCase().includes(f.toUpperCase())));
+
+  // Fallback : holders13f (SEC 13F current holdings) pour titres US
   const holders = result.holders13f || [];
   const tier1Holders = holders.filter(h => tier1.some(f => (h.fund||"").toUpperCase().includes(f.toUpperCase())));
   const activistHolders = holders.filter(h => activists.some(f => (h.fund||"").toUpperCase().includes(f.toUpperCase())));
@@ -678,6 +682,9 @@ function calculateSCCT(result) {
   else if (tier1Holders.length >= 1 && activistHolders.length >= 1) score += 18;
   else if (tier1Holders.length >= 1) score += 14;
   else if (activistHolders.length >= 1) score += 12;
+  // BDIF/AMF Tier 1 moves (titres europeens) : equivalent du holders13f pour les EU
+  else if (bdifTier1Moves.length >= 2) score += 18;
+  else if (bdifTier1Moves.length >= 1) score += 12;
   else if (result.criteria?.institutional) score += 5;
 
   if (result.criteria?.catalysts || result.criteria?.biotech) score += 10;
@@ -811,9 +818,10 @@ proxyFetch(`/twelvedata/price?symbol=${encodeURIComponent(priceSymbol)}${isFrenc
     source: a.source?.name || "—",
   }));
   const edgarFilings = [];
-  // CORRECTION: filtrer les 13G/13F/AMF anciens (>18 mois) pour ne garder que les positions actuelles
-  // Ajustable : 18 mois couvre 2 cycles de declaration sans afficher des positions de 2021-2022
-  const FRESHNESS_MS = 18 * 30 * 24 * 60 * 60 * 1000; // 18 mois
+  // CORRECTION: filtrer les 13G/13F/AMF anciens pour ne garder que les positions actuelles
+  // 24 mois : couvre les 2 derniers cycles annuels europeens (AMF/BDIF annuels) sans
+  // afficher du 2022. Sweet spot apres feedback Nicholas (18 trop strict pour FR).
+  const FRESHNESS_MS = 24 * 30 * 24 * 60 * 60 * 1000; // 24 mois
   const cutoffMs = Date.now() - FRESHNESS_MS;
   const isFresh = (dateStr) => {
     if (!dateStr) return false;
