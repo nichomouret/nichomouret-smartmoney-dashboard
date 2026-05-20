@@ -1341,7 +1341,7 @@ function renderCard(r) {
         const days = Math.round((d - now) / 86400000);
         let when, color, bg, border;
         if (days > 0) { when = 'dans ' + days + 'j'; }
-        else if (days === 0) { when = 'aujourd\\'hui'; }
+        else if (days === 0) { when = "aujourd'hui"; }
         else { when = 'il y a ' + Math.abs(days) + 'j'; }
         // Couleur selon multiplicateur
         if (m >= 2) { color = '#2ed573'; bg = '#2ed57315'; border = '#2ed57333'; }
