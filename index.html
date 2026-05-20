@@ -612,6 +612,53 @@ function parseJSON(text) {
   return JSON.parse(clean.slice(first, last + 1));
 }
 
+// ============================================================
+// CATALYST FRESHNESS DECAY : pondere le bonus catalysts selon
+// la distance temporelle au catalyseur. Un earnings dans 7j vaut 2.5x
+// alors qu'un earnings d'il y a 30j vaut 0.1x (noyé dans le bruit).
+// ============================================================
+function computeCatalystFreshness(dateStr, type) {
+  if (!dateStr) return 0.6; // pas de date connue : bonus reduit
+  const date = new Date(dateStr);
+  if (isNaN(date.getTime())) return 0.6;
+  const now = new Date();
+  const deltaDays = Math.round((date - now) / (1000 * 60 * 60 * 24));
+  // Catalyseur FUTUR : bonus exponentiel a l'approche
+  if (deltaDays >= 0) {
+    const t = (type || "").toUpperCase();
+    if (t === "FDA_PDUFA" || t === "TRIAL_READOUT") {
+      // Binary events biotech : decision tres impactante
+      if (deltaDays <= 14) return 3.0;
+      if (deltaDays <= 45) return 2.0;
+      if (deltaDays <= 90) return 1.4;
+      return 1.0;
+    }
+    if (t === "EARNINGS" || t === "GUIDANCE") {
+      if (deltaDays <= 7) return 2.5;
+      if (deltaDays <= 14) return 2.0;
+      if (deltaDays <= 30) return 1.5;
+      if (deltaDays <= 60) return 1.2;
+      return 1.0;
+    }
+    if (t === "INVESTOR_DAY" || t === "AGM" || t === "M&A") {
+      if (deltaDays <= 30) return 1.7;
+      if (deltaDays <= 60) return 1.3;
+      return 1.0;
+    }
+    // Autre / Capital raise / Restructuring : moins binary
+    if (deltaDays <= 30) return 1.3;
+    if (deltaDays <= 90) return 1.0;
+    return 0.8;
+  }
+  // Catalyseur PASSE : decay rapide (event deja absorbe par le marche)
+  const absDays = Math.abs(deltaDays);
+  if (absDays <= 3) return 1.0;  // tres recent, mouvement encore en cours
+  if (absDays <= 7) return 0.7;
+  if (absDays <= 21) return 0.3;
+  if (absDays <= 45) return 0.1;
+  return 0.0; // mort
+}
+
 function calculateSCCT(result) {
   let score = 0;
   const moves = result.institutionalMoves || [];
@@ -702,7 +749,13 @@ function calculateSCCT(result) {
   else if (bdifTier1Moves.length >= 1) score += 12;
   else if (result.criteria?.institutional) score += 5;
 
-  if (result.criteria?.catalysts || result.criteria?.biotech) score += 10;
+  // CATALYST FRESHNESS DECAY : applique un multiplicateur selon la distance temporelle
+  // au catalyseur. Earnings/FDA dans 14j = signal vif. Earnings d'il y a 30j = noyé.
+  if (result.criteria?.catalysts || result.criteria?.biotech) {
+    const multiplier = computeCatalystFreshness(result.catalystDate, result.catalystType);
+    const baseBonus = 10;
+    score += Math.round(baseBonus * multiplier);
+  }
 
   const totalCriteria = Object.values(result.criteria || {}).filter(Boolean).length;
   if (totalCriteria >= 5) score += 5;
@@ -915,7 +968,7 @@ TITRES: ${context}
 Score min: ${minScore}/7. Retourne UNIQUEMENT les titres qualifiés qui matchent AU MOINS UN des criteres prioritaires: ${focusLabel}.
 CRITÈRES: price_drop(chute>20%), short_interest(VAD>10%), institutional(5%+), threshold(AMF/SEC), catalysts(6mois), biotech(readout), special(SPAC/restructuration), gamma(P/C<0.5+OI_calls_élevé)
 JSON strict sans backticks — TOUS ces champs obligatoires:
-{"results":[{"ticker":"X","name":"Nom complet","market":"NASDAQ","universe":"${universe}","summary":"2 phrases max.","criteria":{"short_interest":true,"institutional":true,"threshold":false,"price_drop":true,"catalysts":true,"biotech":false,"special":false,"gamma":false},"shortInterest":"18%","shortSource":"Estimé","institutionalMoves":[],"conviction":8,"targetPrice":"65€","stopLoss":"36€","squeezeScore":7,"squeezeProbability":"42%"}]}
+{"results":[{"ticker":"X","name":"Nom complet","market":"NASDAQ","universe":"${universe}","summary":"2 phrases max.","criteria":{"short_interest":true,"institutional":true,"threshold":false,"price_drop":true,"catalysts":true,"biotech":false,"special":false,"gamma":false},"catalystDate":"2026-06-15","catalystType":"EARNINGS","catalystDescription":"Q1 earnings release","shortInterest":"18%","shortSource":"Estimé","institutionalMoves":[],"conviction":8,"targetPrice":"65€","stopLoss":"36€","squeezeScore":7,"squeezeProbability":"42%"}]}
 
 IMPORTANT:
 - Si "société=XXX[RÉEL]" est fourni, utilise CE nom comme "name" (ne JAMAIS l'inventer).
@@ -924,7 +977,10 @@ IMPORTANT:
 - institutionalMoves peut être vide [].
 - JAMAIS de valeurs undefined ou null.
 - shortInterest OBLIGATOIRE : donne TOUJOURS une fourchette estimée meme sans donnees Ortex. Format strict : "<5%", "5-10%", "10-15%", "15-20%", "20-30%", ">30%". NE JAMAIS mettre "Inconnu", "Donnees indisponibles", "N/A" ou null. Base ton estimation sur le secteur, la cap boursiere et le profil du titre (small-cap volatile = plus haut, mega-cap stable = bas).
-- shortSource : "Estime" si pas de donnees Ortex fournies, "Ortex" si VAD=X%[ORTEX] dans le contexte.`;
+- shortSource : "Estime" si pas de donnees Ortex fournies, "Ortex" si VAD=X%[ORTEX] dans le contexte.
+- catalystDate : OBLIGATOIRE quand criteria.catalysts=true OU criteria.biotech=true. Format ISO date "YYYY-MM-DD" du prochain catalyseur connu OU date passe recente d'un catalyseur deja survenu (earnings, FDA PDUFA, AGM, investor day, capital raise, restructuring). Si pas de catalyseur identifiable: mettre null mais alors catalysts=false.
+- catalystType : "EARNINGS", "FDA_PDUFA", "TRIAL_READOUT", "INVESTOR_DAY", "AGM", "CAPITAL_RAISE", "RESTRUCTURING", "M&A", "GUIDANCE", "OTHER". Toujours fournir si catalystDate est present.
+- catalystDescription : phrase courte (max 60 chars) decrivant le catalyseur. Ex: "Q1 2026 earnings", "PDUFA decision biotech X", "Investor day".`;
 
   try {
     const text = await callClaude("Analyste Smart Money. JSON uniquement sans backticks.", prompt, 2000);
@@ -1278,6 +1334,24 @@ function renderCard(r) {
       ${r.drawdown52w ? `<div class="drawdown-badge" style="margin-bottom:0">📊 Drawdown 52W: <strong>${r.drawdown52w}</strong>${r.dataSource === 'twelvedata' ? ' <span style="color:#484f58">· TwelveData ✓</span>' : ''}</div>` : ""}
       ${r.shortInterestReal ? `<div style="display:inline-flex;align-items:center;gap:6px;background:#ff475715;border:1px solid #ff475733;border-radius:6px;padding:3px 10px;font-size:10px;color:#ff4757">📉 <strong>VAD: ${r.shortInterestReal}</strong>${r.daysTocover ? ' · DTC: ' + r.daysTocover : ''} <span style="color:#484f58">· Ortex ✓</span></div>` : r.shortInterest ? `<div style="display:inline-flex;align-items:center;gap:6px;background:#ff475710;border:1px solid #ff475722;border-radius:6px;padding:3px 10px;font-size:10px;color:#ff6b3d">📉 <strong>VAD est.: ${r.shortInterest}</strong> <span style="color:#484f58">· Estimé</span></div>` : ""}
       ${r.gammaScore ? `<div style="display:inline-flex;align-items:center;gap:6px;background:#a855f715;border:1px solid #a855f733;border-radius:6px;padding:3px 10px;font-size:10px;color:#a855f7">⚡ <strong>Gamma: ${r.gammaScore}</strong>${r.putCallRatio !== null && r.putCallRatio !== undefined ? ' · P/C: ' + parseFloat(r.putCallRatio).toFixed(2) : ''} <span style="color:#484f58">· Ortex ✓</span></div>` : ""}
+      ${(r.criteria?.catalysts || r.criteria?.biotech) && r.catalystDate ? (function() {
+        const m = computeCatalystFreshness(r.catalystDate, r.catalystType);
+        const d = new Date(r.catalystDate);
+        const now = new Date();
+        const days = Math.round((d - now) / 86400000);
+        let when, color, bg, border;
+        if (days > 0) { when = 'dans ' + days + 'j'; }
+        else if (days === 0) { when = 'aujourd\\'hui'; }
+        else { when = 'il y a ' + Math.abs(days) + 'j'; }
+        // Couleur selon multiplicateur
+        if (m >= 2) { color = '#2ed573'; bg = '#2ed57315'; border = '#2ed57333'; }
+        else if (m >= 1.3) { color = '#eccc68'; bg = '#eccc6815'; border = '#eccc6833'; }
+        else if (m >= 0.7) { color = '#8b949e'; bg = '#8b949e15'; border = '#8b949e33'; }
+        else { color = '#484f58'; bg = '#484f5815'; border = '#484f5833'; }
+        const typeLbl = (r.catalystType || 'OTHER').replace(/_/g, ' ').toLowerCase();
+        const desc = r.catalystDescription || typeLbl;
+        return '<div style="display:inline-flex;align-items:center;gap:6px;background:' + bg + ';border:1px solid ' + border + ';border-radius:6px;padding:3px 10px;font-size:10px;color:' + color + '" title="Multiplicateur SCCT : x' + m.toFixed(2) + ' (10 pts base => ' + Math.round(10 * m) + ' pts)">⚡ <strong>' + desc + '</strong> · ' + when + ' · <span style="opacity:0.8">x' + m.toFixed(1) + '</span></div>';
+      })() : ""}
     </div>
     <div class="card-actions">
       <button class="action-btn" onclick="openReco('${r.ticker}')" style="background:linear-gradient(135deg,#2ed57318,#00d2ff18);border:1px solid #2ed57355;color:#2ed573">📈 Recommandation</button>
