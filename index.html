@@ -751,8 +751,13 @@ function calculateSCCT(result) {
 
   // CATALYST FRESHNESS DECAY : applique un multiplicateur selon la distance temporelle
   // au catalyseur. Earnings/FDA dans 14j = signal vif. Earnings d'il y a 30j = noyé.
+  // Dates verifiees TwelveData = pleine confiance. Dates estimees Claude = pondere 0.6
+  // pour eviter le jackpot sur halluciné.
   if (result.criteria?.catalysts || result.criteria?.biotech) {
-    const multiplier = computeCatalystFreshness(result.catalystDate, result.catalystType);
+    let multiplier = computeCatalystFreshness(result.catalystDate, result.catalystType);
+    if (result.catalystSource !== 'twelvedata') {
+      multiplier = multiplier * 0.6; // penalite pour source non verifiee
+    }
     const baseBonus = 10;
     score += Math.round(baseBonus * multiplier);
   }
@@ -838,7 +843,7 @@ async function fetchTickerData(ticker) {
     ? `${realRaisonSociale} ${ticker} shareholder OR institutional`
     : `${ticker} institutional shareholder`;
 
-  const [quote, ts, news, filings13g, filings13f, amfData, pelositrades, sec13fHolders] = await Promise.all([
+  const [quote, ts, news, filings13g, filings13f, amfData, pelositrades, sec13fHolders, earnings] = await Promise.all([
 proxyFetch(`/twelvedata/price?symbol=${encodeURIComponent(priceSymbol)}${isFrench ? '&exchange=Euronext' : ''}`),
     proxyFetch(`/twelvedata/timeseries?symbol=${encodeURIComponent(priceSymbol)}&interval=1day&outputsize=252${isFrench ? '&exchange=Euronext' : ''}`),
     proxyFetch(`/news?query=${encodeURIComponent(newsQuery)}`),
@@ -847,6 +852,7 @@ proxyFetch(`/twelvedata/price?symbol=${encodeURIComponent(priceSymbol)}${isFrenc
     isFrench ? proxyFetch(`/amf/franchissements?ticker=${encodeURIComponent(ticker)}`) : Promise.resolve(null),
     (!isFrench) ? proxyFetch(`/pelosi/trades?ticker=${encodeURIComponent(cleanSymbol)}`) : Promise.resolve(null),
     proxyFetch(`/sec-13f/ticker/${encodeURIComponent(cleanSymbol)}?limit=20`),
+    proxyFetch(`/twelvedata/earnings?symbol=${encodeURIComponent(priceSymbol)}${isFrench ? '&exchange=Euronext' : ''}`),
   ]);
 
   // SEC 13F holders (top 20 Tier 1 fonds qui detiennent ce ticker)
@@ -948,7 +954,10 @@ proxyFetch(`/twelvedata/price?symbol=${encodeURIComponent(priceSymbol)}${isFrenc
       else gammaScore = "FAIBLE";
     }
   }
-  return { realPrice, drawdown52w, priceChange, hasRealData, newsItems, edgarFilings, shortInterestReal, daysTocover, borrowRate, ortexScore, realFilings, realRaisonSociale, dataWarning, putCallRatio, callOI, totalOI, impliedVolatility, gammaScore, holders13f };
+  // Earnings reels TwelveData (override de la date hallucinee par Claude)
+  const realNextEarnings = earnings && !earnings.error ? earnings.next_earnings_date : null;
+  const realLastEarnings = earnings && !earnings.error ? earnings.last_earnings_date : null;
+  return { realPrice, drawdown52w, priceChange, hasRealData, newsItems, edgarFilings, shortInterestReal, daysTocover, borrowRate, ortexScore, realFilings, realRaisonSociale, dataWarning, putCallRatio, callOI, totalOI, impliedVolatility, gammaScore, holders13f, realNextEarnings, realLastEarnings };
 }
 
 async function analyzeBatch(batch, universe, customTicker = null) {
@@ -956,7 +965,8 @@ async function analyzeBatch(batch, universe, customTicker = null) {
     const dd = data.drawdown52w ? `drawdown=${data.drawdown52w}[RÉEL]` : "drawdown=inconnu[ESTIMÉ]";
     const vad = data.shortInterestReal ? `VAD=${data.shortInterestReal}[ORTEX]` : "VAD=inconnu";
     const realName = data.realRaisonSociale ? ` société=${data.realRaisonSociale}[RÉEL]` : "";
-    return `${ticker}: prix=${data.realPrice || "N/A"} ${dd} change=${data.priceChange}% ${vad}${realName}`;
+    const earningsTag = data.realNextEarnings ? ` nextEarnings=${data.realNextEarnings}[TWELVEDATA]` : (data.realLastEarnings ? ` lastEarnings=${data.realLastEarnings}[TWELVEDATA]` : "");
+    return `${ticker}: prix=${data.realPrice || "N/A"} ${dd} change=${data.priceChange}% ${vad}${realName}${earningsTag}`;
   }).join("\n");
 
   const universeLabel = customTicker ? `Ticker spécifique (${customTicker})` : (UNIVERSES[universe]?.label || universe);
@@ -1117,6 +1127,25 @@ async function runScan() {
               console.log(`[${s.ticker}] FORCE-CHECK: threshold=true (13F NEW/INCREASED holder)`);
             }
 
+            // OVERRIDE catalyst date avec source TwelveData si disponible
+            // (sinon on garde la date hallucinee par Claude avec source "estimate")
+            let finalCatalystDate = s.catalystDate || null;
+            let finalCatalystType = s.catalystType || null;
+            let finalCatalystDesc = s.catalystDescription || null;
+            let catalystSource = "claude_estimate";
+            if (data.realNextEarnings) {
+              finalCatalystDate = data.realNextEarnings;
+              finalCatalystType = "EARNINGS";
+              finalCatalystDesc = `Earnings (TwelveData)`;
+              catalystSource = "twelvedata";
+            } else if (data.realLastEarnings && !s.catalystDate) {
+              // Earnings passe et Claude n'a rien dit -> on utilise la derniere date connue
+              finalCatalystDate = data.realLastEarnings;
+              finalCatalystType = "EARNINGS";
+              finalCatalystDesc = `Last earnings (TwelveData)`;
+              catalystSource = "twelvedata";
+            }
+
             const base = {
               ...s, name: correctedName, criteria: correctedCriteria,
               realPrice: data.realPrice, priceChange: data.priceChange || 0,
@@ -1134,7 +1163,12 @@ async function runScan() {
               shortInterest: s.shortInterest || null, shortSource: s.shortSource || null,
               putCallRatio: data.putCallRatio, callOI: data.callOI, totalOI: data.totalOI,
               impliedVolatility: data.impliedVolatility, gammaScore: data.gammaScore,
-              holders13f: data.holders13f || []
+              holders13f: data.holders13f || [],
+              // Catalyst final (TwelveData override > Claude estimate)
+              catalystDate: finalCatalystDate,
+              catalystType: finalCatalystType,
+              catalystDescription: finalCatalystDesc,
+              catalystSource: catalystSource,
             };
             base.scct = calculateSCCT(base);
             return base;
@@ -1350,7 +1384,10 @@ function renderCard(r) {
         else { color = '#484f58'; bg = '#484f5815'; border = '#484f5833'; }
         const typeLbl = (r.catalystType || 'OTHER').replace(/_/g, ' ').toLowerCase();
         const desc = r.catalystDescription || typeLbl;
-        return '<div style="display:inline-flex;align-items:center;gap:6px;background:' + bg + ';border:1px solid ' + border + ';border-radius:6px;padding:3px 10px;font-size:10px;color:' + color + '" title="Multiplicateur SCCT : x' + m.toFixed(2) + ' (10 pts base => ' + Math.round(10 * m) + ' pts)">⚡ <strong>' + desc + '</strong> · ' + when + ' · <span style="opacity:0.8">x' + m.toFixed(1) + '</span></div>';
+        const srcBadge = r.catalystSource === 'twelvedata'
+          ? ' <span style="color:#2ed573;font-weight:700" title="Date verifiee TwelveData">✓</span>'
+          : ' <span style="color:#8b949e" title="Date estimee par Claude (non verifiee)">~</span>';
+        return '<div style="display:inline-flex;align-items:center;gap:6px;background:' + bg + ';border:1px solid ' + border + ';border-radius:6px;padding:3px 10px;font-size:10px;color:' + color + '" title="Multiplicateur SCCT : x' + m.toFixed(2) + ' (10 pts base => ' + Math.round(10 * m) + ' pts). Source : ' + (r.catalystSource || 'claude_estimate') + '">⚡ <strong>' + desc + '</strong>' + srcBadge + ' · ' + when + ' · <span style="opacity:0.8">x' + m.toFixed(1) + '</span></div>';
       })() : ""}
     </div>
     <div class="card-actions">
