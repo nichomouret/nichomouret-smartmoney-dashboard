@@ -67,7 +67,11 @@
   .pill { font-size: 10px; padding: 2px 7px; border-radius: 4px; }
   .card-summary { color: #c9d1d9; font-size: 12px; line-height: 1.6; margin-bottom: 12px; }
   .drawdown-badge { display: inline-flex; align-items: center; gap: 6px; background: #ff475715; border: 1px solid #ff475733; border-radius: 6px; padding: 3px 10px; margin-bottom: 12px; font-size: 10px; color: #ff4757; }
-  .card-actions { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
+  .card-actions { display: grid; grid-template-columns: 1fr 1fr 1fr 0.7fr; gap: 6px; }
+  .track-banner { background: linear-gradient(135deg, #eccc6815, #f59e0b15); border: 1px solid #eccc6844; border-radius: 8px; padding: 6px 10px; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; font-size: 11px; font-family: monospace; flex-wrap: wrap; }
+  .track-banner .tb-label { color: #eccc68; font-weight: 700; letter-spacing: 1px; font-size: 9px; }
+  .track-banner .tb-perf { font-weight: 800; padding: 2px 8px; border-radius: 4px; }
+  .track-banner .tb-meta { color: #8b949e; font-size: 10px; }
   .action-btn { padding: 8px; border-radius: 8px; font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 5px; }
   .expand-toggle { text-align: center; margin-top: 8px; color: #484f58; font-size: 10px; cursor: pointer; }
   .card-expanded { margin-top: 12px; padding-top: 12px; border-top: 1px solid #21262d; }
@@ -219,6 +223,10 @@
 
   <!-- Boutons explorer + consensus + perles (toujours visibles) -->
   <div style="display:flex;justify-content:flex-end;margin-bottom:12px;gap:8px;flex-wrap:wrap">
+    <button onclick="openTrackerModal()" style="background:linear-gradient(135deg,#eccc68 0%,#a16207 100%);color:white;border:none;padding:8px 16px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;box-shadow:0 2px 8px rgba(236,204,104,0.3);display:flex;align-items:center;gap:6px">
+      <span>⭐</span>
+      <span>Mes positions suivies <span id="tracker-count-badge" style="background:#fff2;padding:1px 7px;border-radius:10px;margin-left:3px;font-size:10px">0</span></span>
+    </button>
     <button id="open-perles" style="background:linear-gradient(135deg,#f59e0b 0%,#b45309 100%);color:white;border:none;padding:8px 16px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;box-shadow:0 2px 8px rgba(245,158,11,0.3);display:flex;align-items:center;gap:6px">
       <span>💎</span>
       <span>Perles cachees</span>
@@ -509,6 +517,7 @@ function init() {
   renderScoreBtns();
   renderTripleLock();
   updateScanBtn();
+  updateTrackerBadge();
 }
 
 function renderUniverses() {
@@ -843,7 +852,7 @@ async function fetchTickerData(ticker) {
     ? `${realRaisonSociale} ${ticker} shareholder OR institutional`
     : `${ticker} institutional shareholder`;
 
-  const [quote, ts, news, filings13g, filings13f, amfData, pelositrades, sec13fHolders, earnings] = await Promise.all([
+  const [quote, ts, news, filings13g, filings13f, amfData, pelositrades, sec13fHolders, earnings, stats] = await Promise.all([
 proxyFetch(`/twelvedata/price?symbol=${encodeURIComponent(priceSymbol)}${isFrench ? '&exchange=Euronext' : ''}`),
     proxyFetch(`/twelvedata/timeseries?symbol=${encodeURIComponent(priceSymbol)}&interval=1day&outputsize=252${isFrench ? '&exchange=Euronext' : ''}`),
     proxyFetch(`/news?query=${encodeURIComponent(newsQuery)}`),
@@ -853,6 +862,7 @@ proxyFetch(`/twelvedata/price?symbol=${encodeURIComponent(priceSymbol)}${isFrenc
     (!isFrench) ? proxyFetch(`/pelosi/trades?ticker=${encodeURIComponent(cleanSymbol)}`) : Promise.resolve(null),
     proxyFetch(`/sec-13f/ticker/${encodeURIComponent(cleanSymbol)}?limit=20`),
     proxyFetch(`/twelvedata/earnings?symbol=${encodeURIComponent(priceSymbol)}${isFrench ? '&exchange=Euronext' : ''}`),
+    proxyFetch(`/twelvedata/statistics?symbol=${encodeURIComponent(priceSymbol)}${isFrench ? '&exchange=Euronext' : ''}`),
   ]);
 
   // SEC 13F holders (top 20 Tier 1 fonds qui detiennent ce ticker)
@@ -957,7 +967,31 @@ proxyFetch(`/twelvedata/price?symbol=${encodeURIComponent(priceSymbol)}${isFrenc
   // Earnings reels TwelveData (override de la date hallucinee par Claude)
   const realNextEarnings = earnings && !earnings.error ? earnings.next_earnings_date : null;
   const realLastEarnings = earnings && !earnings.error ? earnings.last_earnings_date : null;
-  return { realPrice, drawdown52w, priceChange, hasRealData, newsItems, edgarFilings, shortInterestReal, daysTocover, borrowRate, ortexScore, realFilings, realRaisonSociale, dataWarning, putCallRatio, callOI, totalOI, impliedVolatility, gammaScore, holders13f, realNextEarnings, realLastEarnings };
+
+  // === MARKET CAP pour le Floor Score ===
+  // TwelveData stats imbriquees : on tente plusieurs chemins selon les versions.
+  // Fallback : market_cap direct si dispo, sinon shares_outstanding * close.
+  let marketCap = null;
+  if (stats && !stats.error) {
+    const directMcap = stats?.statistics?.valuations_metrics?.market_capitalization
+                    ?? stats?.valuations_metrics?.market_capitalization
+                    ?? stats?.statistics?.market_capitalization
+                    ?? null;
+    if (directMcap && Number(directMcap) > 0) {
+      marketCap = Number(directMcap);
+    } else {
+      const shOut = stats?.statistics?.shares_statistics?.shares_outstanding
+                 ?? stats?.shares_statistics?.shares_outstanding
+                 ?? stats?.statistics?.statistics?.shares_outstanding
+                 ?? null;
+      const closePrice = quote && quote.close ? parseFloat(quote.close) : null;
+      if (shOut && closePrice && shOut > 0 && closePrice > 0) {
+        marketCap = Number(shOut) * closePrice;
+      }
+    }
+  }
+
+  return { realPrice, drawdown52w, priceChange, hasRealData, newsItems, edgarFilings, shortInterestReal, daysTocover, borrowRate, ortexScore, realFilings, realRaisonSociale, dataWarning, putCallRatio, callOI, totalOI, impliedVolatility, gammaScore, holders13f, realNextEarnings, realLastEarnings, marketCap };
 }
 
 async function analyzeBatch(batch, universe, customTicker = null) {
@@ -1164,6 +1198,7 @@ async function runScan() {
               putCallRatio: data.putCallRatio, callOI: data.callOI, totalOI: data.totalOI,
               impliedVolatility: data.impliedVolatility, gammaScore: data.gammaScore,
               holders13f: data.holders13f || [],
+              marketCap: data.marketCap || null,
               // Catalyst final (TwelveData override > Claude estimate)
               catalystDate: finalCatalystDate,
               catalystType: finalCatalystType,
@@ -1305,9 +1340,232 @@ function renderTopFunds(moves, r) {
   return `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;padding:8px 12px;background:#0d1117;border-radius:8px;border:1px solid #21262d;align-items:center"><span style="color:#484f58;font-size:9px;font-family:monospace;white-space:nowrap">🏛️ TOP FONDS :</span>${items}${extrasHtml}</div>`;
 }
 
+// ============================================================
+// INSTITUTIONAL FLOOR SCORE
+// Mesure la "stickiness" du capital institutionnel passif (BlackRock,
+// Vanguard, State Street, Geode, Northern Trust). Un score eleve = plancher
+// solide sous le prix (capital qui ne bouge pas a chaque trade).
+//
+// Composants :
+//   - Taille absolue : bonus selon valeur USD detenue par chaque Big Three
+//   - Ratio cap : % du capital detenu en passif vs market cap
+//   - ETF proxy : indice membership (SP100/Russell/SBF120) + nb passifs distincts
+//
+// Note : score informatif uniquement (pas d'impact SCCT ni criteres Mark Elias).
+// ============================================================
+const BIG_THREE_NAMES = [
+  "BLACKROCK", "VANGUARD", "STATE STREET", "GEODE", "NORTHERN TRUST"
+];
+
+function isBigThree(fundName) {
+  if (!fundName) return false;
+  const upper = String(fundName).toUpperCase();
+  return BIG_THREE_NAMES.some(n => upper.includes(n));
+}
+
+function computeFloorScore(holders13f, marketCap, universe) {
+  let score = 0;
+  const breakdown = { absolute: 0, ratio: 0, etf: 0, holders: [] };
+
+  // Tous les "passive giants" tagges dans sec13fFunds.js (tier=passive_giant)
+  const passiveHolders = (holders13f || []).filter(h => h.tier === "passive_giant");
+  // Big Three strict : pour bonus taille absolue
+  const bigThree = passiveHolders.filter(h => isBigThree(h.fund));
+
+  // === 1. Bonus taille absolue (max 60, plafonne pour eviter saturation) ===
+  for (const h of bigThree) {
+    const v = Number(h.valueUsd) || 0;
+    if (v > 1_000_000_000) { breakdown.absolute += 30; }
+    else if (v > 500_000_000) { breakdown.absolute += 20; }
+    else if (v > 100_000_000) { breakdown.absolute += 10; }
+    else if (v > 10_000_000) { breakdown.absolute += 5; }
+  }
+  breakdown.absolute = Math.min(breakdown.absolute, 60);
+  score += breakdown.absolute;
+
+  // === 2. Ratio passif / market cap (max 25) ===
+  if (marketCap && marketCap > 0) {
+    const totalPassive = passiveHolders.reduce((s, h) => s + (Number(h.valueUsd) || 0), 0);
+    const ratio = totalPassive / marketCap;
+    if (ratio > 0.20) { breakdown.ratio = 25; }
+    else if (ratio > 0.10) { breakdown.ratio = 15; }
+    else if (ratio > 0.05) { breakdown.ratio = 8; }
+    else if (ratio > 0.02) { breakdown.ratio = 3; }
+    breakdown.ratioPct = (ratio * 100).toFixed(1);
+  } else {
+    breakdown.ratioPct = null;
+  }
+  score += breakdown.ratio;
+
+  // === 3. ETF inclusions (proxy via universe + nombre de passifs distincts) ===
+  // S&P 100 = inclus dans S&P 500 (SPY, IVV, VOO) -> ETF passif massif
+  // SBF120  = inclus dans CAC 40 / CAC Mid 60 ETFs (moindre que SP500)
+  // Russell = Russell 1000/2000 ETFs (IWM, IWB)
+  const universeBonus = universe === "sp100" ? 20
+                     : universe === "russell" ? 15
+                     : universe === "sbf120" ? 10
+                     : 0;
+  // +3 par passif distinct (max 15) -> proxy pour autres ETFs (sectoriels, factor, ESG)
+  const distinctPassives = new Set(passiveHolders.map(h => (h.fund || "").toUpperCase())).size;
+  const distinctBonus = Math.min(distinctPassives * 3, 15);
+  breakdown.etf = universeBonus + distinctBonus;
+  score += breakdown.etf;
+
+  breakdown.distinctPassives = distinctPassives;
+  breakdown.bigThreeCount = bigThree.length;
+  breakdown.holders = bigThree.map(h => ({
+    fund: h.fund,
+    valueUsd: Number(h.valueUsd) || 0,
+  }));
+
+  return { score: Math.min(score, 100), breakdown };
+}
+
+function fmtMcap(v) {
+  if (!v) return "—";
+  if (v >= 1e12) return (v / 1e12).toFixed(1) + "T$";
+  if (v >= 1e9) return (v / 1e9).toFixed(1) + "B$";
+  if (v >= 1e6) return (v / 1e6).toFixed(0) + "M$";
+  return v.toFixed(0) + "$";
+}
+
+function renderFloorChip(r) {
+  if (!r.holders13f || r.holders13f.length === 0) return "";
+  const { score, breakdown } = computeFloorScore(r.holders13f, r.marketCap, r.universe);
+  if (score === 0) return "";
+
+  let color, bg, border, label;
+  if (score >= 75) { color = "#2ed573"; bg = "#2ed57315"; border = "#2ed57344"; label = "BÉTON"; }
+  else if (score >= 55) { color = "#58a6ff"; bg = "#58a6ff15"; border = "#58a6ff44"; label = "SOLIDE"; }
+  else if (score >= 35) { color = "#eccc68"; bg = "#eccc6815"; border = "#eccc6844"; label = "MODÉRÉ"; }
+  else { color = "#8b949e"; bg = "#8b949e15"; border = "#8b949e44"; label = "FAIBLE"; }
+
+  const ratioTxt = breakdown.ratioPct !== null ? `${breakdown.ratioPct}% capital` : "ratio N/A";
+  const tooltip = `Floor Score ${score}/100 (${label})
+• Taille absolue Big Three : ${breakdown.absolute} pts (${breakdown.bigThreeCount} fonds)
+• Ratio passif / market cap : ${breakdown.ratio} pts (${ratioTxt})
+• ETF proxy : ${breakdown.etf} pts (univers ${r.universe || '—'}, ${breakdown.distinctPassives} passifs distincts)
+Market cap : ${fmtMcap(r.marketCap)}`;
+
+  return `<div style="display:inline-flex;align-items:center;gap:6px;background:${bg};border:1px solid ${border};border-radius:6px;padding:3px 10px;font-size:10px;color:${color};cursor:help" title="${tooltip.replace(/"/g, '&quot;')}">🏛️ <strong>Floor: ${score}</strong> <span style="opacity:0.7">${label}</span></div>`;
+}
+
+// ============================================================
+// PHASE D — TRACKING POSITIONS PERSO (proto-backtest)
+// Stocke en localStorage les tickers marques avec etoile + entry price
+// Permet de mesurer la perf forward des signaux marques
+// ============================================================
+const TRACK_KEY = "smart_money_tracked_positions_v1";
+
+function getTrackedPositions() {
+  try {
+    const raw = localStorage.getItem(TRACK_KEY);
+    if (!raw) return [];
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr : [];
+  } catch (e) { return []; }
+}
+
+function setTrackedPositions(arr) {
+  try {
+    localStorage.setItem(TRACK_KEY, JSON.stringify(arr || []));
+    updateTrackerBadge();
+  } catch (e) { console.warn("[track] save failed", e); }
+}
+
+function isTracked(ticker) {
+  return getTrackedPositions().some(p => p.ticker === ticker);
+}
+
+function getTrackedPosition(ticker) {
+  return getTrackedPositions().find(p => p.ticker === ticker) || null;
+}
+
+function parsePriceNum(priceStr) {
+  if (priceStr === null || priceStr === undefined) return null;
+  if (typeof priceStr === "number") return priceStr;
+  const cleaned = String(priceStr).replace(/[^0-9.,\-]/g, "").replace(",", ".");
+  const n = parseFloat(cleaned);
+  return isNaN(n) ? null : n;
+}
+
+function toggleTrackPosition(ticker) {
+  const r = getResult(ticker);
+  if (!r) return;
+  const list = getTrackedPositions();
+  const idx = list.findIndex(p => p.ticker === ticker);
+  if (idx >= 0) {
+    list.splice(idx, 1);
+    setTrackedPositions(list);
+  } else {
+    const entryPrice = parsePriceNum(r.realPrice);
+    const score = getScore(r);
+    list.push({
+      ticker: r.ticker,
+      name: r.name || "",
+      market: r.market || "",
+      universe: r.universe || "",
+      date_added: new Date().toISOString().slice(0, 10),
+      entry_price: entryPrice,
+      entry_score: score,
+      entry_scct: r.scct || 0,
+      entry_catalyst: r.catalystDescription || r.catalystType || null,
+      entry_catalyst_date: r.catalystDate || null,
+    });
+    setTrackedPositions(list);
+  }
+  // re-render pour mettre a jour le bouton
+  renderResults();
+}
+
+function computeTrackPerf(entryPrice, currentPrice) {
+  if (entryPrice == null || currentPrice == null || entryPrice <= 0) return null;
+  return ((currentPrice - entryPrice) / entryPrice) * 100;
+}
+
+function daysSince(dateStr) {
+  if (!dateStr) return 0;
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return 0;
+  return Math.max(0, Math.round((Date.now() - d.getTime()) / 86400000));
+}
+
+function updateTrackerBadge() {
+  const el = document.getElementById("tracker-count-badge");
+  if (el) el.textContent = String(getTrackedPositions().length);
+}
+
+function renderTrackBanner(r, tp) {
+  if (!tp) return "";
+  const currentPrice = parsePriceNum(r.realPrice);
+  const perf = computeTrackPerf(tp.entry_price, currentPrice);
+  const days = daysSince(tp.date_added);
+  let perfHtml = "";
+  if (perf !== null) {
+    const color = perf >= 0 ? "#2ed573" : "#ff4757";
+    const bg = perf >= 0 ? "#2ed57322" : "#ff475722";
+    const sign = perf >= 0 ? "+" : "";
+    perfHtml = `<span class="tb-perf" style="background:${bg};color:${color}">${sign}${perf.toFixed(1)}%</span>`;
+  } else {
+    perfHtml = `<span class="tb-perf" style="background:#21262d;color:#8b949e">—</span>`;
+  }
+  const entryFmt = tp.entry_price != null ? `$${tp.entry_price.toFixed(2)}` : "—";
+  const nowFmt = currentPrice != null ? `$${currentPrice.toFixed(2)}` : "—";
+  const catalystExtra = tp.entry_catalyst ? ` · ⚡ ${tp.entry_catalyst}` : "";
+  return `<div class="track-banner">
+    <span class="tb-label">⭐ SUIVI</span>
+    <span class="tb-meta">entré ${entryFmt} il y a ${days}j</span>
+    <span class="tb-meta">·</span>
+    <span class="tb-meta">maintenant ${nowFmt}</span>
+    ${perfHtml}
+    <span class="tb-meta" style="margin-left:auto">score entrée ${tp.entry_score}/7 · SCCT ${tp.entry_scct}${catalystExtra}</span>
+  </div>`;
+}
+
 function renderCard(r) {
   const score = getScore(r);
   const tl = score >= 3;
+  const tracked = getTrackedPosition(r.ticker);
   const pct = score / 7;
   const scoreColor = tl ? "#00d2ff" : pct >= 0.6 ? "#2ed573" : pct >= 0.35 ? "#ffa502" : "#ff4757";
   const scct = r.scct || 0;
@@ -1333,8 +1591,13 @@ function renderCard(r) {
   const nameClass = isRealName ? "card-name real" : "card-name";
   const nameSuffix = isRealName ? " ✓" : "";
 
-  return `<div class="card" style="background:linear-gradient(135deg,#0d1117,#161b22);border:1px solid ${tl ? '#00d2ff44' : '#30363d'};box-shadow:${tl ? '0 0 24px #00d2ff0d' : 'none'}">
+  const trackBannerHtml = tracked ? renderTrackBanner(r, tracked) : "";
+  const cardBorder = tracked ? '#eccc6866' : (tl ? '#00d2ff44' : '#30363d');
+  const cardShadow = tracked ? '0 0 24px #eccc680d' : (tl ? '0 0 24px #00d2ff0d' : 'none');
+
+  return `<div class="card" style="background:linear-gradient(135deg,#0d1117,#161b22);border:1px solid ${cardBorder};box-shadow:${cardShadow}">
     ${warningHtml}
+    ${trackBannerHtml}
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
       ${tl ? `<div class="triple-lock-badge" style="margin-bottom:0">🔒 TRIPLE LOCK — SIGNAL FORT</div>` : '<div></div>'}
       <div style="display:inline-flex;align-items:center;gap:6px;padding:4px 12px;border-radius:20px;background:${scctInfo.bg};border:1px solid ${scctInfo.border}">
@@ -1368,6 +1631,7 @@ function renderCard(r) {
       ${r.drawdown52w ? `<div class="drawdown-badge" style="margin-bottom:0">📊 Drawdown 52W: <strong>${r.drawdown52w}</strong>${r.dataSource === 'twelvedata' ? ' <span style="color:#484f58">· TwelveData ✓</span>' : ''}</div>` : ""}
       ${r.shortInterestReal ? `<div style="display:inline-flex;align-items:center;gap:6px;background:#ff475715;border:1px solid #ff475733;border-radius:6px;padding:3px 10px;font-size:10px;color:#ff4757">📉 <strong>VAD: ${r.shortInterestReal}</strong>${r.daysTocover ? ' · DTC: ' + r.daysTocover : ''} <span style="color:#484f58">· Ortex ✓</span></div>` : r.shortInterest ? `<div style="display:inline-flex;align-items:center;gap:6px;background:#ff475710;border:1px solid #ff475722;border-radius:6px;padding:3px 10px;font-size:10px;color:#ff6b3d">📉 <strong>VAD est.: ${r.shortInterest}</strong> <span style="color:#484f58">· Estimé</span></div>` : ""}
       ${r.gammaScore ? `<div style="display:inline-flex;align-items:center;gap:6px;background:#a855f715;border:1px solid #a855f733;border-radius:6px;padding:3px 10px;font-size:10px;color:#a855f7">⚡ <strong>Gamma: ${r.gammaScore}</strong>${r.putCallRatio !== null && r.putCallRatio !== undefined ? ' · P/C: ' + parseFloat(r.putCallRatio).toFixed(2) : ''} <span style="color:#484f58">· Ortex ✓</span></div>` : ""}
+      ${renderFloorChip(r)}
       ${(r.criteria?.catalysts || r.criteria?.biotech) && r.catalystDate ? (function() {
         const m = computeCatalystFreshness(r.catalystDate, r.catalystType);
         const d = new Date(r.catalystDate);
@@ -1394,6 +1658,7 @@ function renderCard(r) {
       <button class="action-btn" onclick="openReco('${r.ticker}')" style="background:linear-gradient(135deg,#2ed57318,#00d2ff18);border:1px solid #2ed57355;color:#2ed573">📈 Recommandation</button>
       <button class="action-btn" onclick="openDeepDive('${r.ticker}')" style="background:linear-gradient(135deg,#7c3aed18,#a29bfe18);border:1px solid #7c3aed55;color:#a29bfe">🔍 Deep Dive</button>
       <button class="action-btn" onclick="loadBuzzForTicker('${r.ticker}', ${JSON.stringify(r.name || '').replace(/"/g, '&quot;')})" style="background:linear-gradient(135deg,#dc262618,#f59e0b18);border:1px solid #dc262655;color:#f59e0b">📢 Buzz Social</button>
+      <button class="action-btn" onclick="toggleTrackPosition('${r.ticker}')" title="${tracked ? 'Retirer du suivi' : 'Ajouter au suivi (proto-backtest)'}" style="background:${tracked ? 'linear-gradient(135deg,#eccc6833,#a1620733)' : 'linear-gradient(135deg,#eccc6818,#a1620718)'};border:1px solid ${tracked ? '#eccc68aa' : '#eccc6855'};color:#eccc68">${tracked ? '★ Suivi' : '☆ Suivre'}</button>
     </div>
     <div id="buzz-${r.ticker}" style="display:none;margin-top:8px"></div>
     <div id="expanded-${r.ticker}" style="display:none" class="card-expanded">
@@ -1544,6 +1809,124 @@ function showLoading(text) { document.getElementById("loading-text").textContent
 function hideLoading() { document.getElementById("loading-overlay").style.display = "none"; }
 
 function getResult(ticker) { return allResults.find(r => r.ticker === ticker); }
+
+// ============================================================
+// PHASE D — Modal "Mes positions suivies"
+// Liste toutes les positions trackees, refetch les prix courants
+// via /twelvedata/price, et affiche la perf depuis l'entree.
+// ============================================================
+async function openTrackerModal() {
+  const list = getTrackedPositions();
+  document.getElementById("modal").style.display = "flex";
+  if (list.length === 0) {
+    document.getElementById("modal-content").innerHTML = `
+      <div class="modal-header">
+        <div><div class="modal-title">⭐ MES POSITIONS SUIVIES</div><div class="modal-sub">PROTO-BACKTEST · LOCAL</div></div>
+        <button class="modal-close" onclick="closeModal()">✕</button>
+      </div>
+      <div style="padding:30px 10px;text-align:center;color:#8b949e;font-size:13px;line-height:1.7">
+        Aucune position suivie pour l'instant.<br>
+        <span style="color:#484f58;font-size:11px">Clique sur <strong style="color:#eccc68">☆ Suivre</strong> sur une carte pour commencer à mesurer la perf forward de tes signaux.</span>
+      </div>`;
+    return;
+  }
+
+  // Skeleton initial avec entry data, prix actuel "..."
+  const rowsSkeleton = list.map(p => `
+    <tr style="background:#21262d;border-bottom:1px solid #161b22" id="trk-row-${p.ticker}">
+      <td style="padding:8px 10px;color:#e6edf3;font-weight:700">${p.ticker}<div style="color:#8b949e;font-size:9px;font-weight:400">${p.name || ""}</div></td>
+      <td style="padding:8px 10px;text-align:center;color:#8b949e">${p.date_added}<div style="color:#484f58;font-size:9px">il y a ${daysSince(p.date_added)}j</div></td>
+      <td style="padding:8px 10px;text-align:center;color:#58a6ff;font-weight:700">${p.entry_price != null ? '$' + p.entry_price.toFixed(2) : '—'}</td>
+      <td style="padding:8px 10px;text-align:center;color:#c9d1d9;font-weight:700" id="trk-now-${p.ticker}">…</td>
+      <td style="padding:8px 10px;text-align:center;font-weight:800" id="trk-perf-${p.ticker}">…</td>
+      <td style="padding:8px 10px;text-align:center;color:#eccc68;font-weight:700">${p.entry_score}/7<div style="color:#8b949e;font-size:9px">SCCT ${p.entry_scct}</div></td>
+      <td style="padding:8px 10px;text-align:center">
+        <button onclick="toggleTrackPosition('${p.ticker}'); openTrackerModal();" title="Retirer du suivi" style="background:#ff475722;border:1px solid #ff475755;color:#ff4757;border-radius:6px;padding:3px 9px;font-size:10px;font-weight:700;cursor:pointer">× Retirer</button>
+      </td>
+    </tr>`).join("");
+
+  // Stats agregees (calculees apres refresh)
+  document.getElementById("modal-content").innerHTML = `
+    <div class="modal-header">
+      <div><div class="modal-title">⭐ MES POSITIONS SUIVIES <span style="color:#eccc68">(${list.length})</span></div><div class="modal-sub">PROTO-BACKTEST · LOCAL</div></div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div id="trk-stats" style="display:flex;gap:8px;margin-bottom:12px;font-family:monospace;font-size:11px">
+      <div style="background:#21262d;border-radius:6px;padding:6px 10px;color:#8b949e">📊 Chargement perfs…</div>
+    </div>
+    <table style="width:100%;border-collapse:collapse;font-size:11px;font-family:monospace">
+      <thead><tr style="color:#484f58;font-size:9px;text-transform:uppercase;letter-spacing:1px;background:#0d1117">
+        <td style="padding:6px 10px">Ticker</td>
+        <td style="padding:6px 10px;text-align:center">Entré le</td>
+        <td style="padding:6px 10px;text-align:center">Prix entrée</td>
+        <td style="padding:6px 10px;text-align:center">Prix actuel</td>
+        <td style="padding:6px 10px;text-align:center">Perf</td>
+        <td style="padding:6px 10px;text-align:center">Score entrée</td>
+        <td style="padding:6px 10px;text-align:center">Actions</td>
+      </tr></thead>
+      <tbody>${rowsSkeleton}</tbody>
+    </table>
+    <div style="margin-top:14px;padding:10px;background:#0d1117;border-radius:8px;border:1px solid #21262d;font-size:10px;color:#8b949e;line-height:1.6">
+      💡 <strong style="color:#eccc68">Proto-backtest local</strong> — Les prix courants sont fetchés via TwelveData à chaque ouverture.
+      Sur 3-6 mois tu auras un dataset perso : <em>"Mes Triple Lock ont fait +X% en moyenne sur 30j vs S&P"</em>.
+      Données 100% en localStorage (aucun envoi serveur).
+    </div>`;
+
+  // Refresh des prix courants
+  const perfs = [];
+  await Promise.all(list.map(async (p) => {
+    try {
+      const isFrench = (p.market || "").toLowerCase().includes("paris") || (p.universe === "sbf120");
+      const url = `/twelvedata/price?symbol=${encodeURIComponent(p.ticker)}${isFrench ? '&exchange=Euronext' : ''}`;
+      const r = await proxyFetch(url);
+      const priceNum = parsePriceNum(r && (r.price || r.close || r.value));
+      const cell = document.getElementById(`trk-now-${p.ticker}`);
+      const perfCell = document.getElementById(`trk-perf-${p.ticker}`);
+      if (priceNum != null) {
+        if (cell) cell.textContent = `$${priceNum.toFixed(2)}`;
+        const perf = computeTrackPerf(p.entry_price, priceNum);
+        if (perf !== null && perfCell) {
+          const color = perf >= 0 ? "#2ed573" : "#ff4757";
+          const bg = perf >= 0 ? "#2ed57322" : "#ff475722";
+          const sign = perf >= 0 ? "+" : "";
+          perfCell.innerHTML = `<span style="background:${bg};color:${color};padding:3px 9px;border-radius:5px">${sign}${perf.toFixed(1)}%</span>`;
+          perfs.push(perf);
+        } else if (perfCell) {
+          perfCell.textContent = "—";
+        }
+      } else {
+        if (cell) cell.textContent = "—";
+        if (perfCell) perfCell.textContent = "—";
+      }
+    } catch (e) {
+      const cell = document.getElementById(`trk-now-${p.ticker}`);
+      const perfCell = document.getElementById(`trk-perf-${p.ticker}`);
+      if (cell) cell.textContent = "err";
+      if (perfCell) perfCell.textContent = "—";
+    }
+  }));
+
+  // Stats agregees
+  const statsEl = document.getElementById("trk-stats");
+  if (statsEl) {
+    if (perfs.length === 0) {
+      statsEl.innerHTML = `<div style="background:#21262d;border-radius:6px;padding:6px 10px;color:#8b949e">📊 Aucune perf disponible (prix manquants)</div>`;
+    } else {
+      const avg = perfs.reduce((a, b) => a + b, 0) / perfs.length;
+      const winners = perfs.filter(p => p > 0).length;
+      const losers = perfs.filter(p => p < 0).length;
+      const best = Math.max(...perfs);
+      const worst = Math.min(...perfs);
+      const winrate = (winners / perfs.length) * 100;
+      const avgColor = avg >= 0 ? "#2ed573" : "#ff4757";
+      statsEl.innerHTML = `
+        <div style="background:#21262d;border-radius:6px;padding:6px 10px;color:${avgColor};font-weight:700">📊 Perf moyenne ${avg >= 0 ? '+' : ''}${avg.toFixed(1)}%</div>
+        <div style="background:#21262d;border-radius:6px;padding:6px 10px;color:#eccc68">🎯 Winrate ${winrate.toFixed(0)}% (${winners}W / ${losers}L)</div>
+        <div style="background:#21262d;border-radius:6px;padding:6px 10px;color:#2ed573">🏆 Best +${best.toFixed(1)}%</div>
+        <div style="background:#21262d;border-radius:6px;padding:6px 10px;color:#ff4757">📉 Worst ${worst.toFixed(1)}%</div>`;
+    }
+  }
+}
 
 async function openReco(ticker) {
   const result = getResult(ticker);
