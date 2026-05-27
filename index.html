@@ -968,6 +968,23 @@ proxyFetch(`/twelvedata/price?symbol=${encodeURIComponent(priceSymbol)}${isFrenc
   const realNextEarnings = earnings && !earnings.error ? earnings.next_earnings_date : null;
   const realLastEarnings = earnings && !earnings.error ? earnings.last_earnings_date : null;
 
+  // === ANTI-HALLUCINATION : detection 0 source reelle ===
+  // Une source est consideree "reelle" si elle a renvoye du contenu verifiable.
+  // Si aucune source ne repond, on REFUSE le ticker (au lieu de laisser Claude
+  // inventer un profil PRIVATE/biotech/<5% VAD avec rien dans le vide).
+  const hasRealSources = !!(
+    realPrice ||
+    (holders13f && holders13f.length > 0) ||
+    real13g.length > 0 ||
+    real13f.length > 0 ||
+    realAMF.length > 0 ||
+    amfBdif.length > 0 ||
+    realNextEarnings ||
+    realLastEarnings
+  );
+  // Exchange TwelveData : utile pour ecraser le "market" hallucine par Claude
+  const realExchange = quote && !quote.code ? (quote.exchange || quote.mic_code || null) : null;
+
   // === MARKET CAP pour le Floor Score ===
   // TwelveData stats imbriquees : on tente plusieurs chemins selon les versions.
   // Fallback : market_cap direct si dispo, sinon shares_outstanding * close.
@@ -991,7 +1008,7 @@ proxyFetch(`/twelvedata/price?symbol=${encodeURIComponent(priceSymbol)}${isFrenc
     }
   }
 
-  return { realPrice, drawdown52w, priceChange, hasRealData, newsItems, edgarFilings, shortInterestReal, daysTocover, borrowRate, ortexScore, realFilings, realRaisonSociale, dataWarning, putCallRatio, callOI, totalOI, impliedVolatility, gammaScore, holders13f, realNextEarnings, realLastEarnings, marketCap };
+  return { realPrice, drawdown52w, priceChange, hasRealData, newsItems, edgarFilings, shortInterestReal, daysTocover, borrowRate, ortexScore, realFilings, realRaisonSociale, dataWarning, putCallRatio, callOI, totalOI, impliedVolatility, gammaScore, holders13f, realNextEarnings, realLastEarnings, marketCap, hasRealSources, realExchange };
 }
 
 async function analyzeBatch(batch, universe, customTicker = null) {
@@ -1106,7 +1123,32 @@ async function runScan() {
       await new Promise(r => setTimeout(r, isEU ? 400 : 250));
     }
 
+    // ANTI-HALLUCINATION : rejeter les tickers sans aucune source reelle AVANT Claude
+    // Pour un customTicker, on construit une carte d'erreur visible.
+    // Pour un scan d'univers, on skip silencieusement (le ticker est mal forme/indispo).
+    const rejected = batchWithData.filter(({ data }) => !data.hasRealSources);
+    if (rejected.length > 0 && customTicker) {
+      for (const { ticker } of rejected) {
+        const errorCard = {
+          ticker,
+          name: "Ticker non reconnu",
+          market: "UNKNOWN",
+          universe: "custom",
+          summary: `Aucune source officielle n'a renvoyé de données pour "${ticker}". Vérifie le format Yahoo Finance (ex: AAPL, UBI.PA, CAI). Pas d'envoi à Claude pour éviter une hallucination.`,
+          criteria: {},
+          scct: 0,
+          dataWarning: `⚠️ Ticker "${ticker}" non reconnu — aucune réponse de TwelveData, SEC EDGAR, SEC 13F ni AMF BDIF. Le scanner refuse d'inventer un profil. Vérifie le ticker exact sur Yahoo Finance.`,
+          isErrorCard: true,
+        };
+        allResults = [...allResults, errorCard];
+      }
+      signalCount = allResults.length;
+      renderResults();
+    }
+
     const qualified = batchWithData.filter(({ data }) => {
+      // Anti-hallucination : exclure les tickers sans source verifiee
+      if (!data.hasRealSources) return false;
       if (customTicker) return true;
       if (!data.drawdown52w) return true;
       const val = parseFloat(data.drawdown52w);
@@ -1180,8 +1222,19 @@ async function runScan() {
               catalystSource = "twelvedata";
             }
 
+            // ANTI-HALLUCINATION : ecraser le champ "market" hallucine par Claude
+            // Si TwelveData a renvoye un exchange reel, on l'utilise.
+            // Sinon, on neutralise les valeurs suspectes (PRIVATE/UNLISTED/N/A).
+            let safeMarket = s.market || "";
+            const upMarket = safeMarket.toUpperCase();
+            if (data.realExchange) {
+              safeMarket = data.realExchange;
+            } else if (["PRIVATE","UNLISTED","N/A","NA","UNKNOWN","INCONNU"].includes(upMarket)) {
+              safeMarket = "UNKNOWN";
+            }
+
             const base = {
-              ...s, name: correctedName, criteria: correctedCriteria,
+              ...s, name: correctedName, criteria: correctedCriteria, market: safeMarket,
               realPrice: data.realPrice, priceChange: data.priceChange || 0,
               drawdown52w: data.drawdown52w,
               dataSource: data.hasRealData ? "twelvedata" : "estimated",
@@ -1267,14 +1320,23 @@ function setProgress(current, total, signals, step) {
 }
 
 function renderResults() {
+  // Les error cards (ticker non reconnu) sont TOUJOURS affichees, meme en mode Triple Lock,
+  // pour que l'utilisateur voie son erreur de saisie.
   const filtered = tripleLockOnly
-    ? allResults.filter(r => Object.values(r.criteria || {}).filter(Boolean).length >= 3)
+    ? allResults.filter(r => r.isErrorCard || Object.values(r.criteria || {}).filter(Boolean).length >= 3)
     : allResults;
-  filtered.sort((a, b) => (b.scct || 0) - (a.scct || 0));
+  // Tri : error cards en haut (pour visibilite), puis par SCCT desc
+  filtered.sort((a, b) => {
+    if (a.isErrorCard && !b.isErrorCard) return -1;
+    if (!a.isErrorCard && b.isErrorCard) return 1;
+    return (b.scct || 0) - (a.scct || 0);
+  });
 
-  const tripleLockCount = filtered.filter(r => Object.values(r.criteria || {}).filter(Boolean).length >= 3).length;
+  const realCount = filtered.filter(r => !r.isErrorCard).length;
+  const errorCount = filtered.filter(r => r.isErrorCard).length;
+  const tripleLockCount = filtered.filter(r => !r.isErrorCard && Object.values(r.criteria || {}).filter(Boolean).length >= 3).length;
   document.getElementById("results-section").style.display = filtered.length > 0 ? "block" : "none";
-  document.getElementById("results-count").innerHTML = `${filtered.length} signal${filtered.length > 1 ? "s" : ""} détecté${filtered.length > 1 ? "s" : ""}${tripleLockCount > 0 ? ` <span style="color:#00d2ff;margin-left:10px">· ${tripleLockCount} 🔒 Triple Lock</span>` : ""}`;
+  document.getElementById("results-count").innerHTML = `${realCount} signal${realCount > 1 ? "s" : ""} détecté${realCount > 1 ? "s" : ""}${tripleLockCount > 0 ? ` <span style="color:#00d2ff;margin-left:10px">· ${tripleLockCount} 🔒 Triple Lock</span>` : ""}${errorCount > 0 ? ` <span style="color:#ff4757;margin-left:10px">· ${errorCount} ⚠️ ticker${errorCount > 1 ? 's' : ''} invalide${errorCount > 1 ? 's' : ''}</span>` : ""}`;
   document.getElementById("results-list").innerHTML = filtered.map(r => renderCard(r)).join("");
 }
 
@@ -1563,6 +1625,29 @@ function renderTrackBanner(r, tp) {
 }
 
 function renderCard(r) {
+  // ANTI-HALLUCINATION : carte d'erreur dediee si le ticker n'a renvoye aucune source
+  if (r.isErrorCard) {
+    return `<div class="card" style="background:linear-gradient(135deg,#0d1117,#161b22);border:1px solid #ff475766;box-shadow:0 0 16px #ff47570d">
+      <div class="warning-banner">${r.dataWarning}</div>
+      <div class="card-header">
+        <div style="flex:1">
+          <div class="card-tags">
+            <span class="card-ticker" style="color:#ff4757">${r.ticker}</span>
+            <span class="tag" style="background:#ff475722;color:#ff4757;border:1px solid #ff475766">TICKER INVALIDE</span>
+          </div>
+          <div class="card-name" style="color:#8b949e;font-style:italic">${r.name}</div>
+        </div>
+        <div class="card-right">
+          <div style="font-size:24px">⚠️</div>
+        </div>
+      </div>
+      <div class="card-summary" style="color:#8b949e">${r.summary}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;font-size:10px;color:#484f58;font-family:monospace">
+        <span>💡 Verifie le format sur <a href="https://finance.yahoo.com/lookup?s=${encodeURIComponent(r.ticker)}" target="_blank" rel="noopener" style="color:#58a6ff">Yahoo Finance</a></span>
+      </div>
+    </div>`;
+  }
+
   const score = getScore(r);
   const tl = score >= 3;
   const tracked = getTrackedPosition(r.ticker);
