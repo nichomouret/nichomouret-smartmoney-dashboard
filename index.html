@@ -2641,19 +2641,61 @@ async function openFundExplorer(forceMode) {
     // Cache : si on a deja la liste de fonds, on la reutilise (toggle instantane)
     let funds = fundExplorerState.funds;
     if (funds.length === 0) {
-      // 2 ans de fenetre pour voir tous les fonds avec un Q4 2025 ou plus recent
-      const r = await fetch(`${PROXY}/sec-13f/recent?days=730`);
-      const data = await r.json();
+      // 5 ans de fenetre pour capter TOUS les fonds suivis (BlackRock peut avoir un filing
+      // moins frequent vs les hedge funds actifs). On merge aussi avec /sec-13f/funds
+      // (liste statique Tier 1 connue) pour garantir que les fonds-cles apparaissent
+      // meme s'ils n'ont pas filing recent en DB.
+      const [recentR, knownR] = await Promise.all([
+        fetch(`${PROXY}/sec-13f/recent?days=1825`).catch(() => null),
+        fetch(`${PROXY}/sec-13f/funds`).catch(() => null),
+      ]);
+      const data = recentR && recentR.ok ? await recentR.json() : { filings: [] };
+      const knownData = knownR && knownR.ok ? await knownR.json() : { funds: [] };
       const filings = (data.filings || []);
-      // Dedupe par fund_cik, garde le filing avec le reporting_period le plus recent
-      const byFund = {};
+      // Index des fonds Tier 1 statiques connus (par CIK)
+      const knownByCik = {};
+      for (const f of (knownData.funds || knownData || [])) {
+        const cik = String(f.cik || f.fund_cik || "").replace(/^0+/, "");
+        if (cik) knownByCik[cik] = f;
+      }
+      // Index des filings recents (par CIK)
+      const filingsByCik = {};
       for (const f of filings) {
-        const cur = byFund[f.fund_cik];
+        const cik = String(f.fund_cik).replace(/^0+/, "");
+        const cur = filingsByCik[cik];
         if (!cur || new Date(f.reporting_period) > new Date(cur.reporting_period)) {
-          byFund[f.fund_cik] = f;
+          filingsByCik[cik] = f;
         }
       }
-      funds = Object.values(byFund).sort((a, b) => Number(b.total_value_usd) - Number(a.total_value_usd));
+      // Merge : tous les CIK (recent + statiques connus) deviennent des cards
+      const allCiks = new Set([...Object.keys(filingsByCik), ...Object.keys(knownByCik)]);
+      const allFunds = [];
+      for (const cik of allCiks) {
+        const filing = filingsByCik[cik];
+        const known = knownByCik[cik];
+        if (filing) {
+          allFunds.push(filing); // filing complet avec donnees DB
+        } else if (known) {
+          // Fonds Tier 1 connu mais sans filing recent en DB : on l'affiche quand meme
+          // avec status "no data". Le screener saura skip ou alerter.
+          allFunds.push({
+            fund_cik: cik,
+            fund_name: known.name || `CIK ${cik}`,
+            fund_tier: known.tier || null,
+            reporting_period: null,
+            filing_date: null,
+            total_value_usd: 0,
+            positions_count: 0,
+            _noData: true, // flag pour UI
+          });
+        }
+      }
+      // Tri : fonds avec donnees DB d'abord (par AUM desc), puis fonds connus sans data
+      funds = allFunds.sort((a, b) => {
+        if (a._noData && !b._noData) return 1;
+        if (!a._noData && b._noData) return -1;
+        return Number(b.total_value_usd || 0) - Number(a.total_value_usd || 0);
+      });
       fundExplorerState.funds = funds; // cache pour toggles ulterieurs
     }
 
@@ -2748,18 +2790,20 @@ function renderFundScreener(funds) {
   const cardsHtml = funds.map(f => {
     const tc = tierColorFor(f.fund_tier);
     const tier = (f.fund_tier || '—').replace(/_/g, ' ');
-    const aum = fmtBigAum(f.total_value_usd);
-    const period = fmtPeriodShort(f.reporting_period);
+    const aum = f._noData ? '— pas en DB' : fmtBigAum(f.total_value_usd);
+    const period = f._noData ? '⚠️ ingest requis' : fmtPeriodShort(f.reporting_period);
     const cikEsc = String(f.fund_cik).replace(/'/g, "\\'");
     const checked = fundExplorerState.selectedCiks.has(String(f.fund_cik)) ? "checked" : "";
-    return `<label class="fund-card" data-fund-name="${(f.fund_name||'').toLowerCase()}" data-fund-tier="${f.fund_tier||''}" style="display:block;background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:10px;cursor:pointer;position:relative">
-      <input type="checkbox" class="fund-check" data-cik="${cikEsc}" ${checked} style="position:absolute;top:8px;right:8px;width:16px;height:16px;cursor:pointer;accent-color:#6b46c1">
+    const opacity = f._noData ? '0.55' : '1';
+    const tipNoData = "Ce fonds n a pas de filing 13F en base. Demande un ingest depuis l admin endpoint.";
+    return `<label class="fund-card" data-fund-name="${(f.fund_name||'').toLowerCase()}" data-fund-tier="${f.fund_tier||''}" style="display:block;background:#0d1117;border:1px solid ${f._noData?'#ffa50244':'#30363d'};border-radius:8px;padding:10px;cursor:pointer;position:relative;opacity:${opacity}" title="${f._noData?tipNoData:''}">
+      <input type="checkbox" class="fund-check" data-cik="${cikEsc}" ${checked} ${f._noData?'disabled':''} style="position:absolute;top:8px;right:8px;width:16px;height:16px;cursor:pointer;accent-color:#6b46c1">
       <div style="font-weight:700;color:#e6edf3;font-size:12px;margin-bottom:4px;line-height:1.3;padding-right:24px">${f.fund_name}</div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">
         <span style="background:${tc}22;color:${tc};border:1px solid ${tc}44;padding:1px 6px;border-radius:4px;font-size:8px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px">${tier}</span>
       </div>
       <div style="display:flex;justify-content:space-between;align-items:center;font-family:monospace;font-size:10px">
-        <span style="color:#58a6ff;font-weight:700">${aum}</span>
+        <span style="color:${f._noData?'#ffa502':'#58a6ff'};font-weight:700">${aum}</span>
         <span style="color:#8b949e">${period}</span>
       </div>
     </label>`;
@@ -2924,6 +2968,17 @@ window.runFundScreener = runFundScreener;
 // Fetch parallele des positions de chaque fonds selectionne,
 // dedup par ticker, filtre montant + % capital
 // ============================================================
+// Helper : execute promises en chunks (eviter le rate limit + le browser concurrency)
+async function chunkedParallel(items, fn, chunkSize = 5) {
+  const results = [];
+  for (let i = 0; i < items.length; i += chunkSize) {
+    const slice = items.slice(i, i + chunkSize);
+    const sliceResults = await Promise.all(slice.map(fn));
+    results.push(...sliceResults);
+  }
+  return results;
+}
+
 async function runFundScreener() {
   const selectedCiks = Array.from(fundExplorerState.selectedCiks);
   if (selectedCiks.length === 0) return;
@@ -2934,89 +2989,143 @@ async function runFundScreener() {
   const resultsEl = document.getElementById("screener-results");
   resultsEl.innerHTML = `<div style="background:#0d1117;border:1px solid #6b46c155;border-radius:8px;padding:14px;text-align:center;color:#a29bfe;font-size:12px"><div class="spinner" style="width:18px;height:18px;display:inline-block;margin-right:8px;vertical-align:middle"></div>Récupération positions de ${selectedCiks.length} fonds…</div>`;
 
-  try {
-    // Fetch en parallele les positions 13F de chaque fonds
-    const fundResults = await Promise.all(selectedCiks.map(async (cik) => {
-      try {
-        const r = await fetch(`${PROXY}/sec-13f/fund/${cik}?limit=500`);
-        if (!r.ok) return null;
-        const data = await r.json();
-        if (!data.ok) return null;
-        return data;
-      } catch (e) { return null; }
-    }));
-
-    // Aggregation : par ticker, on liste les fonds qui le detiennent au-dessus du seuil
-    const byTicker = new Map(); // ticker -> { ticker, issuer, funds: [{name, valueUsd, shares, pctCap}], totalValue, maxPct }
-    for (const fundData of fundResults) {
-      if (!fundData) continue;
-      const fundName = fundData.fund_name;
-      const fundTier = fundData.fund_tier;
-      for (const pos of (fundData.holdings || [])) {
-        if (!pos.ticker) continue; // skip positions sans ticker (CUSIP-only)
-        const valueUsd = Number(pos.value_usd || 0);
-        if (valueUsd < minAmount) continue; // filtre montant min
-        const key = pos.ticker;
-        if (!byTicker.has(key)) {
-          byTicker.set(key, {
-            ticker: key, issuer: pos.issuer, funds: [], totalValue: 0, maxPct: null,
-          });
-        }
-        const entry = byTicker.get(key);
-        entry.funds.push({
-          name: fundName, tier: fundTier, valueUsd, shares: Number(pos.shares||0),
-          change: pos.position_change, pctCap: null, // sera rempli plus tard
-        });
-        entry.totalValue += valueUsd;
+  // === ETAPE 1 : fetch positions de chaque fonds (chunked, robuste) ===
+  const fundResults = await chunkedParallel(selectedCiks, async (cik) => {
+    try {
+      const r = await fetch(`${PROXY}/sec-13f/fund/${cik}?limit=500`);
+      if (!r.ok) {
+        console.warn(`[screener] CIK ${cik} HTTP ${r.status}`);
+        return { cik, error: `HTTP ${r.status}` };
       }
+      const data = await r.json();
+      if (!data.ok) {
+        console.warn(`[screener] CIK ${cik} returned not-ok`, data);
+        return { cik, error: data.error || "no-data" };
+      }
+      if (!data.holdings || data.holdings.length === 0) {
+        console.warn(`[screener] CIK ${cik} (${data.fund_name}) has 0 holdings in DB`);
+        return { cik, fund_name: data.fund_name, error: "empty-db" };
+      }
+      return data;
+    } catch (e) {
+      console.error(`[screener] CIK ${cik} fetch failed`, e);
+      return { cik, error: e.message };
     }
+  }, 5);
 
-    let tickers = Array.from(byTicker.values());
+  // Diagnostic : combien de fonds ont reellement des donnees ?
+  const validFunds = fundResults.filter(f => f && !f.error && f.holdings);
+  const failedFunds = fundResults.filter(f => f && f.error);
+  console.log(`[screener] ${validFunds.length} fonds OK, ${failedFunds.length} fonds en erreur`, { failedFunds });
+
+  if (validFunds.length === 0) {
+    const failedNames = failedFunds.map(f => `${f.fund_name || f.cik}: ${f.error}`).join(", ");
+    resultsEl.innerHTML = `<div style="background:#0d1117;border:1px solid #ffa50266;border-radius:8px;padding:14px;color:#ffa502;font-size:12px">
+      <strong>⚠️ Aucun fonds sélectionné n'a de données 13F en base.</strong><br>
+      <span style="color:#8b949e;font-size:11px">${failedFunds.length} fonds testés, tous vides ou en erreur. Détail console F12.</span><br>
+      <span style="color:#484f58;font-size:10px;margin-top:6px;display:block">Causes possibles : (1) ces fonds n'ont pas été ingérés en DB ; (2) leur dernier filing 13F-HR est trop ancien ; (3) ils filent en 13F-NT (Notice) sans positions. Demande un ingest via l'admin endpoint si nécessaire.</span>
+    </div>`;
+    return;
+  }
+
+  // === ETAPE 2 : agregation par ticker, filtre montant ===
+  const byTicker = new Map();
+  for (const fundData of validFunds) {
+    const fundName = fundData.fund_name;
+    const fundTier = fundData.fund_tier;
+    for (const pos of (fundData.holdings || [])) {
+      if (!pos.ticker) continue;
+      const valueUsd = Number(pos.value_usd || 0);
+      if (valueUsd < minAmount) continue;
+      const key = pos.ticker;
+      if (!byTicker.has(key)) {
+        byTicker.set(key, { ticker: key, issuer: pos.issuer, funds: [], totalValue: 0, maxPct: null });
+      }
+      const entry = byTicker.get(key);
+      entry.funds.push({
+        name: fundName, tier: fundTier, valueUsd, shares: Number(pos.shares||0),
+        change: pos.position_change, pctCap: null,
+      });
+      entry.totalValue += valueUsd;
+    }
+  }
+
+  let tickers = Array.from(byTicker.values());
+
+  if (tickers.length === 0) {
+    resultsEl.innerHTML = `<div style="background:#0d1117;border:1px solid #ffa50244;border-radius:8px;padding:14px;color:#ffa502;font-size:12px;text-align:center">
+      <strong>📭 0 ticker ne matche le seuil montant ≥ ${fmtBigAum(minAmount)}</strong><br>
+      <span style="color:#8b949e;font-size:11px;margin-top:4px;display:block">Tu as sélectionné ${validFunds.length} fonds (${validFunds.reduce((s,f)=>s+(f.holdings?.length||0),0)} positions au total) mais aucune ne dépasse ${fmtBigAum(minAmount)}.</span>
+      <span style="color:#484f58;font-size:10px;margin-top:6px;display:block">Astuce : abaisse le seuil montant (50M ou 100M) pour voir plus de tickers.</span>
+    </div>`;
+    return;
+  }
+
+  // === ETAPE 3 (si % cap demande) : fetch shares_outstanding, calcul pct, filtre ===
+  if (minPct > 0) {
+    tickers.sort((a, b) => b.totalValue - a.totalValue);
+    tickers = tickers.slice(0, 50); // top 50 par valeur pour preserver rate limit
+    resultsEl.innerHTML = `<div style="background:#0d1117;border:1px solid #6b46c155;border-radius:8px;padding:14px;text-align:center;color:#a29bfe;font-size:12px"><div class="spinner" style="width:18px;height:18px;display:inline-block;margin-right:8px;vertical-align:middle"></div>Calcul % capital pour ${tickers.length} tickers (TwelveData, chunks de 5)…</div>`;
+
+    const enriched = await chunkedParallel(tickers, async (t) => {
+      try {
+        const cleanSym = t.ticker.replace(/\.[A-Z]+$/, "");
+        const statsR = await fetch(`${PROXY}/twelvedata/statistics?symbol=${encodeURIComponent(cleanSym)}`);
+        if (!statsR.ok) {
+          console.warn(`[screener] stats ${cleanSym} HTTP ${statsR.status}`);
+          return { ticker: t.ticker, error: `stats HTTP ${statsR.status}` };
+        }
+        const stats = await statsR.json();
+        if (stats.error) {
+          return { ticker: t.ticker, error: stats.error };
+        }
+        const shOut = stats?.statistics?.shares_statistics?.shares_outstanding
+                   ?? stats?.shares_statistics?.shares_outstanding
+                   ?? stats?.statistics?.statistics?.shares_outstanding
+                   ?? null;
+        if (!shOut || Number(shOut) <= 0) {
+          return { ticker: t.ticker, error: "no shares_outstanding" };
+        }
+        for (const f of t.funds) {
+          if (f.shares > 0) {
+            f.pctCap = (f.shares / Number(shOut)) * 100;
+            if (t.maxPct === null || f.pctCap > t.maxPct) t.maxPct = f.pctCap;
+          }
+        }
+        return { ticker: t.ticker, ok: true };
+      } catch (e) {
+        console.error(`[screener] stats ${t.ticker} exception`, e);
+        return { ticker: t.ticker, error: e.message };
+      }
+    }, 5);
+
+    const enrichedOk = enriched.filter(e => e.ok).length;
+    const enrichedFail = enriched.filter(e => e.error).length;
+    console.log(`[screener] stats ${enrichedOk} OK, ${enrichedFail} failed`);
+
+    // Filtre apres calcul
+    const before = tickers.length;
+    tickers = tickers.filter(t => t.maxPct !== null && t.maxPct >= minPct);
     if (tickers.length === 0) {
-      resultsEl.innerHTML = `<div style="background:#0d1117;border:1px solid #ff475744;border-radius:8px;padding:14px;color:#ff4757;font-size:12px;text-align:center">⚠️ Aucun ticker trouvé avec les critères (${selectedCiks.length} fonds, ≥${fmtBigAum(minAmount)}). Élargis les seuils.</div>`;
+      // Determine si c'est un vrai "0 result" ou un probleme de donnees
+      const tickersWithPct = before - tickers.length;
+      const couldComputePct = enrichedOk;
+      const sample = (fundExplorerState.results || []).slice(0, 3);
+      const mathExplain = minAmount && minPct ? `<br><span style="color:#484f58;font-size:10px;margin-top:6px;display:block">📐 Mathématiquement : ${fmtBigAum(minAmount)} ET ≥${minPct}% du capital implique une cap max de <strong>${fmtBigAum(minAmount/(minPct/100))}</strong>. Au-dessus de cette cap, c'est impossible.</span>` : '';
+      resultsEl.innerHTML = `<div style="background:#0d1117;border:1px solid #ffa50244;border-radius:8px;padding:14px;color:#ffa502;font-size:12px">
+        <strong>📭 0 ticker ne matche le double seuil (${fmtBigAum(minAmount)} ET ≥${minPct}% capital)</strong><br>
+        <span style="color:#8b949e;font-size:11px;margin-top:4px;display:block">${before} tickers passaient le seuil montant. ${couldComputePct}/${before} ont pu être enrichis avec shares_outstanding via TwelveData (${enrichedFail} échecs).</span>
+        ${mathExplain}
+        <span style="color:#484f58;font-size:10px;margin-top:6px;display:block">💡 Suggestion : essaie 100M$ + 5%, ou 500M$ sans filtre %, ou élargis les fonds sélectionnés.</span>
+      </div>`;
       return;
     }
-
-    // Si filtre % capital actif : on fetch shares_outstanding via TwelveData pour calculer
-    // (on limite a top 50 tickers par totalValue pour preserver le rate limit)
-    if (minPct > 0) {
-      tickers.sort((a, b) => b.totalValue - a.totalValue);
-      tickers = tickers.slice(0, 50);
-      resultsEl.innerHTML = `<div style="background:#0d1117;border:1px solid #6b46c155;border-radius:8px;padding:14px;text-align:center;color:#a29bfe;font-size:12px"><div class="spinner" style="width:18px;height:18px;display:inline-block;margin-right:8px;vertical-align:middle"></div>Calcul % capital pour ${tickers.length} tickers (TwelveData)…</div>`;
-      await Promise.all(tickers.map(async (t) => {
-        try {
-          const cleanSym = t.ticker.replace(/\.[A-Z]+$/, "");
-          const statsR = await fetch(`${PROXY}/twelvedata/statistics?symbol=${encodeURIComponent(cleanSym)}`);
-          if (!statsR.ok) return;
-          const stats = await statsR.json();
-          const shOut = stats?.statistics?.shares_statistics?.shares_outstanding
-                     ?? stats?.shares_statistics?.shares_outstanding
-                     ?? stats?.statistics?.statistics?.shares_outstanding
-                     ?? null;
-          if (!shOut || Number(shOut) <= 0) return;
-          for (const f of t.funds) {
-            if (f.shares > 0) {
-              f.pctCap = (f.shares / Number(shOut)) * 100;
-              if (t.maxPct === null || f.pctCap > t.maxPct) t.maxPct = f.pctCap;
-            }
-          }
-        } catch (e) {}
-      }));
-      // Filtre apres calcul : garder uniquement tickers ou AU MOINS un fonds a pctCap >= minPct
-      tickers = tickers.filter(t => t.maxPct !== null && t.maxPct >= minPct);
-      if (tickers.length === 0) {
-        resultsEl.innerHTML = `<div style="background:#0d1117;border:1px solid #ff475744;border-radius:8px;padding:14px;color:#ff4757;font-size:12px;text-align:center">⚠️ Aucun ticker n'a un fonds détenant ≥${minPct}% du capital parmi les sélectionnés.</div>`;
-        return;
-      }
-    }
-
-    // Tri final par totalValue desc
-    tickers.sort((a, b) => b.totalValue - a.totalValue);
-    fundExplorerState.results = tickers;
-    renderScreenerResults(tickers, minAmount, minPct);
-  } catch (e) {
-    resultsEl.innerHTML = `<div style="background:#ff475715;border:1px solid #ff475766;border-radius:8px;padding:12px;color:#ff4757">Erreur : ${e.message}</div>`;
   }
+
+  // === ETAPE 4 : tri final + render ===
+  tickers.sort((a, b) => b.totalValue - a.totalValue);
+  fundExplorerState.results = tickers;
+  renderScreenerResults(tickers, minAmount, minPct);
 }
 
 function renderScreenerResults(tickers, minAmount, minPct) {
