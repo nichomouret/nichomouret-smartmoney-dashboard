@@ -2620,25 +2620,48 @@ function fmtBigAum(n) {
   return v > 0 ? v.toFixed(0) + "$" : "—";
 }
 
-async function openFundExplorer() {
+// ============================================================
+// FUND SCREENER — etat partage entre les 2 modes (Browse / Screener)
+// ============================================================
+let fundExplorerState = {
+  mode: "browse", // "browse" | "screener"
+  funds: [],       // liste complete des fonds (chargee une fois)
+  selectedCiks: new Set(), // fonds coches en mode Screener
+  minAmountUsd: 100_000_000, // 100M$ par defaut
+  minPctCapital: 0,           // 0 = pas de filtre
+  results: null,              // resultats du dernier screen
+};
+
+async function openFundExplorer(forceMode) {
   const modal = document.getElementById("modal");
+  if (forceMode) fundExplorerState.mode = forceMode;
   document.getElementById("modal-content").innerHTML = `<div class="modal-header"><div><div class="modal-title">📋 Tous les fonds 13F</div><div class="modal-sub">Chargement...</div></div><button class="modal-close" onclick="closeModal()">✕</button></div>`;
   modal.style.display = "flex";
   try {
-    // 2 ans de fenetre pour voir tous les fonds avec un Q4 2025 ou plus recent
-    const r = await fetch(`${PROXY}/sec-13f/recent?days=730`);
-    const data = await r.json();
-    const filings = (data.filings || []);
-    // Dedupe par fund_cik, garde le filing avec le reporting_period le plus recent
-    const byFund = {};
-    for (const f of filings) {
-      const cur = byFund[f.fund_cik];
-      if (!cur || new Date(f.reporting_period) > new Date(cur.reporting_period)) {
-        byFund[f.fund_cik] = f;
+    // Cache : si on a deja la liste de fonds, on la reutilise (toggle instantane)
+    let funds = fundExplorerState.funds;
+    if (funds.length === 0) {
+      // 2 ans de fenetre pour voir tous les fonds avec un Q4 2025 ou plus recent
+      const r = await fetch(`${PROXY}/sec-13f/recent?days=730`);
+      const data = await r.json();
+      const filings = (data.filings || []);
+      // Dedupe par fund_cik, garde le filing avec le reporting_period le plus recent
+      const byFund = {};
+      for (const f of filings) {
+        const cur = byFund[f.fund_cik];
+        if (!cur || new Date(f.reporting_period) > new Date(cur.reporting_period)) {
+          byFund[f.fund_cik] = f;
+        }
       }
+      funds = Object.values(byFund).sort((a, b) => Number(b.total_value_usd) - Number(a.total_value_usd));
+      fundExplorerState.funds = funds; // cache pour toggles ulterieurs
     }
-    const funds = Object.values(byFund).sort((a, b) => Number(b.total_value_usd) - Number(a.total_value_usd));
 
+    // Route selon le mode actuel
+    if (fundExplorerState.mode === "screener") {
+      return renderFundScreener(funds);
+    }
+    // Mode Browse (par defaut)
     const tiers = [...new Set(funds.map(f => f.fund_tier).filter(Boolean))].sort();
     const tierFilterHtml = tiers.map(t => `<option value="${t}">${t.replace(/_/g, ' ')}</option>`).join('');
 
@@ -2668,6 +2691,10 @@ async function openFundExplorer() {
           <div class="modal-sub">${funds.length} fonds suivis · clique sur un fonds pour voir son portfolio</div>
         </div>
         <button class="modal-close" onclick="closeModal()">✕</button>
+      </div>
+      <div style="display:flex;gap:0;margin-bottom:12px;background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:4px;width:fit-content">
+        <button onclick="fundExplorerState.mode='browse';openFundExplorer()" style="background:#6b46c1;color:white;border:none;padding:6px 14px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer">📂 Browse</button>
+        <button onclick="fundExplorerState.mode='screener';openFundExplorer()" style="background:transparent;color:#8b949e;border:none;padding:6px 14px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer">🎯 Screener</button>
       </div>
       <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center;flex-wrap:wrap">
         <input id="fund-search" type="text" placeholder="🔍 Rechercher un fonds..." style="background:#0d1117;border:1px solid #30363d;color:#e6edf3;padding:7px 12px;border-radius:6px;font-size:12px;flex:1;min-width:200px;font-family:inherit">
@@ -2703,7 +2730,338 @@ async function openFundExplorer() {
 }
 window.openFundExplorer = openFundExplorer;
 const fundExplorerBtn = document.getElementById("open-fund-explorer");
-if (fundExplorerBtn) fundExplorerBtn.addEventListener("click", openFundExplorer);
+if (fundExplorerBtn) fundExplorerBtn.addEventListener("click", () => { fundExplorerState.mode='browse'; openFundExplorer(); });
+
+// ============================================================
+// FUND SCREENER — vue inverse : selectionne N fonds + filtres
+// (montant min, % capital min) -> retourne les tickers matches
+//
+// Sources : 13F (dernier filing par fonds) + AMF BDIF (% capital declare)
+// Logique : OR (au moins un fonds match avec les criteres)
+// ============================================================
+function renderFundScreener(funds) {
+  const minAmount = fundExplorerState.minAmountUsd;
+  const minPct = fundExplorerState.minPctCapital;
+  const selectedCount = fundExplorerState.selectedCiks.size;
+
+  // Carte fonds avec checkbox au lieu de clic-pour-details
+  const cardsHtml = funds.map(f => {
+    const tc = tierColorFor(f.fund_tier);
+    const tier = (f.fund_tier || '—').replace(/_/g, ' ');
+    const aum = fmtBigAum(f.total_value_usd);
+    const period = fmtPeriodShort(f.reporting_period);
+    const cikEsc = String(f.fund_cik).replace(/'/g, "\\'");
+    const checked = fundExplorerState.selectedCiks.has(String(f.fund_cik)) ? "checked" : "";
+    return `<label class="fund-card" data-fund-name="${(f.fund_name||'').toLowerCase()}" data-fund-tier="${f.fund_tier||''}" style="display:block;background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:10px;cursor:pointer;position:relative">
+      <input type="checkbox" class="fund-check" data-cik="${cikEsc}" ${checked} style="position:absolute;top:8px;right:8px;width:16px;height:16px;cursor:pointer;accent-color:#6b46c1">
+      <div style="font-weight:700;color:#e6edf3;font-size:12px;margin-bottom:4px;line-height:1.3;padding-right:24px">${f.fund_name}</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">
+        <span style="background:${tc}22;color:${tc};border:1px solid ${tc}44;padding:1px 6px;border-radius:4px;font-size:8px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px">${tier}</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;font-family:monospace;font-size:10px">
+        <span style="color:#58a6ff;font-weight:700">${aum}</span>
+        <span style="color:#8b949e">${period}</span>
+      </div>
+    </label>`;
+  }).join('');
+
+  const tiers = [...new Set(funds.map(f => f.fund_tier).filter(Boolean))].sort();
+  const tierFilterHtml = tiers.map(t => `<option value="${t}">${t.replace(/_/g, ' ')}</option>`).join('');
+
+  document.getElementById("modal-content").innerHTML = `
+    <div class="modal-header">
+      <div>
+        <div class="modal-title">🎯 Screener fonds → tickers</div>
+        <div class="modal-sub">Coche les fonds, fixe les seuils, trouve les tickers qui matchent</div>
+      </div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div style="display:flex;gap:0;margin-bottom:12px;background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:4px;width:fit-content">
+      <button onclick="fundExplorerState.mode='browse';openFundExplorer()" style="background:transparent;color:#8b949e;border:none;padding:6px 14px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer">📂 Browse</button>
+      <button onclick="fundExplorerState.mode='screener';openFundExplorer()" style="background:#6b46c1;color:white;border:none;padding:6px 14px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer">🎯 Screener</button>
+    </div>
+
+    <!-- FILTRES -->
+    <div style="background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:12px;margin-bottom:12px">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;align-items:end">
+        <div>
+          <label style="color:#8b949e;font-size:9px;text-transform:uppercase;letter-spacing:1px;font-weight:700;display:block;margin-bottom:4px">💰 Montant min (USD)</label>
+          <select id="screener-amount" style="background:#161b22;border:1px solid #30363d;color:#e6edf3;padding:7px 8px;border-radius:6px;font-size:12px;width:100%;font-family:inherit;cursor:pointer">
+            <option value="1000000" ${minAmount===1e6?'selected':''}>≥ 1 M$</option>
+            <option value="10000000" ${minAmount===1e7?'selected':''}>≥ 10 M$</option>
+            <option value="50000000" ${minAmount===5e7?'selected':''}>≥ 50 M$</option>
+            <option value="100000000" ${minAmount===1e8?'selected':''}>≥ 100 M$</option>
+            <option value="500000000" ${minAmount===5e8?'selected':''}>≥ 500 M$</option>
+            <option value="1000000000" ${minAmount===1e9?'selected':''}>≥ 1 Md$</option>
+          </select>
+        </div>
+        <div>
+          <label style="color:#8b949e;font-size:9px;text-transform:uppercase;letter-spacing:1px;font-weight:700;display:block;margin-bottom:4px">📊 % capital min</label>
+          <select id="screener-pct" style="background:#161b22;border:1px solid #30363d;color:#e6edf3;padding:7px 8px;border-radius:6px;font-size:12px;width:100%;font-family:inherit;cursor:pointer">
+            <option value="0" ${minPct===0?'selected':''}>Aucun filtre</option>
+            <option value="1" ${minPct===1?'selected':''}>≥ 1%</option>
+            <option value="3" ${minPct===3?'selected':''}>≥ 3%</option>
+            <option value="5" ${minPct===5?'selected':''}>≥ 5% (seuil franch.)</option>
+            <option value="10" ${minPct===10?'selected':''}>≥ 10%</option>
+            <option value="15" ${minPct===15?'selected':''}>≥ 15%</option>
+          </select>
+        </div>
+        <div>
+          <label style="color:#8b949e;font-size:9px;text-transform:uppercase;letter-spacing:1px;font-weight:700;display:block;margin-bottom:4px">🏛️ Fonds sélectionnés</label>
+          <div style="display:flex;gap:6px;align-items:center">
+            <span id="screener-count" style="background:${selectedCount>0?'#6b46c1':'#21262d'};color:white;font-weight:700;padding:7px 12px;border-radius:6px;font-size:12px;font-family:monospace;flex:1;text-align:center">${selectedCount}</span>
+            <button onclick="fundExplorerState.selectedCiks.clear();renderFundScreener(fundExplorerState.funds)" title="Tout déselectionner" style="background:#21262d;border:1px solid #30363d;color:#8b949e;padding:7px 10px;border-radius:6px;font-size:11px;cursor:pointer">↺</button>
+          </div>
+        </div>
+        <div>
+          <button id="screener-run" onclick="runFundScreener()" style="background:linear-gradient(135deg,#6b46c1 0%,#4c1d95 100%);color:white;border:none;padding:9px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;width:100%;text-transform:uppercase;letter-spacing:1px" ${selectedCount===0?'disabled style="opacity:0.4;cursor:not-allowed"':''}>🎯 Trouver tickers</button>
+        </div>
+      </div>
+      <div style="margin-top:10px;padding-top:10px;border-top:1px solid #21262d;font-size:10px;color:#484f58;line-height:1.5">
+        💡 Source : <strong style="color:#8b949e">13F dernier filing</strong> par fonds + <strong style="color:#8b949e">% capital BDIF</strong> si déclaré.
+        Logique : <strong style="color:#8b949e">OR</strong> — un ticker apparaît s'il est détenu par <em>au moins un</em> fonds coché avec les seuils.
+      </div>
+    </div>
+
+    <!-- RECHERCHE FONDS -->
+    <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;flex-wrap:wrap">
+      <input id="fund-search" type="text" placeholder="🔍 Rechercher un fonds..." style="background:#0d1117;border:1px solid #30363d;color:#e6edf3;padding:7px 12px;border-radius:6px;font-size:12px;flex:1;min-width:200px;font-family:inherit">
+      <select id="fund-tier-filter" style="background:#0d1117;border:1px solid #30363d;color:#e6edf3;padding:7px 12px;border-radius:6px;font-size:12px;font-family:inherit;cursor:pointer">
+        <option value="">Tous les tiers</option>
+        ${tierFilterHtml}
+      </select>
+      <button onclick="screenerSelectVisible(true)" style="background:#1f6feb22;border:1px solid #58a6ff66;color:#58a6ff;padding:7px 10px;border-radius:6px;font-size:10px;font-weight:600;cursor:pointer">+ Sélectionner visibles</button>
+      <button onclick="screenerSelectVisible(false)" style="background:#21262d;border:1px solid #30363d;color:#8b949e;padding:7px 10px;border-radius:6px;font-size:10px;font-weight:600;cursor:pointer">− Désél. visibles</button>
+      <span id="fund-count-label" style="color:#8b949e;font-size:11px;font-family:monospace">${funds.length} affichés</span>
+    </div>
+
+    <!-- GRID FONDS (checkbox) -->
+    <div id="fund-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px;max-height:42vh;overflow-y:auto;padding-right:8px;margin-bottom:8px">
+      ${cardsHtml}
+    </div>
+
+    <!-- ZONE RESULTATS -->
+    <div id="screener-results"></div>
+  `;
+
+  // Wire up handlers
+  document.getElementById("screener-amount").addEventListener("change", e => {
+    fundExplorerState.minAmountUsd = parseInt(e.target.value, 10);
+  });
+  document.getElementById("screener-pct").addEventListener("change", e => {
+    fundExplorerState.minPctCapital = parseFloat(e.target.value);
+  });
+
+  // Checkbox handler (delegate)
+  document.getElementById("fund-grid").addEventListener("change", (e) => {
+    if (e.target.classList.contains("fund-check")) {
+      const cik = e.target.dataset.cik;
+      if (e.target.checked) fundExplorerState.selectedCiks.add(cik);
+      else fundExplorerState.selectedCiks.delete(cik);
+      // Update count label sans re-render complet
+      const count = fundExplorerState.selectedCiks.size;
+      const countEl = document.getElementById("screener-count");
+      const runBtn = document.getElementById("screener-run");
+      if (countEl) {
+        countEl.textContent = count;
+        countEl.style.background = count > 0 ? "#6b46c1" : "#21262d";
+      }
+      if (runBtn) {
+        runBtn.disabled = count === 0;
+        runBtn.style.opacity = count === 0 ? "0.4" : "1";
+        runBtn.style.cursor = count === 0 ? "not-allowed" : "pointer";
+      }
+    }
+  });
+
+  // Search + tier filter (reutilise du browse mode)
+  const applyFilters = () => {
+    const q = (document.getElementById("fund-search").value || "").toLowerCase();
+    const tierFilter = document.getElementById("fund-tier-filter").value;
+    let visible = 0;
+    document.querySelectorAll('#fund-grid .fund-card').forEach(card => {
+      const matchesName = !q || card.dataset.fundName.includes(q);
+      const matchesTier = !tierFilter || card.dataset.fundTier === tierFilter;
+      const show = matchesName && matchesTier;
+      card.style.display = show ? '' : 'none';
+      if (show) visible++;
+    });
+    document.getElementById("fund-count-label").textContent = `${visible} affichés`;
+  };
+  document.getElementById("fund-search").addEventListener('input', applyFilters);
+  document.getElementById("fund-tier-filter").addEventListener('change', applyFilters);
+}
+
+function screenerSelectVisible(select) {
+  document.querySelectorAll('#fund-grid .fund-card').forEach(card => {
+    if (card.style.display === 'none') return;
+    const cb = card.querySelector('.fund-check');
+    if (cb) {
+      cb.checked = select;
+      const cik = cb.dataset.cik;
+      if (select) fundExplorerState.selectedCiks.add(cik);
+      else fundExplorerState.selectedCiks.delete(cik);
+    }
+  });
+  const count = fundExplorerState.selectedCiks.size;
+  const countEl = document.getElementById("screener-count");
+  const runBtn = document.getElementById("screener-run");
+  if (countEl) {
+    countEl.textContent = count;
+    countEl.style.background = count > 0 ? "#6b46c1" : "#21262d";
+  }
+  if (runBtn) {
+    runBtn.disabled = count === 0;
+    runBtn.style.opacity = count === 0 ? "0.4" : "1";
+  }
+}
+window.screenerSelectVisible = screenerSelectVisible;
+window.renderFundScreener = renderFundScreener;
+window.runFundScreener = runFundScreener;
+
+// ============================================================
+// FUND SCREENER — execution du screen
+// Fetch parallele des positions de chaque fonds selectionne,
+// dedup par ticker, filtre montant + % capital
+// ============================================================
+async function runFundScreener() {
+  const selectedCiks = Array.from(fundExplorerState.selectedCiks);
+  if (selectedCiks.length === 0) return;
+
+  const minAmount = fundExplorerState.minAmountUsd;
+  const minPct = fundExplorerState.minPctCapital;
+
+  const resultsEl = document.getElementById("screener-results");
+  resultsEl.innerHTML = `<div style="background:#0d1117;border:1px solid #6b46c155;border-radius:8px;padding:14px;text-align:center;color:#a29bfe;font-size:12px"><div class="spinner" style="width:18px;height:18px;display:inline-block;margin-right:8px;vertical-align:middle"></div>Récupération positions de ${selectedCiks.length} fonds…</div>`;
+
+  try {
+    // Fetch en parallele les positions 13F de chaque fonds
+    const fundResults = await Promise.all(selectedCiks.map(async (cik) => {
+      try {
+        const r = await fetch(`${PROXY}/sec-13f/fund/${cik}?limit=500`);
+        if (!r.ok) return null;
+        const data = await r.json();
+        if (!data.ok) return null;
+        return data;
+      } catch (e) { return null; }
+    }));
+
+    // Aggregation : par ticker, on liste les fonds qui le detiennent au-dessus du seuil
+    const byTicker = new Map(); // ticker -> { ticker, issuer, funds: [{name, valueUsd, shares, pctCap}], totalValue, maxPct }
+    for (const fundData of fundResults) {
+      if (!fundData) continue;
+      const fundName = fundData.fund_name;
+      const fundTier = fundData.fund_tier;
+      for (const pos of (fundData.holdings || [])) {
+        if (!pos.ticker) continue; // skip positions sans ticker (CUSIP-only)
+        const valueUsd = Number(pos.value_usd || 0);
+        if (valueUsd < minAmount) continue; // filtre montant min
+        const key = pos.ticker;
+        if (!byTicker.has(key)) {
+          byTicker.set(key, {
+            ticker: key, issuer: pos.issuer, funds: [], totalValue: 0, maxPct: null,
+          });
+        }
+        const entry = byTicker.get(key);
+        entry.funds.push({
+          name: fundName, tier: fundTier, valueUsd, shares: Number(pos.shares||0),
+          change: pos.position_change, pctCap: null, // sera rempli plus tard
+        });
+        entry.totalValue += valueUsd;
+      }
+    }
+
+    let tickers = Array.from(byTicker.values());
+    if (tickers.length === 0) {
+      resultsEl.innerHTML = `<div style="background:#0d1117;border:1px solid #ff475744;border-radius:8px;padding:14px;color:#ff4757;font-size:12px;text-align:center">⚠️ Aucun ticker trouvé avec les critères (${selectedCiks.length} fonds, ≥${fmtBigAum(minAmount)}). Élargis les seuils.</div>`;
+      return;
+    }
+
+    // Si filtre % capital actif : on fetch shares_outstanding via TwelveData pour calculer
+    // (on limite a top 50 tickers par totalValue pour preserver le rate limit)
+    if (minPct > 0) {
+      tickers.sort((a, b) => b.totalValue - a.totalValue);
+      tickers = tickers.slice(0, 50);
+      resultsEl.innerHTML = `<div style="background:#0d1117;border:1px solid #6b46c155;border-radius:8px;padding:14px;text-align:center;color:#a29bfe;font-size:12px"><div class="spinner" style="width:18px;height:18px;display:inline-block;margin-right:8px;vertical-align:middle"></div>Calcul % capital pour ${tickers.length} tickers (TwelveData)…</div>`;
+      await Promise.all(tickers.map(async (t) => {
+        try {
+          const cleanSym = t.ticker.replace(/\.[A-Z]+$/, "");
+          const statsR = await fetch(`${PROXY}/twelvedata/statistics?symbol=${encodeURIComponent(cleanSym)}`);
+          if (!statsR.ok) return;
+          const stats = await statsR.json();
+          const shOut = stats?.statistics?.shares_statistics?.shares_outstanding
+                     ?? stats?.shares_statistics?.shares_outstanding
+                     ?? stats?.statistics?.statistics?.shares_outstanding
+                     ?? null;
+          if (!shOut || Number(shOut) <= 0) return;
+          for (const f of t.funds) {
+            if (f.shares > 0) {
+              f.pctCap = (f.shares / Number(shOut)) * 100;
+              if (t.maxPct === null || f.pctCap > t.maxPct) t.maxPct = f.pctCap;
+            }
+          }
+        } catch (e) {}
+      }));
+      // Filtre apres calcul : garder uniquement tickers ou AU MOINS un fonds a pctCap >= minPct
+      tickers = tickers.filter(t => t.maxPct !== null && t.maxPct >= minPct);
+      if (tickers.length === 0) {
+        resultsEl.innerHTML = `<div style="background:#0d1117;border:1px solid #ff475744;border-radius:8px;padding:14px;color:#ff4757;font-size:12px;text-align:center">⚠️ Aucun ticker n'a un fonds détenant ≥${minPct}% du capital parmi les sélectionnés.</div>`;
+        return;
+      }
+    }
+
+    // Tri final par totalValue desc
+    tickers.sort((a, b) => b.totalValue - a.totalValue);
+    fundExplorerState.results = tickers;
+    renderScreenerResults(tickers, minAmount, minPct);
+  } catch (e) {
+    resultsEl.innerHTML = `<div style="background:#ff475715;border:1px solid #ff475766;border-radius:8px;padding:12px;color:#ff4757">Erreur : ${e.message}</div>`;
+  }
+}
+
+function renderScreenerResults(tickers, minAmount, minPct) {
+  const resultsEl = document.getElementById("screener-results");
+  const rows = tickers.slice(0, 100).map(t => {
+    const fundsHtml = t.funds.slice(0, 5).map(f => {
+      const tc = tierColorFor(f.tier);
+      const tierShort = (f.tier || '').split('_')[0];
+      const fundShort = String(f.name).replace(/\b(LLC|L\.P\.|Group|Inc\.?|Ltd\.?|LP|Corp\.?|Corporation|Co\.|Management)\b/gi,'').trim().substring(0,18);
+      const pct = f.pctCap !== null ? ` <span style="color:${f.pctCap>=5?'#ff4757':'#eccc68'};font-weight:700">${f.pctCap.toFixed(1)}%</span>` : '';
+      return `<span style="background:${tc}22;border:1px solid ${tc}44;color:${tc};padding:1px 6px;border-radius:4px;font-size:9px;display:inline-flex;gap:4px;align-items:center" title="${f.name} · ${fmtBigAum(f.valueUsd)} · ${f.change||''}">${fundShort}${pct}</span>`;
+    }).join(' ');
+    const extraFunds = t.funds.length > 5 ? `<span style="color:#484f58;font-size:9px"> +${t.funds.length-5}</span>` : '';
+    const maxPctTxt = t.maxPct !== null ? `<span style="color:${t.maxPct>=5?'#ff4757':'#eccc68'};font-weight:700">${t.maxPct.toFixed(1)}%</span>` : '<span style="color:#484f58">—</span>';
+    return `<tr style="background:#21262d;border-bottom:1px solid #161b22">
+      <td style="padding:8px 10px;color:#e6edf3;font-weight:700;font-family:monospace">${t.ticker}<div style="color:#8b949e;font-size:9px;font-weight:400">${(t.issuer||'').substring(0,32)}</div></td>
+      <td style="padding:8px 10px;text-align:center;color:#58a6ff;font-weight:700;font-family:monospace">${fmtBigAum(t.totalValue)}</td>
+      <td style="padding:8px 10px;text-align:center;font-family:monospace">${maxPctTxt}</td>
+      <td style="padding:8px 10px;text-align:center;color:#a29bfe;font-weight:700">${t.funds.length}</td>
+      <td style="padding:8px 10px">${fundsHtml}${extraFunds}</td>
+      <td style="padding:8px 10px;text-align:center"><button onclick="closeModal();document.getElementById('custom-ticker').value='${t.ticker}';document.getElementById('scan-btn').click()" title="Scanner ce ticker" style="background:#1f6feb;border:none;color:white;padding:4px 10px;border-radius:5px;font-size:10px;font-weight:700;cursor:pointer">🔍 Scan</button></td>
+    </tr>`;
+  }).join('');
+
+  resultsEl.innerHTML = `
+    <div style="background:#0d1117;border:1px solid #2ed57344;border-radius:8px;padding:12px;margin-top:8px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <div style="color:#2ed573;font-weight:700;font-size:12px">🎯 ${tickers.length} ticker${tickers.length>1?'s':''} trouvé${tickers.length>1?'s':''}</div>
+        <div style="color:#8b949e;font-size:10px">Critères : ≥${fmtBigAum(minAmount)}${minPct>0?` · ≥${minPct}% cap`:''}${tickers.length>100?` · top 100 affichés`:''}</div>
+      </div>
+      <div style="max-height:35vh;overflow-y:auto">
+        <table style="width:100%;border-collapse:collapse;font-size:11px;font-family:monospace">
+          <thead><tr style="color:#484f58;font-size:9px;text-transform:uppercase;letter-spacing:1px;background:#0d1117;position:sticky;top:0">
+            <td style="padding:6px 10px">Ticker</td>
+            <td style="padding:6px 10px;text-align:center">$ cumulé</td>
+            <td style="padding:6px 10px;text-align:center">% max cap</td>
+            <td style="padding:6px 10px;text-align:center">Nb fonds</td>
+            <td style="padding:6px 10px">Détenteurs</td>
+            <td style="padding:6px 10px;text-align:center">Action</td>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </div>`;
+}
 
 // ============================================================
 // CONSENSUS SMART MONEY : tickers ou >= 3 fonds Tier 1 ont
