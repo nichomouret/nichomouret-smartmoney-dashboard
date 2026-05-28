@@ -2646,12 +2646,19 @@ async function openFundExplorer(forceMode) {
       // (liste statique Tier 1 connue) pour garantir que les fonds-cles apparaissent
       // meme s'ils n'ont pas filing recent en DB.
       const [recentR, knownR] = await Promise.all([
-        fetch(`${PROXY}/sec-13f/recent?days=1825`).catch(() => null),
-        fetch(`${PROXY}/sec-13f/funds`).catch(() => null),
+        fetch(`${PROXY}/sec-13f/recent?days=1825`).catch((e) => { console.error('[fundExplorer] /recent fetch fail', e); return null; }),
+        fetch(`${PROXY}/sec-13f/funds`).catch((e) => { console.error('[fundExplorer] /funds fetch fail', e); return null; }),
       ]);
       const data = recentR && recentR.ok ? await recentR.json() : { filings: [] };
       const knownData = knownR && knownR.ok ? await knownR.json() : { funds: [] };
       const filings = (data.filings || []);
+      // === DIAGNOSTIC : afficher dans la console ce qui est revenu ===
+      console.log(`[fundExplorer] /recent: ${filings.length} filings · /funds: ${(knownData.funds || []).length} CIKs Tier 1 statiques`);
+      const blackrockInKnown = (knownData.funds || []).find(f => String(f.cik) === "2012383");
+      console.log(`[fundExplorer] BlackRock CIK 2012383 dans /funds ?`, blackrockInKnown ? "✅ OUI" : "❌ NON");
+      if (!blackrockInKnown) {
+        console.warn(`[fundExplorer] /sec-13f/funds n'inclut pas BlackRock. Le proxy a probablement une vieille version de sec13fFunds.js. Sample 3 fonds returned:`, (knownData.funds || []).slice(0, 3));
+      }
       // Index des fonds Tier 1 statiques connus (par CIK)
       const knownByCik = {};
       for (const f of (knownData.funds || knownData || [])) {
@@ -2726,11 +2733,13 @@ async function openFundExplorer(forceMode) {
       </div>`;
     }).join('');
 
+    const fundsWithData = funds.filter(f => !f._noData).length;
+    const fundsNoData = funds.filter(f => f._noData).length;
     document.getElementById("modal-content").innerHTML = `
       <div class="modal-header">
         <div>
           <div class="modal-title">📋 Tous les fonds SEC 13F</div>
-          <div class="modal-sub">${funds.length} fonds suivis · clique sur un fonds pour voir son portfolio</div>
+          <div class="modal-sub">${fundsWithData} en DB${fundsNoData > 0 ? ` <span style="color:#ffa502">+ ${fundsNoData} sans data (ingest requis)</span>` : ' (aucun fonds Tier 1 manquant)'} · clique sur un fonds pour voir son portfolio</div>
         </div>
         <button class="modal-close" onclick="closeModal()">✕</button>
       </div>
