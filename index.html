@@ -1513,6 +1513,161 @@ Market cap : ${fmtMcap(r.marketCap)}`;
 }
 
 // ============================================================
+// NIF — NET INSTITUTIONAL FLOW (V1)
+// Mesure la directionnalite du flux institutionnel trimestriel.
+// Position brute = bruit indiciel. Flux net = signal.
+//
+// Calcul base sur les holders13f deja fetches dans le scan :
+//   - Filtre passifs (BlackRock, Vanguard, etc.) hors signal de conviction
+//   - Compte NEW / INCREASED / DECREASED / EXITED par fonds actif
+//   - Score 0-100 base sur ratio buyers/sellers, new positions, breadth
+//   - Signal : ROTATION_MAINS_FORTES / ACCUMULATION_LARGE / DISTRIBUTION / NEUTRE
+//
+// GARDE-FOU NON-US : pour SBF120 / .PA / .BE, les 13F ne captent que la
+// poche US -> on retourne PARTIAL_DATA, jamais un score bas fausse.
+// ============================================================
+function computeFlowScore(holders13f, universe, market) {
+  // Garde-fou non-US : 13F partiel par construction
+  const upMarket = String(market || "").toUpperCase();
+  const isEuropean = universe === "sbf120"
+                  || upMarket.includes("PARIS")
+                  || upMarket.includes("EURONEXT")
+                  || upMarket.includes("XETRA");
+  if (isEuropean) {
+    return { score: null, status: "PARTIAL_DATA_NON_US",
+             note: "13F couvre seulement la poche US des gérants. Signal non fiable pour SBF120/Europe." };
+  }
+
+  if (!holders13f || holders13f.length === 0) {
+    return { score: null, status: "NO_DATA", note: "Aucun holder 13F détecté pour ce ticker." };
+  }
+
+  // Separer passifs (tier=passive_giant) vs actifs (le reste)
+  const passive = holders13f.filter(h => h.tier === "passive_giant");
+  const active = holders13f.filter(h => h.tier !== "passive_giant");
+
+  if (active.length === 0) {
+    return { score: null, status: "PASSIVE_ONLY",
+             note: `${passive.length} fonds passifs uniquement. Aucun signal directionnel actif.` };
+  }
+
+  // Decompte par changement de position (sur fonds ACTIFS uniquement)
+  const newPos    = active.filter(h => h.change === "NEW").length;
+  const added     = active.filter(h => h.change === "INCREASED").length;
+  const reduced   = active.filter(h => h.change === "DECREASED").length;
+  const soldOut   = active.filter(h => h.change === "EXITED").length;
+  const unchanged = active.filter(h => h.change === "UNCHANGED").length;
+
+  const buyers = newPos + added;
+  const sellers = reduced + soldOut;
+  const totalChanges = buyers + sellers;
+
+  if (totalChanges === 0) {
+    return { score: 50, status: "FLAT",
+             signal: "NEUTRE", note: "Aucun mouvement détecté sur les fonds actifs.",
+             breakdown: { activeFunds: active.length, passiveFunds: passive.length,
+                          buyers: 0, sellers: 0, newPos: 0, added: 0, reduced: 0, soldOut: 0,
+                          unchanged, buyerSellerRatio: "1.00", breadthDeltaPct: "0.0" } };
+  }
+
+  const buyerSellerRatio = sellers > 0 ? (buyers / sellers) : (buyers > 0 ? Infinity : 1);
+
+  // Breadth delta : variation du nombre de holders (NEW - SOLD_OUT)
+  // n_holders_t = active.length ; n_holders_prev = n_t - newPos + soldOut
+  const nHoldersT = active.length;
+  const nHoldersPrev = nHoldersT - newPos + soldOut;
+  const breadthDeltaPct = nHoldersPrev > 0 ? ((nHoldersT - nHoldersPrev) / nHoldersPrev) * 100 : 0;
+
+  // === SCORING 0-100 (centre sur 50, neutre) ===
+  let score = 50;
+
+  // 1. Ratio buyers/sellers (max +/- 30)
+  if (buyerSellerRatio === Infinity || buyerSellerRatio > 5)      score += 30;
+  else if (buyerSellerRatio > 3)                                  score += 25;
+  else if (buyerSellerRatio > 2)                                  score += 20;
+  else if (buyerSellerRatio > 1.5)                                score += 12;
+  else if (buyerSellerRatio > 1)                                  score += 5;
+  else if (buyerSellerRatio < 0.3)                                score -= 30;
+  else if (buyerSellerRatio < 0.5)                                score -= 25;
+  else if (buyerSellerRatio < 0.7)                                score -= 15;
+  else if (buyerSellerRatio < 1)                                  score -= 5;
+
+  // 2. Nouvelles positions = entrees fraiches (max +15)
+  if (newPos >= 5)      score += 15;
+  else if (newPos >= 3) score += 10;
+  else if (newPos >= 1) score += 5;
+
+  // 3. Sold out = sorties franches (max -15)
+  if (soldOut >= 5)      score -= 15;
+  else if (soldOut >= 3) score -= 10;
+  else if (soldOut >= 1) score -= 3;
+
+  // 4. Breadth (variation nb fonds) (max +/- 10)
+  if (breadthDeltaPct > 10)       score += 10;
+  else if (breadthDeltaPct > 5)   score += 5;
+  else if (breadthDeltaPct < -10) score -= 10;
+  else if (breadthDeltaPct < -5)  score -= 5;
+
+  score = Math.max(0, Math.min(100, score));
+
+  // === INTERPRETATION (signal lisible) ===
+  let signal = "NEUTRE";
+  if (newPos >= 3 && (reduced + soldOut) <= 1) {
+    signal = "ROTATION_MAINS_FORTES"; // entrees concentrees sans sortie
+  } else if (buyers >= 3 && buyers > sellers * 2) {
+    signal = "ACCUMULATION_LARGE"; // beaucoup de fonds achetent
+  } else if (sellers >= 3 && sellers > buyers * 2) {
+    signal = "DISTRIBUTION"; // beaucoup de fonds vendent
+  }
+
+  return {
+    score: Math.round(score),
+    status: "OK",
+    signal,
+    breakdown: {
+      activeFunds: active.length,
+      passiveFunds: passive.length,
+      buyers, sellers, newPos, added, reduced, soldOut, unchanged,
+      buyerSellerRatio: buyerSellerRatio === Infinity ? "∞" : buyerSellerRatio.toFixed(2),
+      breadthDeltaPct: breadthDeltaPct.toFixed(1),
+    },
+    asOfNote: "Dernier filing 13F (décalage ~45j vs date de référence)",
+  };
+}
+
+function renderFlowChip(r) {
+  if (!r.holders13f || r.holders13f.length === 0) return "";
+  const result = computeFlowScore(r.holders13f, r.universe, r.market);
+
+  // Cas non-US : on affiche un chip discret pour clarte
+  if (result.status === "PARTIAL_DATA_NON_US") {
+    return `<div style="display:inline-flex;align-items:center;gap:6px;background:#21262d;border:1px solid #30363d;border-radius:6px;padding:3px 10px;font-size:10px;color:#8b949e;cursor:help" title="${result.note}">🌊 <strong>Flow: N/A</strong> <span style="opacity:0.7">non-US</span></div>`;
+  }
+  // Pas de signal calculable
+  if (result.score === null) return "";
+
+  const s = result.score;
+  let color, bg, border, label;
+  if (result.signal === "ROTATION_MAINS_FORTES") { color = "#2ed573"; bg = "#2ed57315"; border = "#2ed57344"; label = "MAINS FORTES"; }
+  else if (result.signal === "ACCUMULATION_LARGE") { color = "#2ed573"; bg = "#2ed57315"; border = "#2ed57344"; label = "ACCUMULATION"; }
+  else if (result.signal === "DISTRIBUTION") { color = "#ff4757"; bg = "#ff475715"; border = "#ff475744"; label = "DISTRIBUTION"; }
+  else if (s >= 70) { color = "#2ed573"; bg = "#2ed57315"; border = "#2ed57344"; label = "FAVORABLE"; }
+  else if (s >= 45) { color = "#eccc68"; bg = "#eccc6815"; border = "#eccc6844"; label = "NEUTRE"; }
+  else { color = "#ff4757"; bg = "#ff475715"; border = "#ff475744"; label = "DEFAVORABLE"; }
+
+  const b = result.breakdown || {};
+  const tooltip = `Flow Score ${s}/100 (${label})
+• Fonds actifs : ${b.activeFunds} (passifs ${b.passiveFunds} exclus du signal)
+• Buyers : ${b.buyers} (NEW ${b.newPos}, INCREASED ${b.added})
+• Sellers : ${b.sellers} (DECREASED ${b.reduced}, EXITED ${b.soldOut})
+• Buyer/seller ratio : ${b.buyerSellerRatio}
+• Breadth delta : ${b.breadthDeltaPct}%
+${result.asOfNote}`;
+
+  return `<div style="display:inline-flex;align-items:center;gap:6px;background:${bg};border:1px solid ${border};border-radius:6px;padding:3px 10px;font-size:10px;color:${color};cursor:help" title="${tooltip.replace(/"/g, '&quot;')}">🌊 <strong>Flow: ${s}</strong> <span style="opacity:0.7">${label}</span></div>`;
+}
+
+// ============================================================
 // PHASE D — TRACKING POSITIONS PERSO (proto-backtest)
 // Stocke en localStorage les tickers marques avec etoile + entry price
 // Permet de mesurer la perf forward des signaux marques
@@ -1717,6 +1872,7 @@ function renderCard(r) {
       ${r.shortInterestReal ? `<div style="display:inline-flex;align-items:center;gap:6px;background:#ff475715;border:1px solid #ff475733;border-radius:6px;padding:3px 10px;font-size:10px;color:#ff4757">📉 <strong>VAD: ${r.shortInterestReal}</strong>${r.daysTocover ? ' · DTC: ' + r.daysTocover : ''} <span style="color:#484f58">· Ortex ✓</span></div>` : r.shortInterest ? `<div style="display:inline-flex;align-items:center;gap:6px;background:#ff475710;border:1px solid #ff475722;border-radius:6px;padding:3px 10px;font-size:10px;color:#ff6b3d">📉 <strong>VAD est.: ${r.shortInterest}</strong> <span style="color:#484f58">· Estimé</span></div>` : ""}
       ${r.gammaScore ? `<div style="display:inline-flex;align-items:center;gap:6px;background:#a855f715;border:1px solid #a855f733;border-radius:6px;padding:3px 10px;font-size:10px;color:#a855f7">⚡ <strong>Gamma: ${r.gammaScore}</strong>${r.putCallRatio !== null && r.putCallRatio !== undefined ? ' · P/C: ' + parseFloat(r.putCallRatio).toFixed(2) : ''} <span style="color:#484f58">· Ortex ✓</span></div>` : ""}
       ${renderFloorChip(r)}
+      ${renderFlowChip(r)}
       ${(r.criteria?.catalysts || r.criteria?.biotech) && r.catalystDate ? (function() {
         const m = computeCatalystFreshness(r.catalystDate, r.catalystType);
         const d = new Date(r.catalystDate);
