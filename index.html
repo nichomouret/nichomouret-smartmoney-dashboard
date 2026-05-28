@@ -1779,6 +1779,186 @@ function renderTrackBanner(r, tp) {
   </div>`;
 }
 
+// ============================================================
+// Panel "Top Holders 13F" : header de synthese + tableau detaille
+// - Synthese : totaux agreges, breakdown NEW/INCREASED/DECREASED/EXITED, % cap
+// - Table : position GLOBALE actuelle + DELTA trimestre clairement separes
+// - Calcul delta shares estime via change_pct quand disponible
+// ============================================================
+function fmtUsdShort(v) {
+  if (!v || v === 0) return "0$";
+  if (v >= 1e9) return (v / 1e9).toFixed(1) + "B$";
+  if (v >= 1e6) return (v / 1e6).toFixed(1) + "M$";
+  return (v / 1e3).toFixed(0) + "K$";
+}
+function fmtSharesShort(v) {
+  if (!v || v === 0) return "0";
+  if (v >= 1e9) return (v / 1e9).toFixed(2) + "B";
+  if (v >= 1e6) return (v / 1e6).toFixed(2) + "M";
+  if (v >= 1e3) return (v / 1e3).toFixed(0) + "K";
+  return String(v);
+}
+function fmtSharesSigned(v) {
+  const sign = v > 0 ? "+" : (v < 0 ? "" : "");
+  return sign + fmtSharesShort(Math.abs(v)) * (v < 0 ? -1 : 1);
+}
+
+function renderHolders13fPanel(r) {
+  const holders = r.holders13f || [];
+  if (holders.length === 0) return "";
+
+  // === SYNTHESE AGREGEE ===
+  const totalValueUsd = holders.reduce((s, h) => s + (Number(h.valueUsd) || 0), 0);
+  const totalShares = holders.reduce((s, h) => s + (Number(h.shares) || 0), 0);
+  const cntByChange = { NEW: 0, INCREASED: 0, DECREASED: 0, EXITED: 0, UNCHANGED: 0 };
+  let deltaSharesEstimate = 0; // delta agrege estime
+  let newValueUsd = 0;
+  for (const h of holders) {
+    const c = h.change || "UNCHANGED";
+    if (cntByChange[c] === undefined) cntByChange[c] = 0;
+    cntByChange[c]++;
+    const shares = Number(h.shares) || 0;
+    const pct = Number(h.changePct) || null;
+    if (c === "NEW") {
+      deltaSharesEstimate += shares;
+      newValueUsd += Number(h.valueUsd) || 0;
+    } else if (c === "INCREASED" && pct && pct > 0) {
+      // prev_shares = shares / (1 + pct/100)
+      const prev = shares / (1 + pct / 100);
+      deltaSharesEstimate += (shares - prev);
+    } else if (c === "DECREASED" && pct && pct < 0) {
+      const prev = shares / (1 + pct / 100);
+      deltaSharesEstimate += (shares - prev);
+    } else if (c === "EXITED") {
+      // Pas de prev_shares dans la reponse actuelle, on peut juste flag
+      // (on note la sortie dans le count, pas dans le delta agrege)
+    }
+  }
+
+  // Estimation % cap si marketCap disponible
+  let pctCapStr = "";
+  if (r.marketCap && r.marketCap > 0 && totalValueUsd > 0) {
+    const pctCap = (totalValueUsd / r.marketCap) * 100;
+    pctCapStr = `${pctCap.toFixed(1)}% du capital`;
+  }
+
+  // Period le plus récent observé
+  const periods = holders.map(h => h.period).filter(Boolean).sort();
+  const latestPeriod = periods.length > 0 ? periods[periods.length - 1] : null;
+  const periodLabel = latestPeriod
+    ? new Date(latestPeriod).toISOString().split("T")[0].replace(/(\d{4})-(\d{2})-\d{2}/, (_, y, m) => "Q" + Math.ceil(parseInt(m, 10) / 3) + " " + y)
+    : "—";
+
+  // === HEADER DE SYNTHESE ===
+  const deltaColor = deltaSharesEstimate > 0 ? "#2ed573" : deltaSharesEstimate < 0 ? "#ff4757" : "#8b949e";
+  const deltaSign = deltaSharesEstimate > 0 ? "+" : deltaSharesEstimate < 0 ? "−" : "";
+  const deltaSharesStr = deltaSharesEstimate !== 0
+    ? `${deltaSign}${fmtSharesShort(Math.abs(deltaSharesEstimate))} actions`
+    : "≈ stable";
+
+  const synthesisHtml = `<div style="background:#0d1117;border:1px solid #a855f733;border-radius:8px;padding:10px 12px;margin-bottom:10px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <span style="color:#a855f7;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase">📊 Synthèse ${periodLabel} (${holders.length} fonds)</span>
+      <span style="color:#484f58;font-size:9px">Position globale agrégée ⬩ Δ trimestre</span>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;font-family:monospace;font-size:11px">
+      <div style="background:#21262d;border-radius:6px;padding:7px 10px">
+        <div style="color:#484f58;font-size:9px;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:2px">Position globale</div>
+        <div style="color:#58a6ff;font-weight:700;font-size:13px">${fmtUsdShort(totalValueUsd)}</div>
+        <div style="color:#8b949e;font-size:10px">${fmtSharesShort(totalShares)} actions${pctCapStr ? ' · ' + pctCapStr : ''}</div>
+      </div>
+      <div style="background:#21262d;border-radius:6px;padding:7px 10px">
+        <div style="color:#484f58;font-size:9px;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:2px">Δ trimestre (estimé)</div>
+        <div style="color:${deltaColor};font-weight:700;font-size:13px">${deltaSharesStr}</div>
+        <div style="color:#8b949e;font-size:10px">${cntByChange.NEW > 0 ? `🆕 ${cntByChange.NEW} NEW (${fmtUsdShort(newValueUsd)})` : 'Aucune entrée'}</div>
+      </div>
+      <div style="background:#21262d;border-radius:6px;padding:7px 10px">
+        <div style="color:#484f58;font-size:9px;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:2px">Activité du Q</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:10px">
+          ${cntByChange.NEW > 0 ? `<span style="color:#2ed573;font-weight:700">🆕${cntByChange.NEW}</span>` : ''}
+          ${cntByChange.INCREASED > 0 ? `<span style="color:#2ed573;font-weight:700">▲${cntByChange.INCREASED}</span>` : ''}
+          ${cntByChange.DECREASED > 0 ? `<span style="color:#ff4757;font-weight:700">▼${cntByChange.DECREASED}</span>` : ''}
+          ${cntByChange.EXITED > 0 ? `<span style="color:#ff4757;font-weight:700">×${cntByChange.EXITED}</span>` : ''}
+          ${cntByChange.UNCHANGED > 0 ? `<span style="color:#8b949e">═${cntByChange.UNCHANGED}</span>` : ''}
+        </div>
+        <div style="color:#484f58;font-size:9px;margin-top:2px">NEW · ▲increase · ▼decrease · ×exit · ═stable</div>
+      </div>
+    </div>
+  </div>`;
+
+  // === TABLE DETAILLEE (position globale + delta par fonds) ===
+  const rowsHtml = holders.slice(0, 20).map(h => {
+    const tierColors = {
+      passive_giant: ["#58a6ff","#58a6ff22"],
+      active_giant: ["#2ed573","#2ed57322"],
+      bank: ["#ffa502","#ffa50222"],
+      hedge: ["#ff4757","#ff475722"],
+      activist: ["#ff6b3d","#ff6b3d22"],
+      quant: ["#a29bfe","#a29bfe22"],
+      sovereign: ["#eccc68","#eccc6822"],
+      thematic: ["#a855f7","#a855f722"],
+    };
+    const [tierColor, tierBg] = tierColors[h.tier] || ["#8b949e","#21262d"];
+    const valueFmt = fmtUsdShort(Number(h.valueUsd) || 0);
+    const sharesFmt = fmtSharesShort(Number(h.shares) || 0);
+
+    // Calcul delta shares pour cette ligne specifique
+    const shares = Number(h.shares) || 0;
+    const pct = Number(h.changePct) || null;
+    let deltaShares = null;
+    if (h.change === "NEW") deltaShares = shares;
+    else if (h.change === "INCREASED" && pct && pct > 0) deltaShares = shares - (shares / (1 + pct / 100));
+    else if (h.change === "DECREASED" && pct && pct < 0) deltaShares = shares - (shares / (1 + pct / 100));
+    else if (h.change === "UNCHANGED") deltaShares = 0;
+
+    // % cap individuel (si marketCap dispo)
+    let pctCapInd = null;
+    if (r.marketCap && r.marketCap > 0 && Number(h.valueUsd) > 0) {
+      pctCapInd = (Number(h.valueUsd) / r.marketCap) * 100;
+    }
+
+    let changeBadge = "—";
+    let changeColor = "#484f58";
+    let changeBg = "#21262d";
+    if (h.change === "NEW") { changeBadge = "🆕 NEW"; changeColor = "#2ed573"; changeBg = "#2ed57322"; }
+    else if (h.change === "INCREASED") { changeBadge = "▲ +" + (pct ? pct.toFixed(0) : "?") + "%"; changeColor = "#2ed573"; changeBg = "#2ed57322"; }
+    else if (h.change === "DECREASED") { changeBadge = "▼ " + (pct ? pct.toFixed(0) : "?") + "%"; changeColor = "#ff4757"; changeBg = "#ff475722"; }
+    else if (h.change === "EXITED") { changeBadge = "× EXIT"; changeColor = "#ff4757"; changeBg = "#ff475722"; }
+    else if (h.change === "UNCHANGED") { changeBadge = "═ stable"; changeColor = "#8b949e"; changeBg = "#21262d"; }
+
+    const deltaSharesFmt = (deltaShares !== null && deltaShares !== 0)
+      ? (deltaShares > 0 ? "+" : "−") + fmtSharesShort(Math.abs(deltaShares))
+      : (h.change === "UNCHANGED" ? "0" : (h.change === "EXITED" ? "−all" : "?"));
+    const deltaSharesColor = deltaShares > 0 ? "#2ed573" : deltaShares < 0 ? "#ff4757" : "#8b949e";
+
+    return `<tr style="background:#21262d;border-bottom:1px solid #161b22">
+      <td style="padding:6px 8px;color:#e6edf3;font-weight:700;font-size:11px">${h.fund}</td>
+      <td style="padding:6px 8px;text-align:center"><span style="background:${tierBg};color:${tierColor};padding:2px 6px;border-radius:4px;font-size:9px;font-weight:700">${(h.tier || "—").replace(/_/g, " ")}</span></td>
+      <td style="padding:6px 8px;text-align:center;color:#58a6ff;font-weight:700">${valueFmt}<div style="color:#8b949e;font-size:9px;font-weight:400">${sharesFmt} act.${pctCapInd ? '<br>' + pctCapInd.toFixed(2) + '% cap' : ''}</div></td>
+      <td style="padding:6px 8px;text-align:center"><span style="background:${changeBg};color:${changeColor};padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700">${changeBadge}</span><div style="color:${deltaSharesColor};font-size:9px;font-weight:700;margin-top:2px">${deltaSharesFmt}</div></td>
+      <td style="padding:6px 8px;text-align:right;color:#8b949e;font-size:10px">${h.period ? new Date(h.period).toISOString().split("T")[0].replace(/(\d{4})-(\d{2})-\d{2}/, (_, y, m) => "Q" + Math.ceil(parseInt(m, 10) / 3) + " " + y) : "—"}</td>
+    </tr>`;
+  }).join("");
+
+  return `<div style="margin-bottom:12px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+      <div class="section-label" style="color:#a855f7;margin-bottom:0">🏛️ Top Holders 13F · positions globales + Δ trimestre</div>
+      <span style="background:#a855f722;border:1px solid #a855f755;color:#a855f7;font-size:8px;padding:2px 8px;border-radius:4px;font-weight:700;letter-spacing:1px">✓ SEC 13F-HR</span>
+    </div>
+    ${synthesisHtml}
+    <table style="width:100%;border-collapse:collapse;font-size:11px;font-family:monospace">
+      <tr style="color:#484f58;font-size:9px;text-transform:uppercase;letter-spacing:1px">
+        <td style="padding:4px 8px">Fonds</td>
+        <td style="padding:4px 8px;text-align:center">Catégorie</td>
+        <td style="padding:4px 8px;text-align:center">Position globale</td>
+        <td style="padding:4px 8px;text-align:center">Δ trimestre</td>
+        <td style="padding:4px 8px;text-align:right">Période</td>
+      </tr>
+      ${rowsHtml}
+    </table>
+  </div>`;
+}
+
 function renderCard(r) {
   // ANTI-HALLUCINATION : carte d'erreur dediee si le ticker n'a renvoye aucune source
   if (r.isErrorCard) {
@@ -1904,57 +2084,7 @@ function renderCard(r) {
     <div id="buzz-${r.ticker}" style="display:none;margin-top:8px"></div>
     <div id="expanded-${r.ticker}" style="display:none" class="card-expanded">
       ${(r.news||[]).length > 0 ? `<div style="margin-bottom:12px"><div class="section-label" style="color:#58a6ff;margin-bottom:8px">📰 Actualités <span style="color:#484f58">(NewsAPI)</span></div>${(r.news||[]).map(n => `<div class="news-item"><div class="news-title-row"><span class="news-title">${n.title}</span><span class="news-date">${n.date}</span></div><div class="news-content">${n.content}</div><div class="news-source">${n.source}</div></div>`).join("")}</div>` : ""}
-      ${(r.holders13f||[]).length > 0 ? `<div style="margin-bottom:12px">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-          <div class="section-label" style="color:#a855f7;margin-bottom:0">🏛️ Top Holders 13F · qui détient ce titre</div>
-          <span style="background:#a855f722;border:1px solid #a855f755;color:#a855f7;font-size:8px;padding:2px 8px;border-radius:4px;font-weight:700;letter-spacing:1px">✓ SEC 13F-HR</span>
-        </div>
-        <table style="width:100%;border-collapse:collapse;font-size:11px;font-family:monospace">
-          <tr style="color:#484f58;font-size:9px;text-transform:uppercase;letter-spacing:1px">
-            <td style="padding:4px 8px">Fonds (Tier 1)</td>
-            <td style="padding:4px 8px;text-align:center">Catégorie</td>
-            <td style="padding:4px 8px;text-align:center">Valeur</td>
-            <td style="padding:4px 8px;text-align:center">Actions</td>
-            <td style="padding:4px 8px;text-align:center">Variation Q</td>
-            <td style="padding:4px 8px;text-align:right">Période</td>
-          </tr>
-          ${(r.holders13f||[]).slice(0, 20).map(h => {
-            const tierColors = {
-              passive_giant: ["#58a6ff","#58a6ff22"],
-              active_giant: ["#2ed573","#2ed57322"],
-              bank: ["#ffa502","#ffa50222"],
-              hedge: ["#ff4757","#ff475722"],
-              activist: ["#ff6b3d","#ff6b3d22"],
-              quant: ["#a29bfe","#a29bfe22"],
-              sovereign: ["#eccc68","#eccc6822"],
-              thematic: ["#a855f7","#a855f722"],
-            };
-            const [tierColor, tierBg] = tierColors[h.tier] || ["#8b949e","#21262d"];
-            const valueFmt = h.valueUsd >= 1e9
-              ? (h.valueUsd / 1e9).toFixed(1) + "B$"
-              : h.valueUsd >= 1e6
-                ? (h.valueUsd / 1e6).toFixed(1) + "M$"
-                : (h.valueUsd / 1e3).toFixed(0) + "K$";
-            const sharesFmt = h.shares >= 1e6 ? (h.shares / 1e6).toFixed(2) + "M" : h.shares >= 1e3 ? (h.shares / 1e3).toFixed(0) + "K" : h.shares;
-            let changeFmt = "—";
-            let changeColor = "#484f58";
-            if (h.change === "NEW") { changeFmt = "🆕 NEW"; changeColor = "#2ed573"; }
-            else if (h.change === "INCREASED") { changeFmt = "▲ +" + (h.changePct ? h.changePct.toFixed(0) : "?") + "%"; changeColor = "#2ed573"; }
-            else if (h.change === "DECREASED") { changeFmt = "▼ " + (h.changePct ? h.changePct.toFixed(0) : "?") + "%"; changeColor = "#ff4757"; }
-            else if (h.change === "EXITED") { changeFmt = "× EXIT"; changeColor = "#ff4757"; }
-            else if (h.change === "UNCHANGED") { changeFmt = "═ stable"; changeColor = "#8b949e"; }
-            const periodFmt = h.period ? new Date(h.period).toISOString().split("T")[0].replace(/(\d{4})-(\d{2})-\d{2}/, (_, y, m) => "Q" + Math.ceil(parseInt(m, 10) / 3) + " " + y) : "—";
-            return `<tr style="background:#21262d;border-bottom:1px solid #161b22">
-              <td style="padding:6px 8px;color:#e6edf3;font-weight:700">${h.fund}</td>
-              <td style="padding:6px 8px;text-align:center"><span style="background:${tierBg};color:${tierColor};padding:2px 6px;border-radius:4px;font-size:9px;font-weight:700">${(h.tier || "—").replace(/_/g, " ")}</span></td>
-              <td style="padding:6px 8px;text-align:center;color:#58a6ff;font-weight:700">${valueFmt}</td>
-              <td style="padding:6px 8px;text-align:center;color:#8b949e">${sharesFmt}</td>
-              <td style="padding:6px 8px;text-align:center;color:${changeColor};font-weight:700">${changeFmt}</td>
-              <td style="padding:6px 8px;text-align:right;color:#8b949e">${periodFmt}</td>
-            </tr>`;
-          }).join("")}
-        </table>
-      </div>` : ""}
+      ${(r.holders13f||[]).length > 0 ? renderHolders13fPanel(r) : ""}
       ${(r.institutionalMoves||[]).length > 0 ? `<div style="margin-bottom:12px">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
           <div class="section-label" style="color:#3742fa;margin-bottom:0">🔔 Franchissements de seuil récents (BDIF + ESMA)</div>
