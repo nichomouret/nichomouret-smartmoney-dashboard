@@ -231,10 +231,6 @@
       <span>💎</span>
       <span>Perles cachees</span>
     </button>
-    <button id="open-consensus" style="background:linear-gradient(135deg,#dc2626 0%,#991b1b 100%);color:white;border:none;padding:8px 16px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;box-shadow:0 2px 8px rgba(220,38,38,0.3);display:flex;align-items:center;gap:6px">
-      <span>🔥</span>
-      <span>Consensus large</span>
-    </button>
     <button id="open-fund-explorer" style="background:linear-gradient(135deg,#6b46c1 0%,#4c1d95 100%);color:white;border:none;padding:8px 16px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;box-shadow:0 2px 8px rgba(108,70,193,0.25);display:flex;align-items:center;gap:6px">
       <span>📋</span>
       <span>Explorer tous les fonds 13F</span>
@@ -3605,9 +3601,7 @@ async function openConsensusModal(state) {
   }
 }
 window.openConsensusModal = openConsensusModal;
-// Bouton "Consensus large" : tous fonds confondus, pas de cap coverage, ETFs filtres par defaut
-const consensusBtn = document.getElementById("open-consensus");
-if (consensusBtn) consensusBtn.addEventListener("click", () => openConsensusModal({ minFunds: 5, maxCoverage: 999, excludePassive: 0, excludeEtf: 1 }));
+// (Bouton "Consensus large" retire de l'UI - fonction openConsensusModal toujours utilisee par "Perles cachees")
 // Bouton "Perles cachees" : smart funds actifs uniquement, max 15 coverage, ETFs exclus
 const perlesBtn = document.getElementById("open-perles");
 if (perlesBtn) perlesBtn.addEventListener("click", () => openConsensusModal({ minFunds: 3, maxCoverage: 15, excludePassive: 1, excludeEtf: 1 }));
