@@ -697,8 +697,10 @@ function calculateSCCT(result) {
   // Equivalent threshold pour US stocks : SEC 13F NEW/INCREASED de Tier 1 fund
   // = signal aussi fort qu'un filing AMF/BDIF verifie. Compense le manque de
   // verified moves pour les actions US ou la donnee 13G est rare ou ancienne.
+  // EXCLUSION : passive_giant (BlackRock/Vanguard/SS = passifs, suivent l'indice)
+  // EXCLUSION : UNKNOWN (gap d'ingest, vrai delta inconnu)
   const tier1HoldersAction = (result.holders13f || []).filter(h =>
-    (h.change === 'NEW' || h.change === 'INCREASED')
+    (h.change === 'NEW' || h.change === 'INCREASED') && h.tier !== 'passive_giant'
   );
   const hasRealThresholdEquivalent = hasRealThreshold || tier1HoldersAction.length >= 1;
   if (hasRealThresholdEquivalent) score += 20;
@@ -732,7 +734,9 @@ function calculateSCCT(result) {
   const activistHolders = holders.filter(h => activists.some(f => (h.fund||"").toUpperCase().includes(f.toUpperCase())));
   // 13F NEW/INCREASED de Tier 1 = signal de mouvement smart money equivalent
   // aux tier1Moves verified pour les actions US (parite EU/US)
-  const tier1NewMoves = tier1Holders.filter(h => h.change === 'NEW' || h.change === 'INCREASED');
+  // EXCLUSION passive_giant : Vanguard/BlackRock/State Street sont passifs,
+  // leur "NEW" est probable artefact d'ingest (cf computeDiff -> UNKNOWN)
+  const tier1NewMoves = tier1Holders.filter(h => (h.change === 'NEW' || h.change === 'INCREASED') && h.tier !== 'passive_giant');
   const activistNewMoves = activistHolders.filter(h => h.change === 'NEW' || h.change === 'INCREASED');
 
   if (tier1Moves.length >= 2) score += 25;
@@ -1806,7 +1810,7 @@ function renderHolders13fPanel(r) {
   // === SYNTHESE AGREGEE ===
   const totalValueUsd = holders.reduce((s, h) => s + (Number(h.valueUsd) || 0), 0);
   const totalShares = holders.reduce((s, h) => s + (Number(h.shares) || 0), 0);
-  const cntByChange = { NEW: 0, INCREASED: 0, DECREASED: 0, EXITED: 0, UNCHANGED: 0 };
+  const cntByChange = { NEW: 0, INCREASED: 0, DECREASED: 0, EXITED: 0, UNCHANGED: 0, UNKNOWN: 0 };
   let deltaSharesEstimate = 0; // delta agrege estime
   let newValueUsd = 0;
   for (const h of holders) {
@@ -1876,8 +1880,9 @@ function renderHolders13fPanel(r) {
           ${cntByChange.DECREASED > 0 ? `<span style="color:#ff4757;font-weight:700">▼${cntByChange.DECREASED}</span>` : ''}
           ${cntByChange.EXITED > 0 ? `<span style="color:#ff4757;font-weight:700">×${cntByChange.EXITED}</span>` : ''}
           ${cntByChange.UNCHANGED > 0 ? `<span style="color:#8b949e">═${cntByChange.UNCHANGED}</span>` : ''}
+          ${cntByChange.UNKNOWN > 0 ? `<span style="color:#ffa502;font-weight:700" title="Position détenue mais filing précédent manquant — vrai delta inconnu">?${cntByChange.UNKNOWN}</span>` : ''}
         </div>
-        <div style="color:#484f58;font-size:9px;margin-top:2px">NEW · ▲increase · ▼decrease · ×exit · ═stable</div>
+        <div style="color:#484f58;font-size:9px;margin-top:2px">NEW · ▲inc · ▼dec · ×exit · ═stable${cntByChange.UNKNOWN > 0 ? ' · ?gap ingest' : ''}</div>
       </div>
     </div>
   </div>`;
@@ -1921,6 +1926,7 @@ function renderHolders13fPanel(r) {
     else if (h.change === "DECREASED") { changeBadge = "▼ " + (pct ? pct.toFixed(0) : "?") + "%"; changeColor = "#ff4757"; changeBg = "#ff475722"; }
     else if (h.change === "EXITED") { changeBadge = "× EXIT"; changeColor = "#ff4757"; changeBg = "#ff475722"; }
     else if (h.change === "UNCHANGED") { changeBadge = "═ stable"; changeColor = "#8b949e"; changeBg = "#21262d"; }
+    else if (h.change === "UNKNOWN") { changeBadge = "? holder"; changeColor = "#ffa502"; changeBg = "#ffa50222"; }
 
     const deltaSharesFmt = (deltaShares !== null && deltaShares !== 0)
       ? (deltaShares > 0 ? "+" : "−") + fmtSharesShort(Math.abs(deltaShares))
