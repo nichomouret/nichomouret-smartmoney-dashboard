@@ -3041,6 +3041,7 @@ async function openFundExplorer(forceMode) {
           <option value="">Tous les tiers</option>
           ${tierFilterHtml}
         </select>
+        <button onclick="reingestPassiveFunds()" title="Re-ingest les fonds passifs giants (BlackRock, Vanguard, etc.) pour corriger les faux NEW. Nécessite ADMIN_KEY." style="background:#ffa50222;border:1px solid #ffa50266;color:#ffa502;padding:7px 12px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">🔄 Re-ingest passifs</button>
         <span id="fund-count-label" style="color:#8b949e;font-size:11px;font-family:monospace">${funds.length} affichés</span>
       </div>
       <div id="fund-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px;max-height:65vh;overflow-y:auto;padding-right:8px">
@@ -3070,6 +3071,132 @@ async function openFundExplorer(forceMode) {
 window.openFundExplorer = openFundExplorer;
 const fundExplorerBtn = document.getElementById("open-fund-explorer");
 if (fundExplorerBtn) fundExplorerBtn.addEventListener("click", () => { fundExplorerState.mode='browse'; openFundExplorer(); });
+
+// ============================================================
+// REINGEST PASSIFS — Bouton dans Explorer pour declencher
+// le re-ingest des CIKs passive_giant apres deploiement du fix
+// anti-faux-NEW. Marche depuis telephone (juste un clic).
+//
+// La cle admin est demandee une fois et stockee en sessionStorage
+// (pas localStorage : on prefere qu'elle disparaisse a la fermeture
+// de l'onglet, plus sur sur device partage).
+// ============================================================
+const PASSIVE_FUNDS_TO_REINGEST = [
+  { cik: "2012383", name: "BlackRock, Inc. (consolidator)" },
+  { cik: "1086364", name: "BlackRock Advisors LLC" },
+  { cik: "1006249", name: "BlackRock Fund Advisors" },
+  { cik: "913414",  name: "BlackRock Institutional Trust" },
+  { cik: "1305227", name: "BlackRock Investment Management" },
+  { cik: "102909",  name: "Vanguard Group Inc." },
+  { cik: "93751",   name: "State Street Corp." },
+  { cik: "1031296", name: "Geode Capital Management" },
+  { cik: "884546",  name: "Northern Trust Corp." },
+];
+
+function getAdminKey() {
+  let key = sessionStorage.getItem("smart_money_admin_key") || "";
+  if (!key) {
+    key = prompt("Clé admin Railway (ADMIN_KEY) :\n\n(Visible dans Railway → Variables → ADMIN_KEY. Sera oubliée à la fermeture de l'onglet.)");
+    if (!key) return null;
+    sessionStorage.setItem("smart_money_admin_key", key);
+  }
+  return key;
+}
+
+async function reingestPassiveFunds() {
+  const key = getAdminKey();
+  if (!key) return;
+
+  // Ecran de progress dans la modale
+  const fundsList = PASSIVE_FUNDS_TO_REINGEST;
+  const rowsHtml = fundsList.map((f, idx) => `
+    <div id="reingest-row-${idx}" style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:#0d1117;border:1px solid #30363d;border-radius:6px;margin-bottom:4px;font-family:monospace;font-size:11px">
+      <div style="flex:1">
+        <div style="color:#e6edf3;font-weight:700">${f.name}</div>
+        <div style="color:#8b949e;font-size:10px">CIK ${f.cik}</div>
+      </div>
+      <div id="reingest-status-${idx}" style="color:#484f58;font-size:11px;font-weight:700">⏳ en attente</div>
+    </div>`).join("");
+
+  document.getElementById("modal-content").innerHTML = `
+    <div class="modal-header">
+      <div>
+        <div class="modal-title">🔄 Re-ingest passifs (admin)</div>
+        <div class="modal-sub">${fundsList.length} fonds à traiter · ~1-2 min par fonds · ne ferme pas la page</div>
+      </div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div id="reingest-progress-summary" style="background:#0d1117;border:1px solid #ffa50244;border-radius:8px;padding:10px 12px;margin-bottom:12px;font-family:monospace;font-size:11px;color:#ffa502">
+      ⏳ En cours... <span id="reingest-counter">0/${fundsList.length}</span>
+    </div>
+    <div style="max-height:55vh;overflow-y:auto;padding-right:8px">
+      ${rowsHtml}
+    </div>
+    <div style="margin-top:12px;padding:10px;background:#0d1117;border-radius:6px;border:1px solid #30363d;font-size:10px;color:#8b949e;line-height:1.5">
+      💡 Le re-ingest applique la nouvelle logique anti-faux-NEW. Les positions des passifs >1Md\$ sans filing précédent en DB seront re-taggées <strong style="color:#ffa502">UNKNOWN</strong> au lieu de <strong style="color:#2ed573">NEW</strong>.
+    </div>
+  `;
+
+  let okCount = 0;
+  let failCount = 0;
+  for (let i = 0; i < fundsList.length; i++) {
+    const f = fundsList[i];
+    const statusEl = document.getElementById(`reingest-status-${i}`);
+    if (statusEl) statusEl.innerHTML = `<span style="color:#a29bfe">🔄 en cours...</span>`;
+
+    try {
+      const r = await fetch(`${PROXY}/admin/ingest-fund?cik=${f.cik}&key=${encodeURIComponent(key)}`, {
+        method: "POST",
+      });
+      if (!r.ok) {
+        const errText = await r.text().catch(() => `HTTP ${r.status}`);
+        if (statusEl) statusEl.innerHTML = `<span style="color:#ff4757" title="${errText.slice(0,200).replace(/"/g,'&quot;')}">❌ HTTP ${r.status}</span>`;
+        failCount++;
+        // Si 401/403 = clé invalide, on stoppe pour ne pas spammer
+        if (r.status === 401 || r.status === 403) {
+          sessionStorage.removeItem("smart_money_admin_key");
+          alert("Clé admin invalide. Re-cliquer sur 'Re-ingest passifs' pour réessayer.");
+          break;
+        }
+      } else {
+        const data = await r.json().catch(() => ({}));
+        const inserted = data.inserted ?? data.summary?.inserted ?? "?";
+        const unknown = data.summary?.unknown ?? data.unknown ?? 0;
+        if (statusEl) {
+          statusEl.innerHTML = unknown > 0
+            ? `<span style="color:#2ed573">✅ ${inserted} filings · <span style="color:#ffa502">${unknown} UNKNOWN</span></span>`
+            : `<span style="color:#2ed573">✅ ${inserted} filings</span>`;
+        }
+        okCount++;
+      }
+    } catch (e) {
+      if (statusEl) statusEl.innerHTML = `<span style="color:#ff4757" title="${(e.message||'').replace(/"/g,'&quot;')}">❌ ${e.message || 'erreur'}</span>`;
+      failCount++;
+    }
+
+    // Update counter
+    const counterEl = document.getElementById("reingest-counter");
+    if (counterEl) counterEl.textContent = `${i+1}/${fundsList.length}`;
+  }
+
+  // Resume final
+  const summaryEl = document.getElementById("reingest-progress-summary");
+  if (summaryEl) {
+    if (failCount === 0) {
+      summaryEl.style.borderColor = "#2ed57366";
+      summaryEl.style.color = "#2ed573";
+      summaryEl.innerHTML = `✅ Tous les passifs re-ingestés (${okCount}/${fundsList.length}). Reload le dashboard et re-scan ADBE pour vérifier le tag UNKNOWN.`;
+    } else {
+      summaryEl.style.borderColor = "#ff475766";
+      summaryEl.style.color = "#ff4757";
+      summaryEl.innerHTML = `⚠️ ${okCount} OK · ${failCount} erreurs. Réessayer les échecs en relançant le bouton (idempotent).`;
+    }
+  }
+
+  // Invalide le cache des fonds pour que la prochaine ouverture refetch
+  fundExplorerState.funds = [];
+}
+window.reingestPassiveFunds = reingestPassiveFunds;
 
 // ============================================================
 // FUND SCREENER — vue inverse : selectionne N fonds + filtres
