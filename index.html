@@ -3041,7 +3041,8 @@ async function openFundExplorer(forceMode) {
           <option value="">Tous les tiers</option>
           ${tierFilterHtml}
         </select>
-        <button onclick="reingestPassiveFunds()" title="Deep re-ingest auto : découvre tous les passive_giant en DB (Vanguard, BlackRock, subs cascade) et ré-ingère 6 trimestres. Reconstruit l'historique pour des données propres. Nécessite ADMIN_KEY." style="background:#ffa50222;border:1px solid #ffa50266;color:#ffa502;padding:7px 12px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">🔄 Deep re-ingest passifs</button>
+        <button onclick="reingestPassiveFunds()" title="Deep re-ingest auto : découvre tous les passive_giant en DB et ré-ingère 6 trimestres. Reconstruit l'historique. Nécessite ADMIN_KEY." style="background:#ffa50222;border:1px solid #ffa50266;color:#ffa502;padding:7px 12px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">🔄 Deep re-ingest</button>
+        <button onclick="recomputePositionChanges()" title="Recalcule position_change pour TOUS les filings via SQL chronologique. Transforme les ? holder en vrais INCREASED/DECREASED quand le filing T-1 existe en DB. À lancer APRÈS un Deep re-ingest. ~10-30 sec." style="background:#a29bfe22;border:1px solid #a29bfe66;color:#a29bfe;padding:7px 12px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">🧮 Recalculer deltas</button>
         <span id="fund-count-label" style="color:#8b949e;font-size:11px;font-family:monospace">${funds.length} affichés</span>
       </div>
       <div id="fund-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px;max-height:65vh;overflow-y:auto;padding-right:8px">
@@ -3249,6 +3250,88 @@ async function reingestPassiveFunds() {
   fundExplorerState.funds = [];
 }
 window.reingestPassiveFunds = reingestPassiveFunds;
+
+// ============================================================
+// RECALCULER DELTAS — endpoint SQL recompute
+// Apres un Deep Re-ingest, certains filings sont taggues UNKNOWN parce
+// qu'au moment du calcul, le filing T-1 n'etait pas encore en DB.
+// Cet endpoint recalcule position_change pour tous les filings en parcourant
+// chaque (fund_cik, cusip) en ordre chronologique via LAG window function.
+// => les ? holder qui ont un filing T-1 deviennent INCREASED/DECREASED.
+// ============================================================
+async function recomputePositionChanges() {
+  const key = getAdminKey();
+  if (!key) return;
+
+  document.getElementById("modal-content").innerHTML = `
+    <div class="modal-header">
+      <div>
+        <div class="modal-title">🧮 Recalculer deltas</div>
+        <div class="modal-sub">SQL massif sur sec_13f_positions · ~10-30 sec</div>
+      </div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div id="recompute-progress" style="background:#0d1117;border:1px solid #a29bfe44;border-radius:8px;padding:14px;text-align:center;color:#a29bfe;font-size:12px;margin-bottom:12px">
+      <div class="spinner" style="width:24px;height:24px;display:inline-block;margin-right:10px;vertical-align:middle"></div>
+      Recompute en cours... (la requête SQL parcourt 500k+ positions, patiente 10-30 sec)
+    </div>
+    <pre id="recompute-log" style="background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:10px;font-family:monospace;font-size:10px;color:#8b949e;max-height:55vh;overflow-y:auto;white-space:pre-wrap"></pre>
+    <div style="margin-top:12px;padding:10px;background:#0d1117;border-radius:6px;border:1px solid #30363d;font-size:10px;color:#8b949e;line-height:1.5">
+      💡 Recompute SQL : pour chaque (fonds, cusip), on parcourt les filings en ordre chronologique et on recalcule position_change. Les <strong style="color:#ffa502">? holder</strong> avec un filing T-1 deviennent <strong style="color:#2ed573">▲ INCREASED</strong> ou <strong style="color:#ff4757">▼ DECREASED</strong> avec le vrai delta.
+    </div>`;
+
+  try {
+    const r = await fetch(`${PROXY}/admin/recompute-position-changes?key=${encodeURIComponent(key)}`);
+    const text = await r.text();
+    const logEl = document.getElementById("recompute-log");
+    const progressEl = document.getElementById("recompute-progress");
+    if (logEl) logEl.textContent = text;
+
+    if (!r.ok || text.includes("forbidden") || text.includes("ERROR:")) {
+      if (progressEl) {
+        progressEl.style.borderColor = "#ff475766";
+        progressEl.style.color = "#ff4757";
+        progressEl.innerHTML = `❌ Erreur recompute. Voir log ci-dessous.`;
+      }
+      if (text.includes("forbidden")) {
+        sessionStorage.removeItem("smart_money_admin_key");
+        alert("Clé admin invalide. Re-cliquer pour réessayer.");
+      }
+      return;
+    }
+
+    // Parse les deltas dans le log pour resume
+    const deltaMatch = text.match(/DELTA:\s*({[^}]+})/);
+    let deltaSummary = "";
+    if (deltaMatch) {
+      try {
+        const d = JSON.parse(deltaMatch[1]);
+        const items = [];
+        if (d.unknown < 0) items.push(`<span style="color:#ffa502">${d.unknown} UNKNOWN</span> (résolus)`);
+        if (d.unknown > 0) items.push(`<span style="color:#ffa502">+${d.unknown} UNKNOWN</span>`);
+        if (d.increased > 0) items.push(`<span style="color:#2ed573">+${d.increased} INCREASED</span>`);
+        if (d.decreased > 0) items.push(`<span style="color:#ff4757">+${d.decreased} DECREASED</span>`);
+        if (d.unchanged > 0) items.push(`<span style="color:#8b949e">+${d.unchanged} UNCHANGED</span>`);
+        if (d.new !== 0) items.push(`<span style="color:#58a6ff">${d.new > 0 ? '+' : ''}${d.new} NEW</span>`);
+        deltaSummary = items.join(" · ");
+      } catch (e) {}
+    }
+
+    if (progressEl) {
+      progressEl.style.borderColor = "#2ed57366";
+      progressEl.style.color = "#2ed573";
+      progressEl.innerHTML = `✅ Recompute terminé. ${deltaSummary ? '<br><div style="margin-top:6px;font-size:11px">' + deltaSummary + '</div>' : ''}`;
+    }
+  } catch (e) {
+    const progressEl = document.getElementById("recompute-progress");
+    if (progressEl) {
+      progressEl.style.borderColor = "#ff475766";
+      progressEl.style.color = "#ff4757";
+      progressEl.innerHTML = `❌ ${e.message || 'erreur réseau'}`;
+    }
+  }
+}
+window.recomputePositionChanges = recomputePositionChanges;
 
 // ============================================================
 // FUND SCREENER — vue inverse : selectionne N fonds + filtres
