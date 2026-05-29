@@ -1921,9 +1921,13 @@ function renderHolders13fPanel(r) {
     let changeBadge = "—";
     let changeColor = "#484f58";
     let changeBg = "#21262d";
+    // Le change_pct est base sur VALUE_USD (peut etre negatif meme si shares ont augmente,
+    // quand le prix de l'action a baisse). On force le signe selon position_change pour
+    // eviter "▲+-29%". On utilise abs(pct) cote affichage.
+    const pctAbs = pct ? Math.abs(pct).toFixed(0) : "?";
     if (h.change === "NEW") { changeBadge = "🆕 NEW"; changeColor = "#2ed573"; changeBg = "#2ed57322"; }
-    else if (h.change === "INCREASED") { changeBadge = "▲ +" + (pct ? pct.toFixed(0) : "?") + "%"; changeColor = "#2ed573"; changeBg = "#2ed57322"; }
-    else if (h.change === "DECREASED") { changeBadge = "▼ " + (pct ? pct.toFixed(0) : "?") + "%"; changeColor = "#ff4757"; changeBg = "#ff475722"; }
+    else if (h.change === "INCREASED") { changeBadge = "▲ +" + pctAbs + "% val"; changeColor = "#2ed573"; changeBg = "#2ed57322"; }
+    else if (h.change === "DECREASED") { changeBadge = "▼ -" + pctAbs + "% val"; changeColor = "#ff4757"; changeBg = "#ff475722"; }
     else if (h.change === "EXITED") { changeBadge = "× EXIT"; changeColor = "#ff4757"; changeBg = "#ff475722"; }
     else if (h.change === "UNCHANGED") { changeBadge = "═ stable"; changeColor = "#8b949e"; changeBg = "#21262d"; }
     else if (h.change === "UNKNOWN") { changeBadge = "? holder"; changeColor = "#ffa502"; changeBg = "#ffa50222"; }
