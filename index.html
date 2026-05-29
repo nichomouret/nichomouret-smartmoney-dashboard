@@ -3041,7 +3041,7 @@ async function openFundExplorer(forceMode) {
           <option value="">Tous les tiers</option>
           ${tierFilterHtml}
         </select>
-        <button onclick="reingestPassiveFunds()" title="Re-ingest les fonds passifs giants (BlackRock, Vanguard, etc.) pour corriger les faux NEW. Nécessite ADMIN_KEY." style="background:#ffa50222;border:1px solid #ffa50266;color:#ffa502;padding:7px 12px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">🔄 Re-ingest passifs</button>
+        <button onclick="reingestPassiveFunds()" title="Deep re-ingest auto : découvre tous les passive_giant en DB (Vanguard, BlackRock, subs cascade) et ré-ingère 6 trimestres. Reconstruit l'historique pour des données propres. Nécessite ADMIN_KEY." style="background:#ffa50222;border:1px solid #ffa50266;color:#ffa502;padding:7px 12px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">🔄 Deep re-ingest passifs</button>
         <span id="fund-count-label" style="color:#8b949e;font-size:11px;font-family:monospace">${funds.length} affichés</span>
       </div>
       <div id="fund-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px;max-height:65vh;overflow-y:auto;padding-right:8px">
@@ -3107,22 +3107,67 @@ async function reingestPassiveFunds() {
   const key = getAdminKey();
   if (!key) return;
 
-  // Ecran de progress dans la modale
-  const fundsList = PASSIVE_FUNDS_TO_REINGEST;
+  // ÉTAPE 1 : auto-discovery de TOUS les passive_giant en DB
+  // (TIER1 + cascade-discovered Vanguard subs, BlackRock subs, etc.)
+  document.getElementById("modal-content").innerHTML = `
+    <div class="modal-header">
+      <div><div class="modal-title">🔄 Deep Re-ingest passifs</div><div class="modal-sub">Chargement liste des fonds passifs en DB...</div></div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div style="text-align:center;padding:30px;color:#a29bfe"><div class="spinner" style="width:24px;height:24px;display:inline-block"></div></div>`;
+
+  let fundsList;
+  try {
+    const r = await fetch(`${PROXY}/admin/list-passive-funds?key=${encodeURIComponent(key)}`);
+    if (!r.ok) {
+      if (r.status === 403) {
+        sessionStorage.removeItem("smart_money_admin_key");
+        alert("Clé admin invalide. Re-cliquer pour réessayer.");
+        return;
+      }
+      throw new Error(`HTTP ${r.status}`);
+    }
+    const data = await r.json();
+    fundsList = (data.funds || []).map(f => ({
+      cik: f.cik,
+      name: f.name,
+      tier: f.tier,
+      aum: f.aum,
+      latest: f.latest_period,
+    }));
+  } catch (e) {
+    document.getElementById("modal-content").innerHTML = `
+      <div class="modal-header">
+        <div class="modal-title">Erreur</div>
+        <button class="modal-close" onclick="closeModal()">✕</button>
+      </div>
+      <div style="color:#ff4757;padding:12px;background:#ff475715;border-radius:8px">Impossible de récupérer la liste des passifs : ${e.message}</div>`;
+    return;
+  }
+
+  if (fundsList.length === 0) {
+    document.getElementById("modal-content").innerHTML = `
+      <div class="modal-header"><div class="modal-title">Aucun passif en DB</div><button class="modal-close" onclick="closeModal()">✕</button></div>
+      <div style="padding:12px;color:#8b949e">La DB ne contient aucun fonds avec tier=passive_giant. Lance d'abord un ingest standard via le worker.</div>`;
+    return;
+  }
+  const QUARTERS = 6; // 6 trimestres = ~1.5 ans d'historique
+  const fmtAum = (v) => v >= 1e12 ? (v/1e12).toFixed(1)+"T$" : v >= 1e9 ? (v/1e9).toFixed(1)+"B$" : v >= 1e6 ? (v/1e6).toFixed(0)+"M$" : (v||0)+"$";
+
   const rowsHtml = fundsList.map((f, idx) => `
     <div id="reingest-row-${idx}" style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:#0d1117;border:1px solid #30363d;border-radius:6px;margin-bottom:4px;font-family:monospace;font-size:11px">
       <div style="flex:1">
         <div style="color:#e6edf3;font-weight:700">${f.name}</div>
-        <div style="color:#8b949e;font-size:10px">CIK ${f.cik}</div>
+        <div style="color:#8b949e;font-size:10px">CIK ${f.cik} · ${fmtAum(f.aum)}</div>
       </div>
-      <div id="reingest-status-${idx}" style="color:#484f58;font-size:11px;font-weight:700">⏳ en attente</div>
+      <div id="reingest-status-${idx}" style="color:#484f58;font-size:11px;font-weight:700;text-align:right;min-width:140px">⏳ en attente</div>
     </div>`).join("");
 
   document.getElementById("modal-content").innerHTML = `
     <div class="modal-header">
       <div>
-        <div class="modal-title">🔄 Re-ingest passifs (admin)</div>
-        <div class="modal-sub">${fundsList.length} fonds à traiter · ~1-2 min par fonds · ne ferme pas la page</div>
+        <div class="modal-title">🔄 Deep Re-ingest passifs (admin)</div>
+        <div class="modal-sub">${fundsList.length} fonds passifs en DB · ${QUARTERS} derniers trimestres · ~3-5 min par fonds · ne ferme pas la page</div>
       </div>
       <button class="modal-close" onclick="closeModal()">✕</button>
     </div>
@@ -3133,40 +3178,46 @@ async function reingestPassiveFunds() {
       ${rowsHtml}
     </div>
     <div style="margin-top:12px;padding:10px;background:#0d1117;border-radius:6px;border:1px solid #30363d;font-size:10px;color:#8b949e;line-height:1.5">
-      💡 Le re-ingest applique la nouvelle logique anti-faux-NEW. Les positions des passifs >1Md\$ sans filing précédent en DB seront re-taggées <strong style="color:#ffa502">UNKNOWN</strong> au lieu de <strong style="color:#2ed573">NEW</strong>.
+      💡 <strong style="color:#a29bfe">Deep mode</strong> : ingest les ${QUARTERS} derniers trimestres pour reconstruire l'historique complet.
+      Les positions passifs >1Md\$ sans filing T-1 deviennent <strong style="color:#ffa502">UNKNOWN</strong> au lieu de <strong style="color:#2ed573">NEW</strong>.
+      Une fois l'historique reconstruit, les nouveaux filings calculent correctement INCREASED/DECREASED.
     </div>
   `;
 
   let okCount = 0;
   let failCount = 0;
+  let totalInsertedFilings = 0;
+  let totalUnknownPositions = 0;
   for (let i = 0; i < fundsList.length; i++) {
     const f = fundsList[i];
     const statusEl = document.getElementById(`reingest-status-${i}`);
-    if (statusEl) statusEl.innerHTML = `<span style="color:#a29bfe">🔄 en cours...</span>`;
+    if (statusEl) statusEl.innerHTML = `<span style="color:#a29bfe">🔄 en cours (${QUARTERS}Q)...</span>`;
 
     try {
-      // L'endpoint est GET (server.js ligne 648). Il renvoie du text/plain (le stdout du worker).
-      const r = await fetch(`${PROXY}/admin/ingest-fund?cik=${f.cik}&key=${encodeURIComponent(key)}`);
+      // Deep-ingest : endpoint dedie avec fallback name/tier (accepte CIKs hors TIER1)
+      const url = `${PROXY}/admin/deep-ingest-fund?cik=${f.cik}&name=${encodeURIComponent(f.name)}&tier=${encodeURIComponent(f.tier)}&quarters=${QUARTERS}&key=${encodeURIComponent(key)}`;
+      const r = await fetch(url);
       const text = await r.text();
       if (!r.ok || text.includes("forbidden")) {
         if (statusEl) statusEl.innerHTML = `<span style="color:#ff4757" title="${text.slice(0,200).replace(/"/g,'&quot;')}">❌ HTTP ${r.status}${text.includes("forbidden") ? " · clé invalide" : ""}</span>`;
         failCount++;
         if (r.status === 403 || text.includes("forbidden")) {
           sessionStorage.removeItem("smart_money_admin_key");
-          alert("Clé admin invalide. Re-cliquer sur 'Re-ingest passifs' pour réessayer.");
+          alert("Clé admin invalide. Re-cliquer pour réessayer.");
           break;
         }
       } else {
-        // Le worker logue NEW=X INCREASED=Y ... UNKNOWN=Z dans le stdout
-        const matchInserted = text.match(/inserted (\d+)/i) || text.match(/(\d+)\s+filings/i);
-        const matchUnknown = text.match(/UNKNOWN=(\d+)/);
-        const insertedCount = matchInserted ? matchInserted[1] : "?";
-        const unknownCount = matchUnknown ? parseInt(matchUnknown[1], 10) : 0;
-        const isDone = text.includes("[admin] done");
+        // Parse les logs UNKNOWN=X sur toutes les lignes du log (un par trimestre)
+        const matchInserted = (text.match(/"inserted":(\d+)/) || [])[1];
+        const insertedNum = matchInserted ? parseInt(matchInserted, 10) : 0;
+        const allUnknownMatches = [...text.matchAll(/UNKNOWN=(\d+)/g)];
+        const unknownTotal = allUnknownMatches.reduce((s, m) => s + parseInt(m[1], 10), 0);
+        totalInsertedFilings += insertedNum;
+        totalUnknownPositions += unknownTotal;
         if (statusEl) {
-          statusEl.innerHTML = unknownCount > 0
-            ? `<span style="color:#2ed573">✅ ${insertedCount} filings · <span style="color:#ffa502">${unknownCount} UNKNOWN</span></span>`
-            : (isDone ? `<span style="color:#2ed573">✅ traité</span>` : `<span style="color:#eccc68">⚠️ ${insertedCount} filings · pas de UNKNOWN détecté</span>`);
+          statusEl.innerHTML = unknownTotal > 0
+            ? `<span style="color:#2ed573">✅ ${insertedNum} filings · <span style="color:#ffa502">${unknownTotal} UNKNOWN</span></span>`
+            : (insertedNum > 0 ? `<span style="color:#2ed573">✅ ${insertedNum} filings</span>` : `<span style="color:#8b949e">═ déjà à jour</span>`);
         }
         okCount++;
       }
@@ -3186,11 +3237,11 @@ async function reingestPassiveFunds() {
     if (failCount === 0) {
       summaryEl.style.borderColor = "#2ed57366";
       summaryEl.style.color = "#2ed573";
-      summaryEl.innerHTML = `✅ Tous les passifs re-ingestés (${okCount}/${fundsList.length}). Reload le dashboard et re-scan ADBE pour vérifier le tag UNKNOWN.`;
+      summaryEl.innerHTML = `✅ Deep re-ingest terminé (${okCount}/${fundsList.length} fonds) · <strong>${totalInsertedFilings}</strong> filings traités · <strong style="color:#ffa502">${totalUnknownPositions}</strong> positions UNKNOWN corrigées. Reload le dashboard et re-scan ADBE.`;
     } else {
       summaryEl.style.borderColor = "#ff475766";
       summaryEl.style.color = "#ff4757";
-      summaryEl.innerHTML = `⚠️ ${okCount} OK · ${failCount} erreurs. Réessayer les échecs en relançant le bouton (idempotent).`;
+      summaryEl.innerHTML = `⚠️ ${okCount} OK · ${failCount} erreurs · ${totalInsertedFilings} filings · ${totalUnknownPositions} UNKNOWN. Relance pour réessayer les échecs (idempotent).`;
     }
   }
 
