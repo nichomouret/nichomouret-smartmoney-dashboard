@@ -3145,27 +3145,28 @@ async function reingestPassiveFunds() {
     if (statusEl) statusEl.innerHTML = `<span style="color:#a29bfe">🔄 en cours...</span>`;
 
     try {
-      const r = await fetch(`${PROXY}/admin/ingest-fund?cik=${f.cik}&key=${encodeURIComponent(key)}`, {
-        method: "POST",
-      });
-      if (!r.ok) {
-        const errText = await r.text().catch(() => `HTTP ${r.status}`);
-        if (statusEl) statusEl.innerHTML = `<span style="color:#ff4757" title="${errText.slice(0,200).replace(/"/g,'&quot;')}">❌ HTTP ${r.status}</span>`;
+      // L'endpoint est GET (server.js ligne 648). Il renvoie du text/plain (le stdout du worker).
+      const r = await fetch(`${PROXY}/admin/ingest-fund?cik=${f.cik}&key=${encodeURIComponent(key)}`);
+      const text = await r.text();
+      if (!r.ok || text.includes("forbidden")) {
+        if (statusEl) statusEl.innerHTML = `<span style="color:#ff4757" title="${text.slice(0,200).replace(/"/g,'&quot;')}">❌ HTTP ${r.status}${text.includes("forbidden") ? " · clé invalide" : ""}</span>`;
         failCount++;
-        // Si 401/403 = clé invalide, on stoppe pour ne pas spammer
-        if (r.status === 401 || r.status === 403) {
+        if (r.status === 403 || text.includes("forbidden")) {
           sessionStorage.removeItem("smart_money_admin_key");
           alert("Clé admin invalide. Re-cliquer sur 'Re-ingest passifs' pour réessayer.");
           break;
         }
       } else {
-        const data = await r.json().catch(() => ({}));
-        const inserted = data.inserted ?? data.summary?.inserted ?? "?";
-        const unknown = data.summary?.unknown ?? data.unknown ?? 0;
+        // Le worker logue NEW=X INCREASED=Y ... UNKNOWN=Z dans le stdout
+        const matchInserted = text.match(/inserted (\d+)/i) || text.match(/(\d+)\s+filings/i);
+        const matchUnknown = text.match(/UNKNOWN=(\d+)/);
+        const insertedCount = matchInserted ? matchInserted[1] : "?";
+        const unknownCount = matchUnknown ? parseInt(matchUnknown[1], 10) : 0;
+        const isDone = text.includes("[admin] done");
         if (statusEl) {
-          statusEl.innerHTML = unknown > 0
-            ? `<span style="color:#2ed573">✅ ${inserted} filings · <span style="color:#ffa502">${unknown} UNKNOWN</span></span>`
-            : `<span style="color:#2ed573">✅ ${inserted} filings</span>`;
+          statusEl.innerHTML = unknownCount > 0
+            ? `<span style="color:#2ed573">✅ ${insertedCount} filings · <span style="color:#ffa502">${unknownCount} UNKNOWN</span></span>`
+            : (isDone ? `<span style="color:#2ed573">✅ traité</span>` : `<span style="color:#eccc68">⚠️ ${insertedCount} filings · pas de UNKNOWN détecté</span>`);
         }
         okCount++;
       }
