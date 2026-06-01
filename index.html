@@ -328,7 +328,23 @@ const PROXY = "https://nichomouret-smartmoney-proxy-production.up.railway.app";
 const BATCH_SIZE = 15;
 const BATCH_DELAY = 4000;
 
-const SBF120 = ["AI.PA","ACA.PA","ADP.PA","AF.PA","AIR.PA","ALO.PA","ATO.PA","CS.PA","BNP.PA","EN.PA","BOL.PA","CAP.PA","CA.PA","AXA.PA","CNP.PA","SU.PA","DG.PA","DBV.PA","DSY.PA","EDEN.PA","EL.PA","ERF.PA","ENGI.PA","FGR.PA","FP.PA","GET.PA","GTT.PA","HO.PA","IPN.PA","KER.PA","OR.PA","MC.PA","ML.PA","NANO.PA","ORA.PA","RI.PA","PUB.PA","RNO.PA","RMS.PA","SAF.PA","SGO.PA","SAN.PA","SEB.PA","SEV.PA","SOLB.PA","SPIE.PA","STM.PA","SW.PA","TEP.PA","TFI.PA","TTE.PA","UBI.PA","UG.PA","VIE.PA","VIV.PA","VK.PA","VU.PA","WLN.PA","FR.PA","SOI.PA","LHN.PA","BVI.PA","GFC.PA","FDR.PA","FNAC.PA","ERT.PA","AKE.PA","ARGAN.PA","ALPE.PA","MCPHY.PA","LACR.PA","LAUR.PA","LDLC.PA","LISI.PA","LNC.PA","MAAT.PA","MBWS.PA","MDM.PA","METEX.PA","MFGP.PA","MT","BB.PA","CO.PA","MMB.PA","NEX.PA","SCP.PA","STF.PA","LI.PA","MRM.PA"];
+// SBF120 — composition complète (~120 tickers, mise à jour juin 2026)
+// Inclut CAC 40 + ~80 mid-caps SBF120. Source : Euronext / sbf120.com
+const SBF120 = [
+  // === CAC 40 (40 tickers) ===
+  "AI.PA","AIR.PA","AKE.PA","ALO.PA","AXA.PA","BN.PA","BNP.PA","CA.PA","CAP.PA","CS.PA",
+  "DG.PA","DSY.PA","EDEN.PA","EL.PA","EN.PA","ENGI.PA","GLE.PA","HO.PA","KER.PA","LR.PA",
+  "MC.PA","ML.PA","OR.PA","ORA.PA","PUB.PA","RI.PA","RMS.PA","RNO.PA","SAF.PA","SAN.PA",
+  "SGO.PA","STLAP.PA","STM.PA","SU.PA","TEP.PA","TTE.PA","URW.PA","VIE.PA","VIV.PA","WLN.PA",
+  // === SBF 120 hors CAC 40 (~80 mid-caps) ===
+  "ACA.PA","ADP.PA","AF.PA","ALD.PA","AMUN.PA","ATO.PA","BB.PA","BIM.PA","BOL.PA","BVI.PA",
+  "CGG.PA","CNP.PA","CO.PA","COFA.PA","COV.PA","DBV.PA","ELIOR.PA","ELIS.PA","ERA.PA","ERF.PA",
+  "ERT.PA","FDJ.PA","FDR.PA","FGR.PA","FNAC.PA","FR.PA","GET.PA","GFC.PA","GTT.PA","ICAD.PA",
+  "IPN.PA","IPS.PA","JCQ.PA","KORI.PA","LHN.PA","LI.PA","LISI.PA","MAU.PA","MERY.PA","MMB.PA",
+  "MRN.PA","NANO.PA","NEX.PA","NK.PA","NXI.PA","ORP.PA","POM.PA","QDT.PA","RCO.PA","RUI.PA",
+  "RXL.PA","SCR.PA","SEB.PA","SESG.PA","SK.PA","SOI.PA","SOLB.PA","SOP.PA","SPIE.PA","SW.PA",
+  "TFI.PA","TKO.PA","TRI.PA","UBI.PA","UG.PA","VIRP.PA","VK.PA","VLA.PA","VU.PA",
+];
 const SP100 = ["AAPL","MSFT","AMZN","NVDA","GOOGL","META","TSLA","UNH","XOM","JPM","JNJ","V","PG","MA","HD","CVX","MRK","ABBV","PEP","KO","AVGO","LLY","COST","WMT","BAC","MCD","ABT","TMO","CSCO","ACN","NKE","DHR","VZ","ADBE","TXN","NEE","PM","UPS","RTX","QCOM","HON","AMGN","LOW","INTC","AMD","INTU","IBM","SBUX","GS","CAT","BA","BLK","AXP","SPGI","DE","ELV","MDLZ","GILD","MMC","ADI","REGN","VRTX","CI","ZTS","MO","SYK","PLD","COP","EOG","BDX","ISRG","TJX","EW","HCA","AON","ICE","NSC","MRNA","F","GM","PARA","WBA","T","VFC","OXY","HAL","DVN","MPC","VLO","PSX","KMI","WMB","SLB","BKR","CTRA","APA","IONQ","OKLO","SMCI","NBTX"];
 const RUSSELL = ["FIVE","GNRC","PENN","PRGO","RRX","SITE","SWK","XRAY","PODD","INSP","IRTC","NVCR","PACB","NTLA","EDIT","FATE","ALNY","IONS","SRPT","RARE","FOLD","ACAD","SAGE","INSM","KYMR","PTCT","BMRN","LGND","JAZZ","HRMY","RCKT","DNLI","KALV","IMVT","VERA","ARVN","KRTX","PRAX","YMAB","DVAX","IOVA","EXEL","TGTX","HALO","PRLD","NKTR","EPZM","MGNX","MRCY","GTHX","ENSG","ECPG","DXPE","DUOL","PLUG","BYND","SOFI","LUMN","OPEN","UWMC","RKT","CLOV","SPCE","NKLA","RKLB","ASTS","GSAT","IRDM","MAXN","ARRY","NOVA","STEM","DBVT","SEER","ACMR","FLNC","HIMS","JOBY","ACHR","ZURA","IMGO","KALA","IDYA","DAWN","IRON","VYGN","NRIX"];
 const NASDAQ100 = ["GOOG","NFLX","TMUS","AMAT","MU","LRCX","KLAC","PANW","SNPS","CRWD","CDNS","MRVL","ASML","ADP","ABNB","ORLY","FTNT","CTAS","NXPI","MCHP","PAYX","PYPL","ROST","KDP","MNST","EXC","CPRT","ODFL","FAST","DDOG","TEAM","WDAY","ZS","DLTR","VRSK","BIIB","IDXX","ANSS","GEHC","GFS","FANG","CEG","ON","PCAR","TTD","CTSH","ALGN","DXCM","ILMN","HOLX","ENPH","SIRI","RIVN","LCID","OKTA","ZM","DOCU","PTON","MTTR","HOOD","COIN","RBLX","U","PATH","GTLB","PLTR","AI","RXRX","ARWR","CRSP","BEAM"];
@@ -1437,10 +1453,13 @@ async function runScan() {
     const qualified = batchWithData.filter(({ data }) => {
       // Anti-hallucination : exclure les tickers sans source verifiee
       if (!data.hasRealSources) return false;
-      if (customTicker) return true;
-      if (!data.drawdown52w) return true;
-      const val = parseFloat(data.drawdown52w);
-      return val <= -20;
+      // CORRECTION juin 2026 : on NE filtre PLUS par drawdown -20% amont.
+      // Logique : un titre sans baisse mais avec franchissement de seuil massif
+      // (ex: Elalamy 19.9% sur Teleperformance, BlackRock 8.75% sur ADBE) reste un
+      // signal valide. C'est Claude qui filtre via les criteres Mark Elias coches
+      // (short_interest, institutional, threshold, catalysts, etc.).
+      // Le filtre drawdown amont biaisait les decisions en cachant 70% du SBF120.
+      return true;
     });
 
     setProgress(scanned, total, signalCount, `🤖 Batch ${b+1}/${batches.length} — ${qualified.length} qualifiés → Claude...`);
