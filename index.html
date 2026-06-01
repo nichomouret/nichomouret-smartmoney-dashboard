@@ -796,16 +796,120 @@ function getSCCTLabel(scct) {
   return { label: "À SURVEILLER", color: "#8b949e", bg: "#21262d", border: "#30363d" };
 }
 
+// ── Mapping ticker → raison sociale pour les SBF120
+// Permet a Claude de reconnaitre la societe MEME quand le BDIF est vide
+// (cas typique : Teleperformance n'a pas de franchissement AMF recent
+//  -> BDIF retourne 0 crossings -> avant ce patch, "Societe non identifiee")
+const SBF120_NAMES = {
+  "AI.PA":    "Air Liquide",
+  "ACA.PA":   "Credit Agricole",
+  "ADP.PA":   "Aeroports de Paris",
+  "AF.PA":    "Air France-KLM",
+  "AIR.PA":   "Airbus",
+  "AKE.PA":   "Arkema",
+  "ALO.PA":   "Alstom",
+  "ATO.PA":   "Atos",
+  "AXA.PA":   "AXA",
+  "BB.PA":    "Societe BIC",
+  "BNP.PA":   "BNP Paribas",
+  "BOL.PA":   "Bollore",
+  "BVI.PA":   "Bureau Veritas",
+  "CA.PA":    "Carrefour",
+  "CAP.PA":   "Capgemini",
+  "CNP.PA":   "CNP Assurances",
+  "CO.PA":    "Casino Guichard",
+  "CS.PA":    "AXA (CS)",
+  "DBV.PA":   "DBV Technologies",
+  "DG.PA":    "Vinci",
+  "DSY.PA":   "Dassault Systemes",
+  "EDEN.PA":  "Edenred",
+  "EL.PA":    "EssilorLuxottica",
+  "EN.PA":    "Bouygues",
+  "ENGI.PA":  "Engie",
+  "ERF.PA":   "Eurofins Scientific",
+  "ERT.PA":   "Eutelsat Communications",
+  "FDR.PA":   "Faurecia",
+  "FGR.PA":   "Eiffage",
+  "FNAC.PA":  "Fnac Darty",
+  "FP.PA":    "TotalEnergies (FP)",
+  "FR.PA":    "Valeo",
+  "GET.PA":   "Getlink",
+  "GFC.PA":   "Gecina",
+  "GTT.PA":   "GTT",
+  "HO.PA":    "Thales",
+  "IPN.PA":   "Ipsen",
+  "KER.PA":   "Kering",
+  "LACR.PA":  "Lacroix",
+  "LAUR.PA":  "Laurent-Perrier",
+  "LDLC.PA":  "LDLC",
+  "LHN.PA":   "Holcim (LHN)",
+  "LI.PA":    "Klepierre",
+  "LISI.PA":  "LISI",
+  "LNC.PA":   "Les Nouveaux Constructeurs",
+  "MAAT.PA":  "Maat Pharma",
+  "MBWS.PA":  "Marie Brizard Wine & Spirits",
+  "MC.PA":    "LVMH",
+  "MCPHY.PA": "McPhy Energy",
+  "MDM.PA":   "Maison du Monde",
+  "METEX.PA": "Metabolic Explorer",
+  "MFGP.PA":  "Micro Focus (MFGP)",
+  "ML.PA":    "Michelin",
+  "MMB.PA":   "Lagardere SCA (MMB)",
+  "MRM.PA":   "MRM",
+  "NANO.PA":  "Nanobiotix",
+  "NEX.PA":   "Nexans",
+  "OR.PA":    "L'Oreal",
+  "ORA.PA":   "Orange",
+  "PUB.PA":   "Publicis Groupe",
+  "RI.PA":    "Pernod Ricard",
+  "RMS.PA":   "Hermes International",
+  "RNO.PA":   "Renault",
+  "SAF.PA":   "Safran",
+  "SAN.PA":   "Sanofi",
+  "SCP.PA":   "SCOR (SCP)",
+  "SEB.PA":   "SEB",
+  "SEV.PA":   "Suez (SEV)",
+  "SGO.PA":   "Saint-Gobain",
+  "SOI.PA":   "Soitec",
+  "SOLB.PA":  "Solvay",
+  "SPIE.PA":  "Spie",
+  "STF.PA":   "STEF",
+  "STM.PA":   "STMicroelectronics",
+  "SU.PA":    "Schneider Electric",
+  "SW.PA":    "Sodexo",
+  "TEP.PA":   "Teleperformance SE",
+  "TFI.PA":   "TF1",
+  "TTE.PA":   "TotalEnergies",
+  "UBI.PA":   "Ubisoft Entertainment",
+  "UG.PA":    "Peugeot Invest (UG)",
+  "VIE.PA":   "Veolia Environnement",
+  "VIV.PA":   "Vivendi",
+  "VK.PA":    "Vallourec",
+  "VU.PA":    "Verallia",
+  "WLN.PA":   "Worldline",
+  // Belgique principal
+  "SOLB.BE":  "Solvay",
+};
+
+function getSBF120Name(ticker) {
+  if (!ticker) return null;
+  return SBF120_NAMES[ticker.toUpperCase()] || null;
+}
+
 // ── AMF BDIF — CORRECTION 1: Returns also raisonSociale to fix Claude's hallucinated company names
+// CORRECTION 2 (juin 2026) : si BDIF vide (cas TEP.PA Teleperformance),
+// on utilise le mapping SBF120_NAMES local en fallback pour que Claude
+// reconnaisse la societe et ne mette pas "Societe non identifiee".
 async function fetchAmfBdif(ticker) {
   if (!ticker.includes(".PA") && !ticker.includes(".BE")) return { crossings: [], raisonSociale: null, isin: null };
   try {
     const r = await fetch(`${PROXY}/amf-bdif/ticker/${encodeURIComponent(ticker)}?limit=12`);
-    if (!r.ok) return { crossings: [], raisonSociale: null, isin: null };
+    const fallbackName = getSBF120Name(ticker);
+    if (!r.ok) return { crossings: [], raisonSociale: fallbackName, isin: null };
     const data = await r.json();
-    if (!data.ok || !data.crossings?.length) return { crossings: [], raisonSociale: null, isin: null };
+    if (!data.ok || !data.crossings?.length) return { crossings: [], raisonSociale: fallbackName, isin: null };
 
-    const raisonSociale = data.crossings[0]?.raison_sociale || null;
+    const raisonSociale = data.crossings[0]?.raison_sociale || fallbackName || null;
     const isin = data.crossings[0]?.isin || null;
 
     const crossings = data.crossings.map(c => {
