@@ -801,63 +801,29 @@ function getSCCTLabel(scct) {
 // (cas typique : Teleperformance n'a pas de franchissement AMF recent
 //  -> BDIF retourne 0 crossings -> avant ce patch, "Societe non identifiee")
 const SBF120_NAMES = {
+  // === CAC 40 ===
   "AI.PA":    "Air Liquide",
-  "ACA.PA":   "Credit Agricole",
-  "ADP.PA":   "Aeroports de Paris",
-  "AF.PA":    "Air France-KLM",
   "AIR.PA":   "Airbus",
   "AKE.PA":   "Arkema",
   "ALO.PA":   "Alstom",
-  "ATO.PA":   "Atos",
   "AXA.PA":   "AXA",
-  "BB.PA":    "Societe BIC",
+  "BN.PA":    "Danone",
   "BNP.PA":   "BNP Paribas",
-  "BOL.PA":   "Bollore",
-  "BVI.PA":   "Bureau Veritas",
   "CA.PA":    "Carrefour",
   "CAP.PA":   "Capgemini",
-  "CNP.PA":   "CNP Assurances",
-  "CO.PA":    "Casino Guichard",
-  "CS.PA":    "AXA (CS)",
-  "DBV.PA":   "DBV Technologies",
+  "CS.PA":    "AXA (CS alias)",
   "DG.PA":    "Vinci",
   "DSY.PA":   "Dassault Systemes",
   "EDEN.PA":  "Edenred",
   "EL.PA":    "EssilorLuxottica",
   "EN.PA":    "Bouygues",
   "ENGI.PA":  "Engie",
-  "ERF.PA":   "Eurofins Scientific",
-  "ERT.PA":   "Eutelsat Communications",
-  "FDR.PA":   "Faurecia",
-  "FGR.PA":   "Eiffage",
-  "FNAC.PA":  "Fnac Darty",
-  "FP.PA":    "TotalEnergies (FP)",
-  "FR.PA":    "Valeo",
-  "GET.PA":   "Getlink",
-  "GFC.PA":   "Gecina",
-  "GTT.PA":   "GTT",
+  "GLE.PA":   "Societe Generale",
   "HO.PA":    "Thales",
-  "IPN.PA":   "Ipsen",
   "KER.PA":   "Kering",
-  "LACR.PA":  "Lacroix",
-  "LAUR.PA":  "Laurent-Perrier",
-  "LDLC.PA":  "LDLC",
-  "LHN.PA":   "Holcim (LHN)",
-  "LI.PA":    "Klepierre",
-  "LISI.PA":  "LISI",
-  "LNC.PA":   "Les Nouveaux Constructeurs",
-  "MAAT.PA":  "Maat Pharma",
-  "MBWS.PA":  "Marie Brizard Wine & Spirits",
+  "LR.PA":    "Legrand",
   "MC.PA":    "LVMH",
-  "MCPHY.PA": "McPhy Energy",
-  "MDM.PA":   "Maison du Monde",
-  "METEX.PA": "Metabolic Explorer",
-  "MFGP.PA":  "Micro Focus (MFGP)",
   "ML.PA":    "Michelin",
-  "MMB.PA":   "Lagardere SCA (MMB)",
-  "MRM.PA":   "MRM",
-  "NANO.PA":  "Nanobiotix",
-  "NEX.PA":   "Nexans",
   "OR.PA":    "L'Oreal",
   "ORA.PA":   "Orange",
   "PUB.PA":   "Publicis Groupe",
@@ -866,27 +832,104 @@ const SBF120_NAMES = {
   "RNO.PA":   "Renault",
   "SAF.PA":   "Safran",
   "SAN.PA":   "Sanofi",
-  "SCP.PA":   "SCOR (SCP)",
-  "SEB.PA":   "SEB",
-  "SEV.PA":   "Suez (SEV)",
   "SGO.PA":   "Saint-Gobain",
-  "SOI.PA":   "Soitec",
-  "SOLB.PA":  "Solvay",
-  "SPIE.PA":  "Spie",
-  "STF.PA":   "STEF",
+  "STLAP.PA": "Stellantis",
   "STM.PA":   "STMicroelectronics",
   "SU.PA":    "Schneider Electric",
-  "SW.PA":    "Sodexo",
   "TEP.PA":   "Teleperformance SE",
-  "TFI.PA":   "TF1",
   "TTE.PA":   "TotalEnergies",
-  "UBI.PA":   "Ubisoft Entertainment",
-  "UG.PA":    "Peugeot Invest (UG)",
+  "URW.PA":   "Unibail-Rodamco-Westfield",
   "VIE.PA":   "Veolia Environnement",
   "VIV.PA":   "Vivendi",
-  "VK.PA":    "Vallourec",
-  "VU.PA":    "Verallia",
   "WLN.PA":   "Worldline",
+  // === SBF 120 hors CAC 40 ===
+  "ACA.PA":   "Credit Agricole",
+  "ADP.PA":   "Aeroports de Paris",
+  "AF.PA":    "Air France-KLM",
+  "ALD.PA":   "ALD Automotive (Ayvens)",
+  "AMUN.PA":  "Amundi",
+  "ATEME.PA": "Ateme",
+  "ATO.PA":   "Atos",
+  "BB.PA":    "Societe BIC",
+  "BIM.PA":   "bioMerieux",
+  "BOL.PA":   "Bollore",
+  "BVI.PA":   "Bureau Veritas",
+  "CGG.PA":   "CGG (Viridien)",
+  "CNP.PA":   "CNP Assurances",
+  "CO.PA":    "Casino Guichard",
+  "COFA.PA":  "Coface",
+  "COV.PA":   "Covivio",
+  "DBV.PA":   "DBV Technologies",
+  "ELIOR.PA": "Elior Group",
+  "ELIS.PA":  "Elis",
+  "ERA.PA":   "Eramet",
+  "ERF.PA":   "Eurofins Scientific",
+  "ERT.PA":   "Eutelsat Communications",
+  "FDJ.PA":   "FDJ United (FDJ)",
+  "FDR.PA":   "Forvia (Faurecia)",
+  "FGR.PA":   "Eiffage",
+  "FNAC.PA":  "Fnac Darty",
+  "FP.PA":    "TotalEnergies (FP alias)",
+  "FR.PA":    "Valeo",
+  "GET.PA":   "Getlink",
+  "GFC.PA":   "Gecina",
+  "GTT.PA":   "GTT",
+  "ICAD.PA":  "Icade",
+  "IPN.PA":   "Ipsen",
+  "IPS.PA":   "Ipsos",
+  "JCQ.PA":   "JCDecaux",
+  "KOF.PA":   "Kaufman & Broad",
+  "KORI.PA":  "Emeis (ex-Korian)",
+  "LACR.PA":  "Lacroix",
+  "LAUR.PA":  "Laurent-Perrier",
+  "LDLC.PA":  "LDLC",
+  "LHN.PA":   "Holcim",
+  "LI.PA":    "Klepierre",
+  "LISI.PA":  "LISI",
+  "LNC.PA":   "Les Nouveaux Constructeurs",
+  "MAAT.PA":  "Maat Pharma",
+  "MAU.PA":   "Maurel & Prom",
+  "MBWS.PA":  "Marie Brizard Wine & Spirits",
+  "MCPHY.PA": "McPhy Energy",
+  "MDM.PA":   "Maisons du Monde",
+  "MERY.PA":  "Mercialys",
+  "METEX.PA": "Metabolic Explorer",
+  "MFGP.PA":  "Micro Focus",
+  "MMB.PA":   "Lagardere",
+  "MRM.PA":   "MRM",
+  "MRN.PA":   "Mersen",
+  "NANO.PA":  "Nanobiotix",
+  "NEX.PA":   "Nexans",
+  "NK.PA":    "Imerys",
+  "NXI.PA":   "Nexity",
+  "ORP.PA":   "Emeis (ex-Orpea)",
+  "POM.PA":   "Plastic Omnium",
+  "QDT.PA":   "Quadient",
+  "RCO.PA":   "Remy Cointreau",
+  "RUI.PA":   "Rubis",
+  "RXL.PA":   "Rexel",
+  "SCP.PA":   "SCOR (SCP)",
+  "SCR.PA":   "SCOR",
+  "SEB.PA":   "SEB",
+  "SESG.PA":  "SES",
+  "SEV.PA":   "Suez (SEV)",
+  "SK.PA":    "SEB (alias)",
+  "SOI.PA":   "Soitec",
+  "SOLB.PA":  "Solvay",
+  "SOP.PA":   "Sopra Steria",
+  "SPIE.PA":  "SPIE",
+  "STF.PA":   "STEF",
+  "SW.PA":    "Sodexo",
+  "TFI.PA":   "TF1",
+  "TKO.PA":   "Tikehau Capital",
+  "TRI.PA":   "Trigano",
+  "UBI.PA":   "Ubisoft Entertainment",
+  "UG.PA":    "Peugeot Invest (UG)",
+  "VIRP.PA":  "Virbac",
+  "VK.PA":    "Vallourec",
+  "VLA.PA":   "Valneva",
+  "VRLA.PA":  "Verallia",
+  "VU.PA":    "Verallia",
   // Belgique principal
   "SOLB.BE":  "Solvay",
 };
@@ -900,46 +943,116 @@ function getSBF120Name(ticker) {
 // Sert de fallback pour /amf-bdif/isin/X quand /amf-bdif/ticker/Y renvoie 0
 // (bug : worker AMF ne mappe pas ISIN->ticker pour Teleperformance & autres)
 const SBF120_ISIN = {
-  "AI.PA":    "FR0000120073",
-  "AIR.PA":   "NL0000235190",
-  "AKE.PA":   "FR0010313833",
-  "AXA.PA":   "FR0000120628",
-  "BNP.PA":   "FR0000131104",
-  "BVI.PA":   "FR0006174348",
-  "CA.PA":    "FR0000120172",
-  "CAP.PA":   "FR0000125338",
-  "CS.PA":    "FR0000120628",  // = AXA
-  "DBV.PA":   "FR0010417345",
-  "DG.PA":    "FR0000125486",
-  "DSY.PA":   "FR0014003TT8",
-  "EDEN.PA":  "FR0010908533",
-  "EL.PA":    "FR0000121667",
-  "EN.PA":    "FR0000120503",
-  "ENGI.PA":  "FR0010208488",
-  "GET.PA":   "FR0010533075",
-  "GTT.PA":   "FR0011726835",
-  "HO.PA":    "FR0000121329",
-  "KER.PA":   "FR0000121485",
-  "MC.PA":    "FR0000121014",
-  "ML.PA":    "FR0000121261",
-  "NANO.PA":  "FR0011341205",
-  "OR.PA":    "FR0000120321",
-  "ORA.PA":   "FR0000133308",
-  "PUB.PA":   "FR0000130577",
-  "RI.PA":    "FR0000120693",
-  "RMS.PA":   "FR0000052292",
-  "RNO.PA":   "FR0000131906",
-  "SAF.PA":   "FR0000073272",
-  "SAN.PA":   "FR0000120578",
-  "SGO.PA":   "FR0000125007",
-  "STM.PA":   "NL0000226223",
-  "SU.PA":    "FR0000121972",
-  "TEP.PA":   "FR0000051807",  // TELEPERFORMANCE — fix Elalamy
-  "TTE.PA":   "FR0000120271",
-  "UBI.PA":   "FR0000054470",
-  "VIE.PA":   "FR0000124141",
-  "VIV.PA":   "FR0000127771",
-  "WLN.PA":   "FR0011981968",
+  // === CAC 40 ===
+  "AI.PA":    "FR0000120073",  // Air Liquide
+  "AIR.PA":   "NL0000235190",  // Airbus
+  "AKE.PA":   "FR0010313833",  // Arkema
+  "ALO.PA":   "FR0010220475",  // Alstom
+  "AXA.PA":   "FR0000120628",  // AXA
+  "BN.PA":    "FR0000120644",  // Danone
+  "BNP.PA":   "FR0000131104",  // BNP Paribas
+  "CA.PA":    "FR0000120172",  // Carrefour
+  "CAP.PA":   "FR0000125338",  // Capgemini
+  "CS.PA":    "FR0000120628",  // AXA (alias)
+  "DG.PA":    "FR0000125486",  // Vinci
+  "DSY.PA":   "FR0014003TT8",  // Dassault Systemes
+  "EDEN.PA":  "FR0010908533",  // Edenred
+  "EL.PA":    "FR0000121667",  // EssilorLuxottica
+  "EN.PA":    "FR0000120503",  // Bouygues
+  "ENGI.PA":  "FR0010208488",  // Engie
+  "GLE.PA":   "FR0000130809",  // Societe Generale
+  "HO.PA":    "FR0000121329",  // Thales
+  "KER.PA":   "FR0000121485",  // Kering
+  "LR.PA":    "FR0010307819",  // Legrand
+  "MC.PA":    "FR0000121014",  // LVMH
+  "ML.PA":    "FR0000121261",  // Michelin
+  "OR.PA":    "FR0000120321",  // L'Oreal
+  "ORA.PA":   "FR0000133308",  // Orange
+  "PUB.PA":   "FR0000130577",  // Publicis
+  "RI.PA":    "FR0000120693",  // Pernod Ricard
+  "RMS.PA":   "FR0000052292",  // Hermes
+  "RNO.PA":   "FR0000131906",  // Renault
+  "SAF.PA":   "FR0000073272",  // Safran
+  "SAN.PA":   "FR0000120578",  // Sanofi
+  "SGO.PA":   "FR0000125007",  // Saint-Gobain
+  "STLAP.PA": "NL00150001Q9",  // Stellantis
+  "STM.PA":   "NL0000226223",  // STMicroelectronics
+  "SU.PA":    "FR0000121972",  // Schneider Electric
+  "TEP.PA":   "FR0000051807",  // Teleperformance — fix Elalamy
+  "TTE.PA":   "FR0000120271",  // TotalEnergies
+  "URW.PA":   "FR0013326246",  // Unibail-Rodamco-Westfield
+  "VIE.PA":   "FR0000124141",  // Veolia
+  "VIV.PA":   "FR0000127771",  // Vivendi
+  "WLN.PA":   "FR0011981968",  // Worldline
+
+  // === SBF 120 hors CAC 40 ===
+  "ACA.PA":   "FR0000045072",  // Credit Agricole
+  "ADP.PA":   "FR0010340141",  // Aeroports de Paris
+  "AF.PA":    "FR0000031122",  // Air France-KLM
+  "ALD.PA":   "FR0013258662",  // ALD Automotive (Ayvens)
+  "AMUN.PA":  "FR0004125920",  // Amundi
+  "ATO.PA":   "FR0000051732",  // Atos
+  "BB.PA":    "FR0000120966",  // BIC
+  "BIM.PA":   "FR0013280286",  // bioMerieux
+  "BOL.PA":   "FR0000039299",  // Bollore
+  "BVI.PA":   "FR0006174348",  // Bureau Veritas
+  "CGG.PA":   "FR0013181864",  // CGG/Viridien
+  "CNP.PA":   "FR0000120222",  // CNP Assurances
+  "CO.PA":    "FR0000125585",  // Casino
+  "COFA.PA":  "FR0010667147",  // Coface
+  "COV.PA":   "FR0000064578",  // Covivio
+  "DBV.PA":   "FR0010417345",  // DBV Technologies
+  "ELIOR.PA": "FR0011950732",  // Elior
+  "ELIS.PA":  "FR0012435121",  // Elis
+  "ERA.PA":   "FR0000131757",  // Eramet
+  "ERF.PA":   "FR0014000MR3",  // Eurofins
+  "FDJ.PA":   "FR0013451333",  // FDJ
+  "FDR.PA":   "FR0000121147",  // Forvia (Faurecia)
+  "FGR.PA":   "FR0000130452",  // Eiffage
+  "FNAC.PA":  "FR0011476928",  // Fnac Darty
+  "FR.PA":    "FR0013176526",  // Valeo
+  "GET.PA":   "FR0010533075",  // Getlink
+  "GFC.PA":   "FR0010040865",  // Gecina
+  "GTT.PA":   "FR0011726835",  // GTT
+  "ICAD.PA":  "FR0000035081",  // Icade
+  "IPN.PA":   "FR0010259150",  // Ipsen
+  "IPS.PA":   "FR0000073298",  // Ipsos
+  "JCQ.PA":   "FR0000077919",  // JCDecaux
+  "KORI.PA":  "FR0010386334",  // Emeis (Korian)
+  "LI.PA":    "FR0000121964",  // Klepierre
+  "LISI.PA":  "FR0000050353",  // LISI
+  "MAU.PA":   "FR0000051070",  // Maurel & Prom
+  "MERY.PA":  "FR0010241638",  // Mercialys
+  "MMB.PA":   "FR0000130213",  // Lagardere
+  "MRN.PA":   "FR0000039620",  // Mersen
+  "NANO.PA":  "FR0011341205",  // Nanobiotix
+  "NEX.PA":   "FR0000044448",  // Nexans
+  "NK.PA":    "FR0000120859",  // Imerys
+  "NXI.PA":   "FR0010112524",  // Nexity
+  "ORP.PA":   "FR0000184798",  // Emeis (Orpea)
+  "POM.PA":   "FR0000124570",  // Plastic Omnium
+  "QDT.PA":   "FR0000120560",  // Quadient
+  "RCO.PA":   "FR0000130395",  // Remy Cointreau
+  "RUI.PA":   "FR0013269123",  // Rubis
+  "RXL.PA":   "FR0010451203",  // Rexel
+  "SCR.PA":   "FR0010411983",  // SCOR
+  "SEB.PA":   "FR0000121709",  // SEB
+  "SESG.PA":  "LU0088087324",  // SES
+  "SK.PA":    "FR0000121709",  // SEB (alias)
+  "SOI.PA":   "FR0013227113",  // Soitec
+  "SOP.PA":   "FR0000050809",  // Sopra Steria
+  "SPIE.PA":  "FR0012757854",  // SPIE
+  "TFI.PA":   "FR0000054900",  // TF1
+  "TKO.PA":   "FR0013230612",  // Tikehau Capital
+  "TRI.PA":   "FR0005691656",  // Trigano
+  "UBI.PA":   "FR0000054470",  // Ubisoft
+  "VIRP.PA":  "FR0000031577",  // Virbac
+  "VK.PA":    "FR0013506730",  // Vallourec
+  "VLA.PA":   "FR0004056851",  // Valneva
+  "VRLA.PA":  "FR0013447729",  // Verallia
+  "VU.PA":    "FR0013447729",  // Verallia
+  // Belgique
+  "SOLB.BE":  "BE0003470755",  // Solvay
 };
 
 function getSBF120Isin(ticker) {
