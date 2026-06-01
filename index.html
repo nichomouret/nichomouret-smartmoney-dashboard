@@ -267,6 +267,10 @@
       <div class="section-label">Triple Lock</div>
       <button id="triple-lock-btn" class="action-btn" style="padding:6px 13px;border-radius:8px;font-size:11px;">🔒 Inactif</button>
     </div>
+    <div>
+      <div class="section-label">Drawdown 52W min</div>
+      <div id="drawdown-filter-btns" style="display:flex;gap:4px;flex-wrap:wrap"></div>
+    </div>
     <div style="flex:2;min-width:160px">
       <div class="section-label">Ticker spécifique (optionnel)</div>
       <input class="ticker-input" id="custom-ticker" placeholder="ex: UBI.PA · IVA.PA · IONQ · NBTX (Yahoo Finance format)" />
@@ -515,6 +519,9 @@ let selectedUniverses = ["sp100", "nasdaq100", "russell_midcap"];
 let selectedCriteria = ["short_interest", "institutional", "price_drop"];
 let minScore = 1;
 let tripleLockOnly = false;
+// Filtre post-scan : drawdown 52W minimum (en valeur absolue, %).
+// 0 = pas de filtre. Options : 0, 10, 20, 30, 50.
+let drawdownFilterMin = 0;
 let scanning = false;
 let stopRequested = false;
 let allResults = [];
@@ -528,6 +535,7 @@ function init() {
   renderCriteria();
   renderScoreBtns();
   renderTripleLock();
+  renderDrawdownFilterBtns();
   updateScanBtn();
   updateTrackerBadge();
 }
@@ -569,6 +577,32 @@ function renderTripleLock() {
   btn.textContent = `🔒 ${tripleLockOnly ? "Actif" : "Inactif"}`;
   btn.onclick = () => { tripleLockOnly = !tripleLockOnly; renderTripleLock(); renderResults(); };
 }
+
+// Boutons quick-filter Drawdown post-scan
+const DRAWDOWN_FILTER_OPTIONS = [
+  { value: 0,  label: "Aucun" },
+  { value: 10, label: "≥10%" },
+  { value: 20, label: "≥20%" },
+  { value: 30, label: "≥30%" },
+  { value: 50, label: "≥50%" },
+];
+function renderDrawdownFilterBtns() {
+  const container = document.getElementById("drawdown-filter-btns");
+  if (!container) return;
+  container.innerHTML = DRAWDOWN_FILTER_OPTIONS.map(opt => {
+    const active = opt.value === drawdownFilterMin;
+    const color = active ? "#ff4757" : "#8b949e";
+    const bg = active ? "#ff475715" : "#21262d";
+    const border = active ? "#ff4757" : "#30363d";
+    return `<button onclick="setDrawdownFilter(${opt.value})" style="background:${bg};border:1px solid ${border};color:${color};padding:5px 8px;border-radius:6px;font-size:10px;font-weight:700;cursor:pointer;font-family:monospace">${opt.label}</button>`;
+  }).join("");
+}
+function setDrawdownFilter(value) {
+  drawdownFilterMin = value;
+  renderDrawdownFilterBtns();
+  renderResults();
+}
+window.setDrawdownFilter = setDrawdownFilter;
 
 function updateScanBtn() {
   const total = selectedUniverses.reduce((a, u) => a + (UNIVERSES[u]?.list?.length || 0), 0);
@@ -1629,9 +1663,19 @@ function setProgress(current, total, signals, step) {
 function renderResults() {
   // Les error cards (ticker non reconnu) sont TOUJOURS affichees, meme en mode Triple Lock,
   // pour que l'utilisateur voie son erreur de saisie.
-  const filtered = tripleLockOnly
+  let filtered = tripleLockOnly
     ? allResults.filter(r => r.isErrorCard || Object.values(r.criteria || {}).filter(Boolean).length >= 3)
     : allResults;
+
+  // Filtre post-scan Drawdown ≥ X%. Les error cards passent toujours.
+  if (drawdownFilterMin > 0) {
+    filtered = filtered.filter(r => {
+      if (r.isErrorCard) return true;
+      const dd = parseFloat(r.drawdown52w);
+      if (isNaN(dd)) return false;
+      return Math.abs(dd) >= drawdownFilterMin;
+    });
+  }
   // Tri : error cards en haut (pour visibilite), puis par SCCT desc
   filtered.sort((a, b) => {
     if (a.isErrorCard && !b.isErrorCard) return -1;
