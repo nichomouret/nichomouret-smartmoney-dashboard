@@ -896,23 +896,94 @@ function getSBF120Name(ticker) {
   return SBF120_NAMES[ticker.toUpperCase()] || null;
 }
 
+// ── Mapping ticker SBF120 -> ISIN
+// Sert de fallback pour /amf-bdif/isin/X quand /amf-bdif/ticker/Y renvoie 0
+// (bug : worker AMF ne mappe pas ISIN->ticker pour Teleperformance & autres)
+const SBF120_ISIN = {
+  "AI.PA":    "FR0000120073",
+  "AIR.PA":   "NL0000235190",
+  "AKE.PA":   "FR0010313833",
+  "AXA.PA":   "FR0000120628",
+  "BNP.PA":   "FR0000131104",
+  "BVI.PA":   "FR0006174348",
+  "CA.PA":    "FR0000120172",
+  "CAP.PA":   "FR0000125338",
+  "CS.PA":    "FR0000120628",  // = AXA
+  "DBV.PA":   "FR0010417345",
+  "DG.PA":    "FR0000125486",
+  "DSY.PA":   "FR0014003TT8",
+  "EDEN.PA":  "FR0010908533",
+  "EL.PA":    "FR0000121667",
+  "EN.PA":    "FR0000120503",
+  "ENGI.PA":  "FR0010208488",
+  "GET.PA":   "FR0010533075",
+  "GTT.PA":   "FR0011726835",
+  "HO.PA":    "FR0000121329",
+  "KER.PA":   "FR0000121485",
+  "MC.PA":    "FR0000121014",
+  "ML.PA":    "FR0000121261",
+  "NANO.PA":  "FR0011341205",
+  "OR.PA":    "FR0000120321",
+  "ORA.PA":   "FR0000133308",
+  "PUB.PA":   "FR0000130577",
+  "RI.PA":    "FR0000120693",
+  "RMS.PA":   "FR0000052292",
+  "RNO.PA":   "FR0000131906",
+  "SAF.PA":   "FR0000073272",
+  "SAN.PA":   "FR0000120578",
+  "SGO.PA":   "FR0000125007",
+  "STM.PA":   "NL0000226223",
+  "SU.PA":    "FR0000121972",
+  "TEP.PA":   "FR0000051807",  // TELEPERFORMANCE — fix Elalamy
+  "TTE.PA":   "FR0000120271",
+  "UBI.PA":   "FR0000054470",
+  "VIE.PA":   "FR0000124141",
+  "VIV.PA":   "FR0000127771",
+  "WLN.PA":   "FR0011981968",
+};
+
+function getSBF120Isin(ticker) {
+  if (!ticker) return null;
+  return SBF120_ISIN[ticker.toUpperCase()] || null;
+}
+
 // ── AMF BDIF — CORRECTION 1: Returns also raisonSociale to fix Claude's hallucinated company names
 // CORRECTION 2 (juin 2026) : si BDIF vide (cas TEP.PA Teleperformance),
 // on utilise le mapping SBF120_NAMES local en fallback pour que Claude
 // reconnaisse la societe et ne mette pas "Societe non identifiee".
+// CORRECTION 3 (juin 2026) : si /amf-bdif/ticker/X renvoie 0, on tente
+// /amf-bdif/isin/Y avec mapping SBF120_ISIN. Le worker AMF n'a pas
+// mappe ISIN->ticker pour tous les SBF120, donc certains filings
+// (ex: Teleperformance ELALAMY 19.9%, BlackRock 8.75%) restent avec ticker=null
+// alors qu'ils sont bien en DB.
 async function fetchAmfBdif(ticker) {
   if (!ticker.includes(".PA") && !ticker.includes(".BE")) return { crossings: [], raisonSociale: null, isin: null };
+  const fallbackName = getSBF120Name(ticker);
+  const fallbackIsin = getSBF120Isin(ticker);
   try {
-    const r = await fetch(`${PROXY}/amf-bdif/ticker/${encodeURIComponent(ticker)}?limit=12`);
-    const fallbackName = getSBF120Name(ticker);
-    if (!r.ok) return { crossings: [], raisonSociale: fallbackName, isin: null };
-    const data = await r.json();
-    if (!data.ok || !data.crossings?.length) return { crossings: [], raisonSociale: fallbackName, isin: null };
+    // ETAPE 1 : tente par ticker (chemin nominal)
+    let r = await fetch(`${PROXY}/amf-bdif/ticker/${encodeURIComponent(ticker)}?limit=12`);
+    let data = r.ok ? await r.json() : null;
+    let crossingsRaw = data?.ok ? (data.crossings || []) : [];
 
-    const raisonSociale = data.crossings[0]?.raison_sociale || fallbackName || null;
-    const isin = data.crossings[0]?.isin || null;
+    // ETAPE 2 : si vide ET on a un ISIN connu, fallback /isin
+    if (crossingsRaw.length === 0 && fallbackIsin) {
+      const rIsin = await fetch(`${PROXY}/amf-bdif/isin/${encodeURIComponent(fallbackIsin)}?limit=12`);
+      if (rIsin.ok) {
+        const dataIsin = await rIsin.json();
+        if (dataIsin?.ok && dataIsin.crossings?.length) {
+          crossingsRaw = dataIsin.crossings;
+          console.log(`[amf-bdif] ${ticker}: ${crossingsRaw.length} crossings trouves via fallback ISIN ${fallbackIsin}`);
+        }
+      }
+    }
 
-    const crossings = data.crossings.map(c => {
+    if (crossingsRaw.length === 0) return { crossings: [], raisonSociale: fallbackName, isin: fallbackIsin };
+
+    const raisonSociale = crossingsRaw[0]?.raison_sociale || fallbackName || null;
+    const isin = crossingsRaw[0]?.isin || fallbackIsin || null;
+
+    const crossings = crossingsRaw.map(c => {
       const fundName = c.is_tier1_fund && c.tier1_match_name ? c.tier1_match_name : (c.declarant || "—");
       const dir = c.direction === "hausse" ? "↑" : (c.direction === "baisse" ? "↓" : "NEW");
       const dateStr = c.crossing_date ? c.crossing_date.split("T")[0] : "—";
