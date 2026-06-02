@@ -494,8 +494,40 @@ const BDIF_SUGGESTIONS = {
   "AIR":{s:"AIR.PA",n:"Airbus"},"WORLDLINE":{s:"WLN.PA",n:"Worldline"},"UBISOFT":{s:"UBI.PA",n:"Ubisoft"},
   "INVENTIVA":{s:"IVA.PA",n:"Inventiva"},"ABIVAX":{s:"ABVX.PA",n:"Abivax"},"NANOBIOTIX":{s:"NANO.PA",n:"Nanobiotix"}
 };
+// === FTSE 100 (UK, Euronext London, .L) — ~95 tickers principaux ===
+// Source : LSE FTSE 100 + tickers Reuters .L
+const FTSE100 = [
+  "AZN.L","SHEL.L","HSBA.L","ULVR.L","BHP.L","RIO.L","GSK.L","BP.L","BARC.L","LLOY.L",
+  "VOD.L","DGE.L","TSCO.L","BATS.L","IMB.L","LSEG.L","REL.L","AHT.L","BA.L","RR.L",
+  "PRU.L","LGEN.L","ABF.L","CRH.L","SMIN.L","WTB.L","MKS.L","NXT.L","KGF.L","ITV.L",
+  "PHNX.L","SDR.L","HL.L","ANTO.L","GLEN.L","AAL.L","CCH.L","SVT.L","UU.L","NG.L",
+  "SSE.L","BT-A.L","ITRK.L","EXPN.L","INF.L","WPP.L","BME.L","ENT.L","FRAS.L","AUTO.L",
+  "RTO.L","HLN.L","NWG.L","STAN.L","STJ.L","RIO.L","TUI.L","CPG.L","RKT.L","SGE.L",
+  "SGRO.L","SN.L","SVT.L","TW.L","AV.L","BNZL.L","BKG.L","CNA.L","DCC.L","FCIT.L",
+  "FLTR.L","HIK.L","HSX.L","ICP.L","IHG.L","JD.L","LAND.L","MNDI.L","MRO.L","OCDO.L",
+  "PSON.L","PSN.L","RTO.L","RS1.L","SBRY.L","SKG.L","SMDS.L","SPX.L","TPK.L","WEIR.L",
+  "WPP.L","ABDN.L","DPLM.L","BEZ.L","BRBY.L"
+];
+
+// === DAX 40 + MDAX (Allemagne, XETRA, .DE) — ~80 tickers principaux ===
+// Source : Deutsche Börse DAX 40 + MDAX 50
+const DAX_MDAX = [
+  // === DAX 40 ===
+  "SAP.DE","SIE.DE","ALV.DE","DTE.DE","MUV2.DE","DBK.DE","BAS.DE","VOW3.DE","BMW.DE","MBG.DE",
+  "BAYN.DE","IFX.DE","DHL.DE","ADS.DE","HEI.DE","HEN3.DE","LIN.DE","ENR.DE","VNA.DE","CON.DE",
+  "BNR.DE","RWE.DE","HFG.DE","DTG.DE","ZAL.DE","1COV.DE","FRE.DE","BEI.DE","SY1.DE","QIA.DE",
+  "SHL.DE","MTX.DE","RHM.DE","P911.DE","MRK.DE","PAH3.DE","CBK.DE","DB1.DE","EOAN.DE","SRT3.DE",
+  // === MDAX (top 40) ===
+  "PUM.DE","EVK.DE","DHER.DE","KGX.DE","LXS.DE","WCH.DE","FME.DE","BC8.DE","O2D.DE","KU2.DE",
+  "AFX.DE","UN01.DE","SDF.DE","NDA.DE","GFT.DE","NEM.DE","SAR.DE","HLE.DE","JEN.DE","HOT.DE",
+  "EVT.DE","FNTN.DE","NA9.DE","PSM.DE","SZG.DE","TLX.DE","CTN.DE","RAA.DE","ARL.DE","TKA.DE",
+  "AT1.DE","DUE.DE","ECV.DE","NWO.DE","SAX.DE","UTDI.DE","WAF.DE","KRN.DE","HBH.DE","S92.DE",
+];
+
 const UNIVERSES = {
   sbf120:        { label: "🇫🇷 SBF 120", list: SBF120 },
+  ftse100:       { label: "🇬🇧 FTSE 100", list: FTSE100 },
+  dax_mdax:      { label: "🇩🇪 DAX + MDAX", list: DAX_MDAX },
   sp100:         { label: "🇺🇸 S&P 100", list: SP100 },
   nasdaq100:     { label: "🇺🇸 Nasdaq 100", list: NASDAQ100 },
   nasdaq150_ext: { label: "🇺🇸 Nasdaq 150+", list: NASDAQ150_EXT },
@@ -1027,6 +1059,144 @@ const SBF120_NAMES = {
   "VU.PA":    "Verallia",
   // Belgique principal
   "SOLB.BE":  "Solvay",
+  // === FTSE 100 (UK, .L) ===
+  "AZN.L":   "AstraZeneca",
+  "SHEL.L":  "Shell",
+  "HSBA.L":  "HSBC Holdings",
+  "ULVR.L":  "Unilever",
+  "BHP.L":   "BHP Group",
+  "RIO.L":   "Rio Tinto",
+  "GSK.L":   "GSK",
+  "BP.L":    "BP",
+  "BARC.L":  "Barclays",
+  "LLOY.L":  "Lloyds Banking Group",
+  "VOD.L":   "Vodafone",
+  "DGE.L":   "Diageo",
+  "TSCO.L":  "Tesco",
+  "BATS.L":  "British American Tobacco",
+  "IMB.L":   "Imperial Brands",
+  "LSEG.L":  "London Stock Exchange Group",
+  "REL.L":   "RELX",
+  "AHT.L":   "Ashtead Group",
+  "BA.L":    "BAE Systems",
+  "RR.L":    "Rolls-Royce",
+  "PRU.L":   "Prudential",
+  "LGEN.L":  "Legal & General",
+  "ABF.L":   "Associated British Foods",
+  "CRH.L":   "CRH",
+  "SMIN.L":  "Smiths Group",
+  "WTB.L":   "Whitbread",
+  "MKS.L":   "Marks & Spencer",
+  "NXT.L":   "Next",
+  "KGF.L":   "Kingfisher",
+  "ITV.L":   "ITV",
+  "PHNX.L":  "Phoenix Group",
+  "SDR.L":   "Schroders",
+  "HL.L":    "Hargreaves Lansdown",
+  "ANTO.L":  "Antofagasta",
+  "GLEN.L":  "Glencore",
+  "AAL.L":   "Anglo American",
+  "CCH.L":   "Coca-Cola HBC",
+  "SVT.L":   "Severn Trent",
+  "UU.L":    "United Utilities",
+  "NG.L":    "National Grid",
+  "SSE.L":   "SSE",
+  "BT-A.L":  "BT Group",
+  "ITRK.L":  "Intertek",
+  "EXPN.L":  "Experian",
+  "INF.L":   "Informa",
+  "WPP.L":   "WPP",
+  "BME.L":   "B&M European",
+  "ENT.L":   "Entain",
+  "FRAS.L":  "Frasers Group",
+  "AUTO.L":  "Auto Trader",
+  "RTO.L":   "Rentokil Initial",
+  "HLN.L":   "Haleon",
+  "NWG.L":   "NatWest Group",
+  "STAN.L":  "Standard Chartered",
+  "STJ.L":   "St James's Place",
+  "TUI.L":   "TUI",
+  "CPG.L":   "Compass Group",
+  "RKT.L":   "Reckitt Benckiser",
+  "SGE.L":   "Sage Group",
+  "SGRO.L":  "Segro",
+  "SN.L":    "Smith & Nephew",
+  "BNZL.L":  "Bunzl",
+  "BKG.L":   "Berkeley Group",
+  "CNA.L":   "Centrica",
+  "DCC.L":   "DCC",
+  "FLTR.L":  "Flutter Entertainment",
+  "HIK.L":   "Hikma Pharmaceuticals",
+  "IHG.L":   "InterContinental Hotels",
+  "JD.L":    "JD Sports Fashion",
+  "LAND.L":  "Land Securities",
+  "MNDI.L":  "Mondi",
+  "PSON.L":  "Pearson",
+  "PSN.L":   "Persimmon",
+  "SBRY.L":  "Sainsbury",
+  "SKG.L":   "Smurfit Kappa",
+  "SMDS.L":  "DS Smith",
+  "SPX.L":   "Spirax-Sarco Engineering",
+  "WEIR.L":  "Weir Group",
+  "ABDN.L":  "abrdn",
+  "BRBY.L":  "Burberry",
+  // === DAX 40 + MDAX (.DE) ===
+  "SAP.DE":   "SAP",
+  "SIE.DE":   "Siemens",
+  "ALV.DE":   "Allianz",
+  "DTE.DE":   "Deutsche Telekom",
+  "MUV2.DE":  "Munich Re",
+  "DBK.DE":   "Deutsche Bank",
+  "BAS.DE":   "BASF",
+  "VOW3.DE":  "Volkswagen (Pref)",
+  "BMW.DE":   "BMW",
+  "MBG.DE":   "Mercedes-Benz Group",
+  "BAYN.DE":  "Bayer",
+  "IFX.DE":   "Infineon Technologies",
+  "DHL.DE":   "DHL Group",
+  "ADS.DE":   "adidas",
+  "HEI.DE":   "Heidelberg Materials",
+  "HEN3.DE":  "Henkel (Pref)",
+  "LIN.DE":   "Linde",
+  "ENR.DE":   "Siemens Energy",
+  "VNA.DE":   "Vonovia",
+  "CON.DE":   "Continental",
+  "BNR.DE":   "Brenntag",
+  "RWE.DE":   "RWE",
+  "HFG.DE":   "HelloFresh",
+  "DTG.DE":   "Daimler Truck",
+  "ZAL.DE":   "Zalando",
+  "1COV.DE":  "Covestro",
+  "FRE.DE":   "Fresenius",
+  "BEI.DE":   "Beiersdorf",
+  "SY1.DE":   "Symrise",
+  "QIA.DE":   "Qiagen",
+  "SHL.DE":   "Siemens Healthineers",
+  "MTX.DE":   "MTU Aero Engines",
+  "RHM.DE":   "Rheinmetall",
+  "P911.DE":  "Porsche AG",
+  "MRK.DE":   "Merck KGaA",
+  "PAH3.DE":  "Porsche SE",
+  "CBK.DE":   "Commerzbank",
+  "DB1.DE":   "Deutsche Boerse",
+  "EOAN.DE":  "E.ON",
+  "SRT3.DE":  "Sartorius (Pref)",
+  // MDAX
+  "PUM.DE":   "Puma",
+  "EVK.DE":   "Evonik",
+  "DHER.DE":  "Delivery Hero",
+  "KGX.DE":   "KION Group",
+  "LXS.DE":   "Lanxess",
+  "WCH.DE":   "Wacker Chemie",
+  "FME.DE":   "Fresenius Medical Care",
+  "AFX.DE":   "Carl Zeiss Meditec",
+  "SDF.DE":   "K+S",
+  "NEM.DE":   "Nemetschek",
+  "HOT.DE":   "Hochtief",
+  "EVT.DE":   "Evotec",
+  "TKA.DE":   "ThyssenKrupp",
+  "AT1.DE":   "Aroundtown",
+  "WAF.DE":   "Siltronic",
 };
 
 function getSBF120Name(ticker) {
@@ -1217,35 +1387,46 @@ async function fetchAmfBdif(ticker) {
 }
 
 async function fetchTickerData(ticker) {
-  const isFrench = ticker.includes(".PA") || ticker.includes(".BE");
-  const isEuropean = isFrench;
+  const isFrench  = ticker.includes(".PA") || ticker.includes(".BE");
+  const isUK      = ticker.endsWith(".L");
+  const isGerman  = ticker.endsWith(".DE");
+  const isEuropean = isFrench || isUK || isGerman;
 
-  // CORRECTION: pour les tickers Euronext (.PA/.BE), envoyer le symbole nu + exchange=Euronext
-  // au proxy pour eviter les collisions US (ex: NANO -> NanoLabs US au lieu de Nanobiotix)
-  const cleanSymbol = ticker.replace(/\.[A-Z]+$/,'');
-  // TwelveData veut le symbole sans suffixe ET exchange explicite pour les marches non-US
+  // CORRECTION: pour les tickers .PA/.BE/.L/.DE, envoyer le symbole nu + exchange explicite
+  // au proxy pour eviter les collisions (ex: NANO -> NanoLabs US au lieu de Nanobiotix)
+  const cleanSymbol = ticker.replace(/\.[A-Z]+$/, '');
   const priceSymbol = cleanSymbol;
 
-  // CORRECTION 1: Fetch BDIF FIRST so we have the real company name for the news query
-  const bdifResult = isFrench ? await fetchAmfBdif(ticker) : { crossings: [], raisonSociale: null, isin: null };
-  const realRaisonSociale = bdifResult.raisonSociale;
+  // Determine l'exchange selon le suffixe
+  let exchangeParam = "";
+  if (isFrench)       exchangeParam = '&exchange=Euronext';
+  else if (isUK)      exchangeParam = '&exchange=LSE';
+  else if (isGerman)  exchangeParam = '&exchange=XETRA';
 
-  // CORRECTION 4: Build improved news query using real company name
+  // BDIF : UNIQUEMENT pour les francais (.PA/.BE)
+  const bdifResult = isFrench ? await fetchAmfBdif(ticker) : { crossings: [], raisonSociale: null, isin: null };
+  let realRaisonSociale = bdifResult.raisonSociale;
+  // Fallback nom via SBF120_NAMES pour TOUS les SBF120/europeens connus
+  if (!realRaisonSociale) {
+    realRaisonSociale = getSBF120Name(ticker);
+  }
+
   const newsQuery = realRaisonSociale
     ? `${realRaisonSociale} ${ticker} shareholder OR institutional`
     : `${ticker} institutional shareholder`;
 
   const [quote, ts, news, filings13g, filings13f, amfData, pelositrades, sec13fHolders, earnings, stats] = await Promise.all([
-proxyFetch(`/twelvedata/price?symbol=${encodeURIComponent(priceSymbol)}${isFrench ? '&exchange=Euronext' : ''}`),
-    proxyFetch(`/twelvedata/timeseries?symbol=${encodeURIComponent(priceSymbol)}&interval=1day&outputsize=252${isFrench ? '&exchange=Euronext' : ''}`),
+    proxyFetch(`/twelvedata/price?symbol=${encodeURIComponent(priceSymbol)}${exchangeParam}`),
+    proxyFetch(`/twelvedata/timeseries?symbol=${encodeURIComponent(priceSymbol)}&interval=1day&outputsize=252${exchangeParam}`),
     proxyFetch(`/news?query=${encodeURIComponent(newsQuery)}`),
-    (!isEuropean && !isFrench) ? proxyFetch(`/edgar/filings13g?ticker=${encodeURIComponent(ticker.replace(/\.PA$|\.BE$/,''))}`) : Promise.resolve({filings:[]}),
-    (!isEuropean && !isFrench) ? proxyFetch(`/edgar/institutional13f?ticker=${encodeURIComponent(ticker)}`) : Promise.resolve(null),
+    // SEC EDGAR 13G/13F : uniquement pour les tickers US (pas EU)
+    (!isEuropean) ? proxyFetch(`/edgar/filings13g?ticker=${encodeURIComponent(cleanSymbol)}`) : Promise.resolve({filings:[]}),
+    (!isEuropean) ? proxyFetch(`/edgar/institutional13f?ticker=${encodeURIComponent(ticker)}`) : Promise.resolve(null),
     isFrench ? proxyFetch(`/amf/franchissements?ticker=${encodeURIComponent(ticker)}`) : Promise.resolve(null),
     (!isFrench) ? proxyFetch(`/pelosi/trades?ticker=${encodeURIComponent(cleanSymbol)}`) : Promise.resolve(null),
     proxyFetch(`/sec-13f/ticker/${encodeURIComponent(cleanSymbol)}?limit=20`),
-    proxyFetch(`/twelvedata/earnings?symbol=${encodeURIComponent(priceSymbol)}${isFrench ? '&exchange=Euronext' : ''}`),
-    proxyFetch(`/twelvedata/statistics?symbol=${encodeURIComponent(priceSymbol)}${isFrench ? '&exchange=Euronext' : ''}`),
+    proxyFetch(`/twelvedata/earnings?symbol=${encodeURIComponent(priceSymbol)}${exchangeParam}`),
+    proxyFetch(`/twelvedata/statistics?symbol=${encodeURIComponent(priceSymbol)}${exchangeParam}`),
   ]);
 
   // SEC 13F holders (top 20 Tier 1 fonds qui detiennent ce ticker)
