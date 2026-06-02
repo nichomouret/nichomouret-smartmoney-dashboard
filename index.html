@@ -720,10 +720,12 @@ function calculateSCCT(result) {
 
   if (result.drawdown52w) {
     const dd = Math.abs(parseFloat(result.drawdown52w));
+    // Patch juin 2026 : boost calibration drawdown moderes (20-40%)
+    // Anciennes valeurs : 20=6, 30=12. Trop sous-evalues.
     if (dd >= 60) score += 20;
     else if (dd >= 40) score += 16;
-    else if (dd >= 30) score += 12;
-    else if (dd >= 20) score += 6;
+    else if (dd >= 30) score += 15;   // +3 vs avant
+    else if (dd >= 20) score += 10;   // +4 vs avant
   }
 
   // VAD scoring : utilise la valeur (reelle Ortex OU estimee Claude type "15-20%")
@@ -815,7 +817,10 @@ function calculateSCCT(result) {
   if (result.criteria?.catalysts || result.criteria?.biotech) {
     let multiplier = computeCatalystFreshness(result.catalystDate, result.catalystType);
     if (result.catalystSource !== 'twelvedata') {
-      multiplier = multiplier * 0.6; // penalite pour source non verifiee
+      // Patch juin 2026 : penalite reduite 0.6 -> 0.8.
+      // 40% etait trop severe pour les catalysts Claude (BLA filings, AGM,
+      // congres scientifiques) qui sont reels mais hors API TwelveData.
+      multiplier = multiplier * 0.8;
     }
     const baseBonus = 10;
     score += Math.round(baseBonus * multiplier);
@@ -835,6 +840,46 @@ function calculateSCCT(result) {
   // BONUS ACCUMULATION SYSTÉMIQUE (+5 pts)
   const verifiedCount = moves.filter(m => m.verified === true).length;
   if (verifiedCount >= 5) score += 5;
+
+  // === PATCH juin 2026 : BONUS COMBO FLOOR + FLOW (+8 pts) ===
+  // Si Floor Score >= 75 (BETON) ET Flow Score >= 80 (ACCUMULATION/MAINS FORTES),
+  // c'est la combinaison la plus rare et la plus predictive cote chips secondaires.
+  // Recompense les setups Smart Money tres complets.
+  if (result.holders13f && result.holders13f.length > 0) {
+    try {
+      const floorRes = computeFloorScore(result.holders13f, result.marketCap, result.universe);
+      const flowRes = computeFlowScore(result.holders13f, result.universe, result.market);
+      if (floorRes.score >= 75 && flowRes.score !== null && flowRes.score >= 80) {
+        score += 8;
+      }
+    } catch (e) {
+      // silencieux si computeFloorScore/computeFlowScore non disponibles
+    }
+  }
+
+  // === PATCH juin 2026 : BONUS ACTIVIST CONFIRME (+5 pts) ===
+  // Un activist (Third Point, Elliott, Pershing, Trian, Icahn, Starboard, etc.)
+  // detenant >= 5% du capital ET avec mouvement NEW/INCREASED recent = signal
+  // de conviction le plus predictif au retail. Cas Elalamy sur TEP.PA (19.9%).
+  if (result.marketCap && result.marketCap > 0 && activistHolders.length > 0) {
+    const activistsWithBigStake = activistHolders.filter(h => {
+      const valueUsd = Number(h.valueUsd) || 0;
+      const stakePct = (valueUsd / result.marketCap) * 100;
+      return stakePct >= 5 && (h.change === 'NEW' || h.change === 'INCREASED');
+    });
+    if (activistsWithBigStake.length >= 1) {
+      score += 5;
+    }
+  }
+  // Variante EU/BDIF : activist verified via BDIF avec pct_capital >= 5
+  const bdifActivistBig = moves.some(m =>
+    m.verified === true &&
+    m.isActivist === true &&
+    parseFloat((m.pct || "0").replace(/[^0-9.]/g, "")) >= 5
+  );
+  if (bdifActivistBig) {
+    score += 5;
+  }
 
   return Math.min(score, 100);
 }
