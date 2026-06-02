@@ -1398,10 +1398,15 @@ async function fetchTickerData(ticker) {
   const priceSymbol = cleanSymbol;
 
   // Determine l'exchange selon le suffixe
+  // Pour DE : on essaie d'abord XETRA, fallback automatique vers ticker complet sans exchange
   let exchangeParam = "";
   if (isFrench)       exchangeParam = '&exchange=Euronext';
   else if (isUK)      exchangeParam = '&exchange=LSE';
   else if (isGerman)  exchangeParam = '&exchange=XETRA';
+
+  // Helper : un appel TwelveData est-il "vide" (pas de data utile) ?
+  const isEmptyQuote = (q) => !q || q.code || q.status === 'error' || !q.close;
+  const isEmptyTs    = (t) => !t || t.code || !t?.values || t.values.length < 5;
 
   // BDIF : UNIQUEMENT pour les francais (.PA/.BE)
   const bdifResult = isFrench ? await fetchAmfBdif(ticker) : { crossings: [], raisonSociale: null, isin: null };
@@ -1415,7 +1420,7 @@ async function fetchTickerData(ticker) {
     ? `${realRaisonSociale} ${ticker} shareholder OR institutional`
     : `${ticker} institutional shareholder`;
 
-  const [quote, ts, news, filings13g, filings13f, amfData, pelositrades, sec13fHolders, earnings, stats] = await Promise.all([
+  let [quote, ts, news, filings13g, filings13f, amfData, pelositrades, sec13fHolders, earnings, stats] = await Promise.all([
     proxyFetch(`/twelvedata/price?symbol=${encodeURIComponent(priceSymbol)}${exchangeParam}`),
     proxyFetch(`/twelvedata/timeseries?symbol=${encodeURIComponent(priceSymbol)}&interval=1day&outputsize=252${exchangeParam}`),
     proxyFetch(`/news?query=${encodeURIComponent(newsQuery)}`),
@@ -1428,6 +1433,24 @@ async function fetchTickerData(ticker) {
     proxyFetch(`/twelvedata/earnings?symbol=${encodeURIComponent(priceSymbol)}${exchangeParam}`),
     proxyFetch(`/twelvedata/statistics?symbol=${encodeURIComponent(priceSymbol)}${exchangeParam}`),
   ]);
+
+  // FALLBACK européen : si TwelveData renvoie vide avec exchange explicite,
+  // on retente avec le ticker COMPLET (BAYN.DE) sans paramètre exchange.
+  // Couvre les cas où le nom d'exchange n'est pas reconnu par TwelveData (ex: XETRA).
+  if (isEuropean && (isEmptyQuote(quote) || isEmptyTs(ts))) {
+    console.log(`[fallback] ${ticker}: TwelveData vide avec ${exchangeParam}, retry avec ticker complet sans exchange`);
+    const fullSym = encodeURIComponent(ticker); // ex: "BAYN.DE", "SAP.DE"
+    const [q2, t2, e2, s2] = await Promise.all([
+      isEmptyQuote(quote) ? proxyFetch(`/twelvedata/price?symbol=${fullSym}`) : Promise.resolve(quote),
+      isEmptyTs(ts)       ? proxyFetch(`/twelvedata/timeseries?symbol=${fullSym}&interval=1day&outputsize=252`) : Promise.resolve(ts),
+      proxyFetch(`/twelvedata/earnings?symbol=${fullSym}`),
+      proxyFetch(`/twelvedata/statistics?symbol=${fullSym}`),
+    ]);
+    if (!isEmptyQuote(q2)) quote = q2;
+    if (!isEmptyTs(t2))    ts = t2;
+    if (e2 && !e2.code)    earnings = e2;
+    if (s2 && !s2.code)    stats = s2;
+  }
 
   // SEC 13F holders (top 20 Tier 1 fonds qui detiennent ce ticker)
   const holders13f = (sec13fHolders?.holders || []).map(h => ({
