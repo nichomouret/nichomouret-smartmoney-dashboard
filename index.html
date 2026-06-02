@@ -1434,11 +1434,12 @@ async function fetchTickerData(ticker) {
     proxyFetch(`/twelvedata/statistics?symbol=${encodeURIComponent(priceSymbol)}${exchangeParam}`),
   ]);
 
-  // FALLBACK européen : si TwelveData renvoie vide avec exchange explicite,
-  // on retente avec le ticker COMPLET (BAYN.DE) sans paramètre exchange.
-  // Couvre les cas où le nom d'exchange n'est pas reconnu par TwelveData (ex: XETRA).
+  // FALLBACK européen — cascade 2 niveaux :
+  // 1) TwelveData avec ticker COMPLET sans exchange (BAYN.DE au lieu de BAYN+XETRA)
+  // 2) Yahoo Finance via proxy (gratuit, supporte nativement .DE/.PA/.L) si TwelveData
+  //    ne couvre pas cet exchange dans le plan (ex: XETRA souvent absent du plan basic)
   if (isEuropean && (isEmptyQuote(quote) || isEmptyTs(ts))) {
-    console.log(`[fallback] ${ticker}: TwelveData vide avec ${exchangeParam}, retry avec ticker complet sans exchange`);
+    console.log(`[fallback-1] ${ticker}: TwelveData vide avec ${exchangeParam}, retry ticker complet sans exchange`);
     const fullSym = encodeURIComponent(ticker); // ex: "BAYN.DE", "SAP.DE"
     const [q2, t2, e2, s2] = await Promise.all([
       isEmptyQuote(quote) ? proxyFetch(`/twelvedata/price?symbol=${fullSym}`) : Promise.resolve(quote),
@@ -1450,6 +1451,23 @@ async function fetchTickerData(ticker) {
     if (!isEmptyTs(t2))    ts = t2;
     if (e2 && !e2.code)    earnings = e2;
     if (s2 && !s2.code)    stats = s2;
+
+    // 2) Si TwelveData échoue toujours (cas XETRA hors plan) → Yahoo Finance
+    if (isEmptyQuote(quote) || isEmptyTs(ts)) {
+      console.log(`[fallback-2] ${ticker}: TwelveData KO partout, bascule Yahoo Finance`);
+      const [yQuote, yTs] = await Promise.all([
+        isEmptyQuote(quote) ? proxyFetch(`/yahoo/price?symbol=${fullSym}`) : Promise.resolve(quote),
+        isEmptyTs(ts)       ? proxyFetch(`/yahoo/timeseries?symbol=${fullSym}&range=1y&interval=1d`) : Promise.resolve(ts),
+      ]);
+      if (yQuote && !yQuote.error && yQuote.close) {
+        quote = yQuote; // shape compatible : close + currency
+        console.log(`[fallback-2] ${ticker}: Yahoo price=${yQuote.close}${yQuote.currency}`);
+      }
+      if (yTs && !yTs.error && yTs.values?.length > 10) {
+        ts = yTs; // shape compatible : values: [{datetime, close, ...}]
+        console.log(`[fallback-2] ${ticker}: Yahoo timeseries ${yTs.values.length} points`);
+      }
+    }
   }
 
   // SEC 13F holders (top 20 Tier 1 fonds qui detiennent ce ticker)
