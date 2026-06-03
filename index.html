@@ -1962,6 +1962,9 @@ async function runScan() {
               catalystType: finalCatalystType,
               catalystDescription: finalCatalystDesc,
               catalystSource: catalystSource,
+              // Analyse technique + consensus analystes (calculés dashboard-side)
+              technicalScore: data.technicalScore || null,
+              analystData: data.analystData || null,
             };
             base.scct = calculateSCCT(base);
             return base;
@@ -2148,19 +2151,21 @@ function isBigThree(fundName) {
 // Score 0-100 où 50 = neutre, >70 = setup technique haussier, <30 = setup baissier
 // ============================================================
 function computeTechnicalScore(timeseries) {
-  if (!timeseries?.values || timeseries.values.length < 200) {
-    return { score: null, status: "NOT_ENOUGH_DATA", note: "Moins de 200 sessions disponibles" };
+  // Minimum très bas : 30 sessions suffisent pour RSI(14) + MA20.
+  // Dégradation gracieuse : on calcule TOUT ce qu'on peut avec les données dispo.
+  if (!timeseries?.values || timeseries.values.length < 30) {
+    return { score: null, status: "NOT_ENOUGH_DATA", note: `Seulement ${timeseries?.values?.length || 0} sessions` };
   }
   // ts.values est en ordre DESC (TwelveData) — on reverse pour ASC (plus ancien d'abord)
   const closes = timeseries.values.map(v => parseFloat(v.close)).filter(Number.isFinite).reverse();
   const volumes = timeseries.values.map(v => parseFloat(v.volume) || 0).reverse();
-  if (closes.length < 200) {
-    return { score: null, status: "NOT_ENOUGH_DATA", note: `Seulement ${closes.length} sessions valides` };
+  if (closes.length < 30) {
+    return { score: null, status: "NOT_ENOUGH_DATA", note: `Seulement ${closes.length} closes valides` };
   }
 
-  // SMA helper : moyenne mobile sur n derniers points jusqu'à idx (inclus)
+  // SMA helper : null si pas assez de data
   const sma = (arr, n, idx) => {
-    if (idx < n - 1) return null;
+    if (idx < n - 1 || idx >= arr.length) return null;
     let s = 0;
     for (let i = idx - n + 1; i <= idx; i++) s += arr[i];
     return s / n;
@@ -2168,23 +2173,30 @@ function computeTechnicalScore(timeseries) {
 
   const last = closes.length - 1;
   const price = closes[last];
-  const ma50 = sma(closes, 50, last);
-  const ma200 = sma(closes, 200, last);
+  // Capacités selon historique disponible
+  const hasMA200 = closes.length >= 200;
+  const hasMA50  = closes.length >= 50;
+  const hasVol200 = volumes.length >= 200;
 
-  // Détection golden/death cross dans les 20 dernières sessions
-  let crossSignal = "none"; // "golden" | "death" | "none"
+  const ma50  = hasMA50  ? sma(closes, 50, last)  : null;
+  const ma200 = hasMA200 ? sma(closes, 200, last) : null;
+
+  // Détection golden/death cross dans les 20 dernières sessions (uniquement si on a 200+)
+  let crossSignal = "none";
   let crossDaysAgo = null;
-  for (let i = Math.max(200, last - 20); i <= last; i++) {
-    const m50 = sma(closes, 50, i);
-    const m50p = sma(closes, 50, i - 1);
-    const m200 = sma(closes, 200, i);
-    const m200p = sma(closes, 200, i - 1);
-    if (m50p == null || m200p == null) continue;
-    if (m50p <= m200p && m50 > m200)      { crossSignal = "golden"; crossDaysAgo = last - i; }
-    else if (m50p >= m200p && m50 < m200) { crossSignal = "death";  crossDaysAgo = last - i; }
+  if (hasMA200) {
+    for (let i = Math.max(200, last - 20); i <= last; i++) {
+      const m50  = sma(closes, 50, i);
+      const m50p = sma(closes, 50, i - 1);
+      const m200  = sma(closes, 200, i);
+      const m200p = sma(closes, 200, i - 1);
+      if (m50p == null || m200p == null) continue;
+      if (m50p <= m200p && m50 > m200)      { crossSignal = "golden"; crossDaysAgo = last - i; }
+      else if (m50p >= m200p && m50 < m200) { crossSignal = "death";  crossDaysAgo = last - i; }
+    }
   }
 
-  // RSI(14) — Wilder's smoothing simplifié (moyenne arithmétique sur 14 derniers)
+  // RSI(14)
   let gains = 0, losses = 0;
   for (let i = last - 13; i <= last; i++) {
     const delta = closes[i] - closes[i - 1];
@@ -2195,60 +2207,84 @@ function computeTechnicalScore(timeseries) {
   const avgLoss = losses / 14;
   const rsi = avgLoss === 0 ? 100 : 100 - (100 / (1 + avgGain / avgLoss));
 
-  // Volume : moyenne 20j vs moyenne 200j
-  let vol20 = 0, vol200 = 0;
-  for (let i = last - 19;  i <= last; i++) vol20 += volumes[i];
-  for (let i = last - 199; i <= last; i++) vol200 += volumes[i];
-  vol20 /= 20; vol200 /= 200;
-  const volRatio = vol200 > 0 ? vol20 / vol200 : 1;
+  // Volume : moyenne 20j vs moyenne 200j (ou 100j si dispo, sinon skip)
+  let volRatio = null;
+  let vol20 = 0;
+  for (let i = last - 19; i <= last; i++) vol20 += volumes[i];
+  vol20 /= 20;
+  const volLongN = hasVol200 ? 200 : (volumes.length >= 100 ? 100 : null);
+  if (volLongN) {
+    let volLong = 0;
+    for (let i = last - volLongN + 1; i <= last; i++) volLong += volumes[i];
+    volLong /= volLongN;
+    volRatio = volLong > 0 ? vol20 / volLong : null;
+  }
 
-  // Distances en %
-  const distMA200 = ((price - ma200) / ma200) * 100;
-  const distMA50  = ((price - ma50)  / ma50)  * 100;
+  // Distances en % (null si MA non calculée)
+  const distMA200 = hasMA200 ? ((price - ma200) / ma200) * 100 : null;
+  const distMA50  = hasMA50  ? ((price - ma50)  / ma50)  * 100 : null;
 
-  // ── COMPOSITE SCORE 0-100 ──
-  let score = 50; // neutre
-  // Prix vs MA200 : ±25 points (composant le plus lourd)
-  if      (distMA200 >  20) score += 22;
-  else if (distMA200 >  10) score += 15;
-  else if (distMA200 >   0) score += 8;
-  else if (distMA200 > -10) score -= 5;
-  else if (distMA200 > -25) score -= 12;
-  else                      score -= 20;
-  // Prix vs MA50 : ±10 points
-  if      (distMA50 >  10) score += 10;
-  else if (distMA50 >   0) score += 5;
-  else if (distMA50 > -10) score -= 4;
-  else                     score -= 8;
-  // Cross signal : ±12 points si récent
+  // ── COMPOSITE SCORE 0-100 ── (poids redistribués si MA200 absent)
+  let score = 50;
+  const hasFullScope = hasMA200; // poids "normaux" si on a tout
+  // Prix vs MA200 : ±20 points (composant le plus lourd quand disponible)
+  if (distMA200 != null) {
+    if      (distMA200 >  20) score += 22;
+    else if (distMA200 >  10) score += 15;
+    else if (distMA200 >   0) score += 8;
+    else if (distMA200 > -10) score -= 5;
+    else if (distMA200 > -25) score -= 12;
+    else                      score -= 20;
+  }
+  // Prix vs MA50 : ±10 points normalement, ±20 si pas de MA200 (compensation)
+  if (distMA50 != null) {
+    const w = hasFullScope ? 1 : 2;
+    if      (distMA50 >  10) score += 10 * w;
+    else if (distMA50 >   0) score += 5 * w;
+    else if (distMA50 > -10) score -= 4 * w;
+    else                     score -= 8 * w;
+  }
+  // Cross signal
   if (crossSignal === "golden") score += 12;
   if (crossSignal === "death")  score -= 12;
-  // RSI : zones extrêmes
-  if      (rsi < 30) score += 6;  // sur-vendu = rebond probable
-  else if (rsi > 75) score -= 8;  // sur-acheté = correction probable
-  else if (rsi > 70) score -= 4;
-  // Volume : confirmation/accumulation
-  if      (volRatio > 1.5) score += 8;
-  else if (volRatio > 1.2) score += 4;
-  else if (volRatio < 0.7) score -= 5;
+  // RSI : zones extrêmes (±8 normal, ±12 si pas de MA200)
+  const rsiW = hasFullScope ? 1 : 1.5;
+  if      (rsi < 25) score += 8 * rsiW;
+  else if (rsi < 30) score += 5 * rsiW;
+  else if (rsi > 75) score -= 8 * rsiW;
+  else if (rsi > 70) score -= 4 * rsiW;
+  // Volume
+  if (volRatio != null) {
+    if      (volRatio > 1.5) score += 8;
+    else if (volRatio > 1.2) score += 4;
+    else if (volRatio < 0.7) score -= 5;
+  }
   score = Math.max(0, Math.min(100, Math.round(score)));
 
-  // ── ANALYSE TEXTUELLE SYNTHÉTISÉE ──
+  // ── ANALYSE TEXTUELLE ──
   const parts = [];
-  if      (distMA200 > 5)  parts.push(`Trend LT haussier (+${distMA200.toFixed(0)}% vs MA200)`);
-  else if (distMA200 < -10) parts.push(`Trend LT baissier (${distMA200.toFixed(0)}% vs MA200)`);
-  else                     parts.push(`Trend LT neutre (${distMA200.toFixed(0)}% vs MA200)`);
-  if      (distMA50 > 5)   parts.push(`MT haussier (+${distMA50.toFixed(0)}% vs MA50)`);
-  else if (distMA50 < -10) parts.push(`MT baissier (${distMA50.toFixed(0)}% vs MA50)`);
+  if (distMA200 != null) {
+    if      (distMA200 > 5)   parts.push(`Trend LT haussier (+${distMA200.toFixed(0)}% vs MA200)`);
+    else if (distMA200 < -10) parts.push(`Trend LT baissier (${distMA200.toFixed(0)}% vs MA200)`);
+    else                      parts.push(`Trend LT neutre (${distMA200.toFixed(0)}% vs MA200)`);
+  } else {
+    parts.push(`MA200 indisponible (${closes.length}j d'histo)`);
+  }
+  if (distMA50 != null) {
+    if      (distMA50 > 5)   parts.push(`MT haussier (+${distMA50.toFixed(0)}% vs MA50)`);
+    else if (distMA50 < -10) parts.push(`MT baissier (${distMA50.toFixed(0)}% vs MA50)`);
+    else                     parts.push(`MT neutre (${distMA50.toFixed(0)}% vs MA50)`);
+  }
   if (crossSignal === "golden") parts.push(`⭐ Golden Cross MA50/200 (${crossDaysAgo}j)`);
   if (crossSignal === "death")  parts.push(`⚠ Death Cross MA50/200 (${crossDaysAgo}j)`);
   if      (rsi < 30) parts.push(`RSI sur-vendu (${rsi.toFixed(0)})`);
   else if (rsi > 70) parts.push(`RSI sur-acheté (${rsi.toFixed(0)})`);
   else               parts.push(`RSI neutre (${rsi.toFixed(0)})`);
-  if      (volRatio > 1.3) parts.push(`📈 Accumulation volume (+${((volRatio - 1) * 100).toFixed(0)}%)`);
-  else if (volRatio < 0.7) parts.push(`📉 Volume mort (-${((1 - volRatio) * 100).toFixed(0)}%)`);
+  if (volRatio != null) {
+    if      (volRatio > 1.3) parts.push(`📈 Accumulation volume (+${((volRatio - 1) * 100).toFixed(0)}%)`);
+    else if (volRatio < 0.7) parts.push(`📉 Volume mort (-${((1 - volRatio) * 100).toFixed(0)}%)`);
+  }
 
-  // Label qualitatif du score
   let label;
   if      (score >= 75) label = "TECH FORT";
   else if (score >= 60) label = "TECH OK";
@@ -2259,11 +2295,13 @@ function computeTechnicalScore(timeseries) {
   return {
     score, label,
     components: {
-      distMA200: +distMA200.toFixed(1),
-      distMA50:  +distMA50.toFixed(1),
+      distMA200: distMA200 != null ? +distMA200.toFixed(1) : null,
+      distMA50:  distMA50  != null ? +distMA50.toFixed(1)  : null,
       crossSignal, crossDaysAgo,
       rsi: +rsi.toFixed(1),
-      volRatio: +volRatio.toFixed(2),
+      volRatio: volRatio != null ? +volRatio.toFixed(2) : null,
+      sessions: closes.length,
+      hasMA200,
     },
     analysis: parts.join(" • "),
     status: "OK",
@@ -2529,17 +2567,19 @@ function renderTechnicalChip(r) {
   else              { color = "#ff4757"; bg = "#ff475715"; border = "#ff475744"; }
 
   const c = t.components || {};
+  const fmtDist = (v) => v == null ? "N/A" : `${v > 0 ? '+' : ''}${v}%`;
   const tooltip = `Technical Score ${s}/100 (${t.label})
 
 ANALYSE :
 ${t.analysis}
 
 COMPOSANTS :
-• Prix vs MA200 : ${c.distMA200 > 0 ? '+' : ''}${c.distMA200}%
-• Prix vs MA50  : ${c.distMA50 > 0 ? '+' : ''}${c.distMA50}%
+• Prix vs MA200 : ${fmtDist(c.distMA200)}${c.hasMA200 ? '' : ' (histo insuffisant)'}
+• Prix vs MA50  : ${fmtDist(c.distMA50)}
 • RSI(14)       : ${c.rsi}
-• Volume 20j/200j : x${c.volRatio}
+• Volume 20j/long : ${c.volRatio != null ? 'x' + c.volRatio : 'N/A'}
 • Cross MA50/200 : ${c.crossSignal === 'golden' ? 'GOLDEN ⭐' : c.crossSignal === 'death' ? 'DEATH ⚠' : 'aucun'}${c.crossDaysAgo != null ? ' (' + c.crossDaysAgo + 'j)' : ''}
+• Sessions analysées : ${c.sessions}
 
 NB : Smart money fait souvent les meilleurs trades CONTRE le signal technique.
 Un SCCT élevé + TS faible = setup contrarian (Buffett, Klarman style).
@@ -2724,36 +2764,74 @@ function fmtSharesSigned(v) {
 }
 
 function renderHolders13fPanel(r) {
-  const holders = r.holders13f || [];
-  if (holders.length === 0) return "";
+  const allHolders = r.holders13f || [];
+  if (allHolders.length === 0) return "";
+  // Filtre fraîcheur : ne garder que les holders avec période <= 2 ans
+  // (les Q4 2016 etc. polluent la lecture, ce sont des positions soldées depuis longtemps)
+  const FRESHNESS_MONTHS = 24;
+  const cutoffDate = new Date();
+  cutoffDate.setMonth(cutoffDate.getMonth() - FRESHNESS_MONTHS);
+  const holders = allHolders.filter(h => {
+    if (!h.period) return false;
+    return new Date(h.period) >= cutoffDate;
+  });
+  const filteredOut = allHolders.length - holders.length;
+  if (holders.length === 0) {
+    return `<div style="background:#0d1117;border:1px solid #21262d;border-radius:8px;padding:10px 12px;margin-bottom:10px;color:#8b949e;font-size:11px;text-align:center">
+      🏛️ Top Holders 13F : <strong>${allHolders.length} fonds détectés mais tous antérieurs à ${cutoffDate.toISOString().slice(0,7)}</strong> — positions probablement soldées
+    </div>`;
+  }
 
   // === SYNTHESE AGREGEE ===
   const totalValueUsd = holders.reduce((s, h) => s + (Number(h.valueUsd) || 0), 0);
   const totalShares = holders.reduce((s, h) => s + (Number(h.shares) || 0), 0);
   const cntByChange = { NEW: 0, INCREASED: 0, DECREASED: 0, EXITED: 0, UNCHANGED: 0, UNKNOWN: 0 };
-  let deltaSharesEstimate = 0; // delta agrege estime
-  let newValueUsd = 0;
+  let deltaSharesEstimate = 0; // delta agrege estime (en actions)
+  let newValueUsd = 0;          // ancien : juste les NEW
+  let boughtValueUsd = 0;       // NEW + INCREASED en $
+  let soldValueUsd = 0;         // DECREASED + EXITED en $ (valeur absolue)
+  // Pour la "phrase" : le plus gros mouvement de la période
+  let biggestMove = null; // { fund, type, valueUsd }
   for (const h of holders) {
     const c = h.change || "UNCHANGED";
     if (cntByChange[c] === undefined) cntByChange[c] = 0;
     cntByChange[c]++;
     const shares = Number(h.shares) || 0;
+    const value = Number(h.valueUsd) || 0;
     const pct = Number(h.changePct) || null;
+    let deltaValue = 0; // $ delta pour CE holder
     if (c === "NEW") {
       deltaSharesEstimate += shares;
-      newValueUsd += Number(h.valueUsd) || 0;
+      newValueUsd += value;
+      deltaValue = value; // toute la position est "neuve"
+      boughtValueUsd += value;
     } else if (c === "INCREASED" && pct && pct > 0) {
-      // prev_shares = shares / (1 + pct/100)
       const prev = shares / (1 + pct / 100);
       deltaSharesEstimate += (shares - prev);
+      // delta $ = currentValue × pct / (100 + pct)
+      deltaValue = value * pct / (100 + pct);
+      boughtValueUsd += deltaValue;
     } else if (c === "DECREASED" && pct && pct < 0) {
       const prev = shares / (1 + pct / 100);
       deltaSharesEstimate += (shares - prev);
+      // delta $ négatif : currentValue - previousValue
+      const prevValue = value / (1 + pct / 100);
+      deltaValue = value - prevValue; // négatif
+      soldValueUsd += Math.abs(deltaValue);
     } else if (c === "EXITED") {
-      // Pas de prev_shares dans la reponse actuelle, on peut juste flag
-      // (on note la sortie dans le count, pas dans le delta agrege)
+      // Sortie totale : on n'a pas previous_value côté actuel mapping, on skippe l'agrégat $
+      deltaValue = null;
+    }
+    // Stocker le delta $ sur le holder pour le tableau
+    h._deltaValueUsd = deltaValue;
+    // Tracker le plus gros mouvement
+    if (deltaValue != null && Math.abs(deltaValue) > 0) {
+      if (!biggestMove || Math.abs(deltaValue) > Math.abs(biggestMove.deltaValue)) {
+        biggestMove = { fund: h.fund, type: c, deltaValue, valueNow: value };
+      }
     }
   }
+  const netFlowUsd = boughtValueUsd - soldValueUsd;
 
   // Estimation % cap si marketCap disponible
   let pctCapStr = "";
@@ -2770,27 +2848,48 @@ function renderHolders13fPanel(r) {
     : "—";
 
   // === HEADER DE SYNTHESE ===
-  const deltaColor = deltaSharesEstimate > 0 ? "#2ed573" : deltaSharesEstimate < 0 ? "#ff4757" : "#8b949e";
-  const deltaSign = deltaSharesEstimate > 0 ? "+" : deltaSharesEstimate < 0 ? "−" : "";
-  const deltaSharesStr = deltaSharesEstimate !== 0
-    ? `${deltaSign}${fmtSharesShort(Math.abs(deltaSharesEstimate))} actions`
-    : "≈ stable";
+  const netColor = netFlowUsd > 0 ? "#2ed573" : netFlowUsd < 0 ? "#ff4757" : "#8b949e";
+  const netSign  = netFlowUsd > 0 ? "+" : netFlowUsd < 0 ? "−" : "";
+  const netStr   = netFlowUsd !== 0 ? `${netSign}${fmtUsdShort(Math.abs(netFlowUsd))}` : "≈ stable";
+
+  // Phrase de lecture sur le plus gros mouvement
+  let biggestMoveSentence = "";
+  if (biggestMove) {
+    const verb = biggestMove.type === "NEW"
+      ? "a ouvert une position de"
+      : biggestMove.type === "INCREASED"
+        ? "a renforcé sa position en achetant pour"
+        : biggestMove.type === "DECREASED"
+          ? "a allégé sa position en vendant pour"
+          : "a soldé sa position de";
+    const valStr = fmtUsdShort(Math.abs(biggestMove.deltaValue));
+    const moveColor = biggestMove.deltaValue > 0 ? "#2ed573" : "#ff4757";
+    biggestMoveSentence = `<div style="background:#0d1117;border-left:3px solid ${moveColor};padding:6px 12px;margin-bottom:8px;font-size:11px;color:#c9d1d9;font-family:monospace">
+      💬 <strong style="color:${moveColor}">${biggestMove.fund}</strong> ${verb} <strong style="color:${moveColor}">${valStr}$</strong> ${r.ticker ? 'de ' + r.ticker : ''} au ${periodLabel}.
+    </div>`;
+  }
 
   const synthesisHtml = `<div style="background:#0d1117;border:1px solid #a855f733;border-radius:8px;padding:10px 12px;margin-bottom:10px">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
       <span style="color:#a855f7;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase">📊 Synthèse ${periodLabel} (${holders.length} fonds)</span>
-      <span style="color:#484f58;font-size:9px">Position globale agrégée ⬩ Δ trimestre</span>
+      <span style="color:#484f58;font-size:9px">Position globale ⬩ Δ NET en $ ⬩ Activité</span>
     </div>
+    ${biggestMoveSentence}
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;font-family:monospace;font-size:11px">
       <div style="background:#21262d;border-radius:6px;padding:7px 10px">
         <div style="color:#484f58;font-size:9px;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:2px">Position globale</div>
         <div style="color:#58a6ff;font-weight:700;font-size:13px">${fmtUsdShort(totalValueUsd)}</div>
         <div style="color:#8b949e;font-size:10px">${fmtSharesShort(totalShares)} actions${pctCapStr ? ' · ' + pctCapStr : ''}</div>
       </div>
-      <div style="background:#21262d;border-radius:6px;padding:7px 10px">
-        <div style="color:#484f58;font-size:9px;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:2px">Δ trimestre (estimé)</div>
-        <div style="color:${deltaColor};font-weight:700;font-size:13px">${deltaSharesStr}</div>
-        <div style="color:#8b949e;font-size:10px">${cntByChange.NEW > 0 ? `🆕 ${cntByChange.NEW} NEW (${fmtUsdShort(newValueUsd)})` : 'Aucune entrée'}</div>
+      <div style="background:#21262d;border-radius:6px;padding:7px 10px" title="Flux NET en $ ce trimestre : achats (NEW + INCREASED) moins ventes (DECREASED). EXITED non chiffrable sans previous_value.">
+        <div style="color:#484f58;font-size:9px;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:2px">Δ NET ${periodLabel}</div>
+        <div style="color:${netColor};font-weight:700;font-size:13px">${netStr}</div>
+        <div style="color:#8b949e;font-size:9px;line-height:1.4">
+          ${boughtValueUsd > 0 ? `<span style="color:#2ed573">📈 +${fmtUsdShort(boughtValueUsd)} achetés</span>` : ''}
+          ${boughtValueUsd > 0 && soldValueUsd > 0 ? '<br>' : ''}
+          ${soldValueUsd > 0 ? `<span style="color:#ff4757">📉 −${fmtUsdShort(soldValueUsd)} vendus</span>` : ''}
+          ${boughtValueUsd === 0 && soldValueUsd === 0 ? 'Aucun flux significatif' : ''}
+        </div>
       </div>
       <div style="background:#21262d;border-radius:6px;padding:7px 10px">
         <div style="color:#484f58;font-size:9px;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:2px">Activité du Q</div>
@@ -2868,7 +2967,7 @@ function renderHolders13fPanel(r) {
 
   return `<div style="margin-bottom:12px">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-      <div class="section-label" style="color:#a855f7;margin-bottom:0">🏛️ Top Holders 13F · positions globales + Δ trimestre</div>
+      <div class="section-label" style="color:#a855f7;margin-bottom:0">🏛️ Top Holders 13F · positions globales + Δ trimestre${filteredOut > 0 ? ` <span style="color:#484f58;font-size:9px">(${filteredOut} fonds &gt;2 ans cachés)</span>` : ''}</div>
       <span style="background:#a855f722;border:1px solid #a855f755;color:#a855f7;font-size:8px;padding:2px 8px;border-radius:4px;font-weight:700;letter-spacing:1px">✓ SEC 13F-HR</span>
     </div>
     ${synthesisHtml}
@@ -2882,6 +2981,81 @@ function renderHolders13fPanel(r) {
       </tr>
       ${rowsHtml}
     </table>
+  </div>`;
+}
+
+// ============================================================
+// VERDICT — 1 phrase actionnable qui synthétise SCCT + TS + catalyseur + Floor/Flow
+// Type de setup : CONTRARIAN / MOMENTUM_CONFIRMED / DIVERGENCE_BEARISH / WEAK / NEUTRAL
+// Objectif : éviter de devoir composer mentalement avec 6 scores éparpillés
+// ============================================================
+function computeVerdict(r) {
+  const scct = r.scct || 0;
+  const ts = r.technicalScore?.score ?? null;
+  // Catalyseur proche ?
+  let catalystSoon = null; // null | "imminent" (<30j) | "court_terme" (<90j)
+  if (r.catalystDate) {
+    const days = Math.round((new Date(r.catalystDate) - new Date()) / 86400000);
+    if (days >= 0 && days <= 30) catalystSoon = "imminent";
+    else if (days > 30 && days <= 90) catalystSoon = "court_terme";
+  }
+  // Activist NEW dans les holders ?
+  const activistNew = (r.holders13f || []).some(h =>
+    (h.tier === "activist") && (h.change === "NEW" || h.change === "INCREASED")
+  );
+  // Setup detection
+  let type, sentence, color, icon;
+  if (scct >= 70 && ts != null && ts <= 40) {
+    type = "CONTRARIAN";
+    color = "#a855f7"; icon = "🎯";
+    sentence = `Smart money entre alors que la technique est cassée (TS:${ts}). Setup contrarian Buffett/Klarman style.`;
+  } else if (scct >= 70 && ts != null && ts >= 65) {
+    type = "MOMENTUM CONFIRMÉ";
+    color = "#2ed573"; icon = "🚀";
+    sentence = `Smart money + technique alignés (TS:${ts}). Mouvement confirmé mais peut-être déjà avancé — R/R modéré.`;
+  } else if (scct <= 40 && ts != null && ts >= 70) {
+    type = "DIVERGENCE BAISSIÈRE";
+    color = "#ff4757"; icon = "⚠️";
+    sentence = `Technique haussière (TS:${ts}) mais smart money absent/sortant. Méfiance — possible piège retail.`;
+  } else if (scct <= 35 && ts != null && ts <= 40) {
+    type = "ALIGNEMENT NÉGATIF";
+    color = "#ff4757"; icon = "✗";
+    sentence = `Ni smart money (${scct}) ni technique (TS:${ts}) en faveur. Pas d'edge — éviter.`;
+  } else if (scct >= 70) {
+    type = "SMART MONEY FORT";
+    color = "#58a6ff"; icon = "🏛️";
+    sentence = `Conviction smart money élevée (${scct}). Technique mitigée (TS:${ts ?? '?'}) — surveiller le timing.`;
+  } else if (ts != null && ts >= 70) {
+    type = "MOMENTUM PUR";
+    color = "#eccc68"; icon = "📈";
+    sentence = `Setup technique fort (TS:${ts}) mais smart money tiède (${scct}). Trade de momentum, pas de conviction LT.`;
+  } else {
+    type = "À SURVEILLER";
+    color = "#8b949e"; icon = "👀";
+    sentence = `Setup banal (SCCT:${scct}, TS:${ts ?? '?'}). Pas de signal fort, sans plus.`;
+  }
+  // Modifiers — catalyseur + activist
+  const mods = [];
+  if (catalystSoon === "imminent") mods.push("⚡ catalyseur imminent (<30j)");
+  else if (catalystSoon === "court_terme") mods.push("⏳ catalyseur <90j");
+  if (activistNew) mods.push("⚔️ activiste entré");
+  return { type, sentence, color, icon, mods };
+}
+
+function renderVerdictBanner(r) {
+  // Cacher si on n'a ni SCCT ni TS (cartes "à surveiller" sans data)
+  if ((!r.scct || r.scct === 0) && !r.technicalScore) return "";
+  const v = computeVerdict(r);
+  const modsHtml = v.mods.length
+    ? `<div style="color:#8b949e;font-size:10px;margin-top:4px">${v.mods.join(" · ")}</div>`
+    : "";
+  return `<div style="background:linear-gradient(90deg, ${v.color}15, transparent);border-left:3px solid ${v.color};padding:8px 12px;margin:8px 0 10px 0;border-radius:4px">
+    <div style="display:flex;align-items:center;gap:8px;font-family:monospace">
+      <span style="font-size:14px">${v.icon}</span>
+      <span style="color:${v.color};font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase">${v.type}</span>
+    </div>
+    <div style="color:#c9d1d9;font-size:12px;margin-top:4px;line-height:1.4">${v.sentence}</div>
+    ${modsHtml}
   </div>`;
 }
 
@@ -2986,6 +3160,7 @@ function renderCard(r) {
       </div>
     </div>
     <div class="criteria-pills">${pillsHtml}</div>
+    ${renderVerdictBanner(r)}
     <div class="card-summary" onclick="toggleCard('${r.ticker}')" style="cursor:pointer">${r.summary || ""}</div>
     <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;align-items:center">
       ${r.drawdown52w ? `<div class="drawdown-badge" style="margin-bottom:0">📊 Drawdown 52W: <strong>${r.drawdown52w}</strong>${r.dataSource === 'twelvedata' ? ' <span style="color:#484f58">· TwelveData ✓</span>' : ''}</div>` : ""}
