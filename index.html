@@ -527,7 +527,10 @@ const DAX_MDAX = [
 const UNIVERSES = {
   sbf120:        { label: "🇫🇷 SBF 120", list: SBF120 },
   ftse100:       { label: "🇬🇧 FTSE 100", list: FTSE100 },
-  dax_mdax:      { label: "🇩🇪 DAX + MDAX", list: DAX_MDAX },
+  // DAX + MDAX désactivé : TwelveData plan basic n'inclut pas XETRA.
+  // Pour réactiver : décommenter + obtenir une source data pour .DE
+  // (TwelveData Standard $44/mo OU API Tiingo 1000 calls/jour gratuit)
+  // dax_mdax:      { label: "🇩🇪 DAX + MDAX", list: DAX_MDAX },
   sp100:         { label: "🇺🇸 S&P 100", list: SP100 },
   nasdaq100:     { label: "🇺🇸 Nasdaq 100", list: NASDAQ100 },
   nasdaq150_ext: { label: "🇺🇸 Nasdaq 150+", list: NASDAQ150_EXT },
