@@ -2916,9 +2916,23 @@ function renderCard(r) {
   const scoreColor = tl ? "#00d2ff" : pct >= 0.6 ? "#2ed573" : pct >= 0.35 ? "#ffa502" : "#ff4757";
   const scct = r.scct || 0;
   const scctInfo = getSCCTLabel(scct);
-  const univColor = r.universe === "sbf120" ? "#2ed573" : r.universe === "sp100" ? "#58a6ff" : "#a29bfe";
-  const univBg = r.universe === "sbf120" ? "#1a2f1a" : r.universe === "sp100" ? "#1a1f2f" : "#2f1a2f";
-  const univLabel = r.universe === "sbf120" ? "SBF120" : r.universe === "sp100" ? "S&P100" : r.universe === "custom" ? "CUSTOM" : "RUSSELL";
+  // Mapping complet univers → label + couleurs (auparavant tout retombait sur "RUSSELL")
+  const UNIV_BADGES = {
+    sbf120:         { label: "SBF120",  color: "#2ed573", bg: "#1a2f1a" }, // vert FR
+    ftse100:        { label: "FTSE100", color: "#ff4757", bg: "#2f1a1a" }, // rouge UK
+    dax_mdax:       { label: "DAX/MDAX",color: "#eccc68", bg: "#2f291a" }, // jaune DE
+    sp100:          { label: "S&P100",  color: "#58a6ff", bg: "#1a1f2f" }, // bleu US
+    nasdaq100:      { label: "NDX100",  color: "#a855f7", bg: "#1f1a2f" }, // violet
+    nasdaq150_ext:  { label: "NDX150+", color: "#c084fc", bg: "#1f1a2f" },
+    sp500_extra:    { label: "S&P500+", color: "#7dd3fc", bg: "#1a232f" },
+    russell_midcap: { label: "RUSSELL", color: "#a29bfe", bg: "#2f1a2f" }, // violet pâle
+    top_drawdown:   { label: "DD52W",   color: "#2ed573", bg: "#1a2f1a" },
+    custom:         { label: "CUSTOM",  color: "#8b949e", bg: "#21262d" },
+  };
+  const univBadge = UNIV_BADGES[r.universe] || { label: (r.universe || "—").toUpperCase(), color: "#8b949e", bg: "#21262d" };
+  const univColor = univBadge.color;
+  const univBg = univBadge.bg;
+  const univLabel = univBadge.label;
   const changeColor = (r.priceChange || 0) < 0 ? "#ff4757" : "#2ed573";
   const dots = Array.from({length:7}, (_,i) => `<div class="score-dot" style="background:${i<score ? scoreColor : scoreColor+'33'}"></div>`).join("");
 
