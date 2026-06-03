@@ -1389,6 +1389,93 @@ async function fetchAmfBdif(ticker) {
   }
 }
 
+// ============================================================
+// fetchAnalystData : consensus analystes TwelveData (US-only)
+// Renvoie { rating, count, target_avg, upside_pct, recent_changes }
+// Fail silently pour EU (renvoie null) — TwelveData /analyst_ratings/us US-only
+// ============================================================
+async function fetchAnalystData(ticker, isEuropean, currentPrice) {
+  if (isEuropean) return null; // EU pas couvert par TwelveData US-only
+  const sym = encodeURIComponent(ticker);
+  try {
+    const [ratings, target] = await Promise.all([
+      proxyFetch(`/twelvedata/analyst_recommendations?symbol=${sym}`),
+      proxyFetch(`/twelvedata/price_target?symbol=${sym}`),
+    ]);
+    // Si les 2 endpoints renvoient erreur/null → pas d'analystes
+    const ratingsOk = ratings && !ratings.code && !ratings.error;
+    const targetOk  = target && !target.code && !target.error;
+    if (!ratingsOk && !targetOk) return null;
+
+    // Agrégation des recommandations : compter Buy/Hold/Sell
+    // Shape TwelveData : { rating: { firm, rating_change, rating_current, ... }[] } ou variantes
+    let buy = 0, hold = 0, sell = 0, total = 0;
+    const recentChanges = [];
+    const list = ratings?.rating || ratings?.recommendations || ratings?.data || [];
+    if (Array.isArray(list)) {
+      for (const r of list) {
+        const rt = String(r.rating_current || r.new_rating || r.action || "").toLowerCase();
+        if (rt.includes("buy") || rt.includes("outperform") || rt.includes("overweight")) buy++;
+        else if (rt.includes("hold") || rt.includes("neutral") || rt.includes("market perform")) hold++;
+        else if (rt.includes("sell") || rt.includes("underperform") || rt.includes("underweight")) sell++;
+        total++;
+        if (recentChanges.length < 5 && (r.firm || r.analyst)) {
+          recentChanges.push({
+            firm: r.firm || r.analyst || "?",
+            from: r.rating_previous || r.prev_rating || "?",
+            to:   r.rating_current  || r.new_rating  || "?",
+            date: r.date || r.publication_date || "?",
+          });
+        }
+      }
+    }
+
+    // Score consensus 0-100 (basé sur la répartition buy vs sell)
+    let consensus = null;
+    if (total > 0) {
+      // Pondération : buy=+1, hold=0, sell=-1 → ramené sur 0-100
+      const raw = (buy - sell) / total; // -1..+1
+      consensus = Math.round((raw + 1) * 50); // 0..100
+    }
+
+    // Price target
+    const tMean = parseFloat(target?.price_target_average ?? target?.target_consensus ?? target?.average);
+    const tHigh = parseFloat(target?.price_target_high ?? target?.target_high);
+    const tLow  = parseFloat(target?.price_target_low ?? target?.target_low);
+    let upsidePct = null;
+    if (Number.isFinite(tMean) && Number.isFinite(currentPrice) && currentPrice > 0) {
+      upsidePct = ((tMean - currentPrice) / currentPrice) * 100;
+    }
+
+    // Label qualitatif
+    let label = "—";
+    if (consensus != null) {
+      if      (consensus >= 75) label = "STRONG BUY";
+      else if (consensus >= 60) label = "BUY";
+      else if (consensus >= 40) label = "HOLD";
+      else if (consensus >= 25) label = "SELL";
+      else                      label = "STRONG SELL";
+    } else if (Number.isFinite(upsidePct)) {
+      label = upsidePct > 0 ? "BUY (target)" : "SELL (target)";
+    }
+
+    return {
+      label,
+      consensus,
+      count: total,
+      buy, hold, sell,
+      target_avg: Number.isFinite(tMean) ? +tMean.toFixed(2) : null,
+      target_high: Number.isFinite(tHigh) ? +tHigh.toFixed(2) : null,
+      target_low: Number.isFinite(tLow) ? +tLow.toFixed(2) : null,
+      upside_pct: Number.isFinite(upsidePct) ? +upsidePct.toFixed(1) : null,
+      recent_changes: recentChanges,
+    };
+  } catch (e) {
+    console.warn(`[fetchAnalystData] ${ticker}:`, e.message);
+    return null;
+  }
+}
+
 async function fetchTickerData(ticker) {
   const isFrench  = ticker.includes(".PA") || ticker.includes(".BE");
   const isUK      = ticker.endsWith(".L");
@@ -1616,7 +1703,14 @@ async function fetchTickerData(ticker) {
     }
   }
 
-  return { realPrice, drawdown52w, priceChange, hasRealData, newsItems, edgarFilings, shortInterestReal, daysTocover, borrowRate, ortexScore, realFilings, realRaisonSociale, dataWarning, putCallRatio, callOI, totalOI, impliedVolatility, gammaScore, holders13f, realNextEarnings, realLastEarnings, marketCap, hasRealSources, realExchange };
+  // ── ANALYSE TECHNIQUE + CONSENSUS ANALYSTES ──
+  // Calculée à partir du ts.values déjà fetché (pas de call API supplémentaire pour le TS)
+  // Analystes : 2 calls TwelveData (US-only, skip silencieux EU)
+  const technicalScore = computeTechnicalScore(ts);
+  const currentPriceNum = quote && quote.close ? parseFloat(quote.close) : null;
+  const analystData = await fetchAnalystData(ticker, isEuropean, currentPriceNum);
+
+  return { realPrice, drawdown52w, priceChange, hasRealData, newsItems, edgarFilings, shortInterestReal, daysTocover, borrowRate, ortexScore, realFilings, realRaisonSociale, dataWarning, putCallRatio, callOI, totalOI, impliedVolatility, gammaScore, holders13f, realNextEarnings, realLastEarnings, marketCap, hasRealSources, realExchange, technicalScore, analystData };
 }
 
 async function analyzeBatch(batch, universe, customTicker = null) {
@@ -2046,6 +2140,136 @@ function isBigThree(fundName) {
   return BIG_THREE_NAMES.some(n => upper.includes(n));
 }
 
+// ============================================================
+// TECHNICAL SCORE (TS) — analyse technique 0-100 du chart
+// Calcule à partir du timeseries 252j déjà fetché (zéro call API supplémentaire)
+// 4 composants : prix vs MA200, prix vs MA50 + golden/death cross, RSI(14), volume
+// Renvoie aussi une analyse textuelle synthétisée pour affichage hover/modal
+// Score 0-100 où 50 = neutre, >70 = setup technique haussier, <30 = setup baissier
+// ============================================================
+function computeTechnicalScore(timeseries) {
+  if (!timeseries?.values || timeseries.values.length < 200) {
+    return { score: null, status: "NOT_ENOUGH_DATA", note: "Moins de 200 sessions disponibles" };
+  }
+  // ts.values est en ordre DESC (TwelveData) — on reverse pour ASC (plus ancien d'abord)
+  const closes = timeseries.values.map(v => parseFloat(v.close)).filter(Number.isFinite).reverse();
+  const volumes = timeseries.values.map(v => parseFloat(v.volume) || 0).reverse();
+  if (closes.length < 200) {
+    return { score: null, status: "NOT_ENOUGH_DATA", note: `Seulement ${closes.length} sessions valides` };
+  }
+
+  // SMA helper : moyenne mobile sur n derniers points jusqu'à idx (inclus)
+  const sma = (arr, n, idx) => {
+    if (idx < n - 1) return null;
+    let s = 0;
+    for (let i = idx - n + 1; i <= idx; i++) s += arr[i];
+    return s / n;
+  };
+
+  const last = closes.length - 1;
+  const price = closes[last];
+  const ma50 = sma(closes, 50, last);
+  const ma200 = sma(closes, 200, last);
+
+  // Détection golden/death cross dans les 20 dernières sessions
+  let crossSignal = "none"; // "golden" | "death" | "none"
+  let crossDaysAgo = null;
+  for (let i = Math.max(200, last - 20); i <= last; i++) {
+    const m50 = sma(closes, 50, i);
+    const m50p = sma(closes, 50, i - 1);
+    const m200 = sma(closes, 200, i);
+    const m200p = sma(closes, 200, i - 1);
+    if (m50p == null || m200p == null) continue;
+    if (m50p <= m200p && m50 > m200)      { crossSignal = "golden"; crossDaysAgo = last - i; }
+    else if (m50p >= m200p && m50 < m200) { crossSignal = "death";  crossDaysAgo = last - i; }
+  }
+
+  // RSI(14) — Wilder's smoothing simplifié (moyenne arithmétique sur 14 derniers)
+  let gains = 0, losses = 0;
+  for (let i = last - 13; i <= last; i++) {
+    const delta = closes[i] - closes[i - 1];
+    if (delta > 0) gains += delta;
+    else losses -= delta;
+  }
+  const avgGain = gains / 14;
+  const avgLoss = losses / 14;
+  const rsi = avgLoss === 0 ? 100 : 100 - (100 / (1 + avgGain / avgLoss));
+
+  // Volume : moyenne 20j vs moyenne 200j
+  let vol20 = 0, vol200 = 0;
+  for (let i = last - 19;  i <= last; i++) vol20 += volumes[i];
+  for (let i = last - 199; i <= last; i++) vol200 += volumes[i];
+  vol20 /= 20; vol200 /= 200;
+  const volRatio = vol200 > 0 ? vol20 / vol200 : 1;
+
+  // Distances en %
+  const distMA200 = ((price - ma200) / ma200) * 100;
+  const distMA50  = ((price - ma50)  / ma50)  * 100;
+
+  // ── COMPOSITE SCORE 0-100 ──
+  let score = 50; // neutre
+  // Prix vs MA200 : ±25 points (composant le plus lourd)
+  if      (distMA200 >  20) score += 22;
+  else if (distMA200 >  10) score += 15;
+  else if (distMA200 >   0) score += 8;
+  else if (distMA200 > -10) score -= 5;
+  else if (distMA200 > -25) score -= 12;
+  else                      score -= 20;
+  // Prix vs MA50 : ±10 points
+  if      (distMA50 >  10) score += 10;
+  else if (distMA50 >   0) score += 5;
+  else if (distMA50 > -10) score -= 4;
+  else                     score -= 8;
+  // Cross signal : ±12 points si récent
+  if (crossSignal === "golden") score += 12;
+  if (crossSignal === "death")  score -= 12;
+  // RSI : zones extrêmes
+  if      (rsi < 30) score += 6;  // sur-vendu = rebond probable
+  else if (rsi > 75) score -= 8;  // sur-acheté = correction probable
+  else if (rsi > 70) score -= 4;
+  // Volume : confirmation/accumulation
+  if      (volRatio > 1.5) score += 8;
+  else if (volRatio > 1.2) score += 4;
+  else if (volRatio < 0.7) score -= 5;
+  score = Math.max(0, Math.min(100, Math.round(score)));
+
+  // ── ANALYSE TEXTUELLE SYNTHÉTISÉE ──
+  const parts = [];
+  if      (distMA200 > 5)  parts.push(`Trend LT haussier (+${distMA200.toFixed(0)}% vs MA200)`);
+  else if (distMA200 < -10) parts.push(`Trend LT baissier (${distMA200.toFixed(0)}% vs MA200)`);
+  else                     parts.push(`Trend LT neutre (${distMA200.toFixed(0)}% vs MA200)`);
+  if      (distMA50 > 5)   parts.push(`MT haussier (+${distMA50.toFixed(0)}% vs MA50)`);
+  else if (distMA50 < -10) parts.push(`MT baissier (${distMA50.toFixed(0)}% vs MA50)`);
+  if (crossSignal === "golden") parts.push(`⭐ Golden Cross MA50/200 (${crossDaysAgo}j)`);
+  if (crossSignal === "death")  parts.push(`⚠ Death Cross MA50/200 (${crossDaysAgo}j)`);
+  if      (rsi < 30) parts.push(`RSI sur-vendu (${rsi.toFixed(0)})`);
+  else if (rsi > 70) parts.push(`RSI sur-acheté (${rsi.toFixed(0)})`);
+  else               parts.push(`RSI neutre (${rsi.toFixed(0)})`);
+  if      (volRatio > 1.3) parts.push(`📈 Accumulation volume (+${((volRatio - 1) * 100).toFixed(0)}%)`);
+  else if (volRatio < 0.7) parts.push(`📉 Volume mort (-${((1 - volRatio) * 100).toFixed(0)}%)`);
+
+  // Label qualitatif du score
+  let label;
+  if      (score >= 75) label = "TECH FORT";
+  else if (score >= 60) label = "TECH OK";
+  else if (score >= 40) label = "TECH NEUTRE";
+  else if (score >= 25) label = "TECH FAIBLE";
+  else                  label = "TECH KO";
+
+  return {
+    score, label,
+    components: {
+      distMA200: +distMA200.toFixed(1),
+      distMA50:  +distMA50.toFixed(1),
+      crossSignal, crossDaysAgo,
+      rsi: +rsi.toFixed(1),
+      volRatio: +volRatio.toFixed(2),
+    },
+    analysis: parts.join(" • "),
+    status: "OK",
+  };
+}
+
 function computeFloorScore(holders13f, marketCap, universe) {
   let score = 0;
   const breakdown = { absolute: 0, ratio: 0, etf: 0, holders: [] };
@@ -2286,6 +2510,81 @@ function renderFlowChip(r) {
 ${result.asOfNote}`;
 
   return `<div style="display:inline-flex;align-items:center;gap:6px;background:${bg};border:1px solid ${border};border-radius:6px;padding:3px 10px;font-size:10px;color:${color};cursor:help" title="${tooltip.replace(/"/g, '&quot;')}">🌊 <strong>Flow: ${s}</strong> <span style="opacity:0.7">${label}</span></div>`;
+}
+
+// ============================================================
+// CHIP TECHNICAL SCORE (TS) — analyse technique chart
+// Affiche le score 0-100 + label qualitatif + tooltip avec l'analyse détaillée
+// ============================================================
+function renderTechnicalChip(r) {
+  const t = r.technicalScore;
+  if (!t || t.status === "NOT_ENOUGH_DATA") return "";
+  if (t.score == null) return "";
+  const s = t.score;
+  let color, bg, border;
+  if      (s >= 75) { color = "#2ed573"; bg = "#2ed57315"; border = "#2ed57344"; }
+  else if (s >= 60) { color = "#58a6ff"; bg = "#58a6ff15"; border = "#58a6ff44"; }
+  else if (s >= 40) { color = "#eccc68"; bg = "#eccc6815"; border = "#eccc6844"; }
+  else if (s >= 25) { color = "#ff8c42"; bg = "#ff8c4215"; border = "#ff8c4244"; }
+  else              { color = "#ff4757"; bg = "#ff475715"; border = "#ff475744"; }
+
+  const c = t.components || {};
+  const tooltip = `Technical Score ${s}/100 (${t.label})
+
+ANALYSE :
+${t.analysis}
+
+COMPOSANTS :
+• Prix vs MA200 : ${c.distMA200 > 0 ? '+' : ''}${c.distMA200}%
+• Prix vs MA50  : ${c.distMA50 > 0 ? '+' : ''}${c.distMA50}%
+• RSI(14)       : ${c.rsi}
+• Volume 20j/200j : x${c.volRatio}
+• Cross MA50/200 : ${c.crossSignal === 'golden' ? 'GOLDEN ⭐' : c.crossSignal === 'death' ? 'DEATH ⚠' : 'aucun'}${c.crossDaysAgo != null ? ' (' + c.crossDaysAgo + 'j)' : ''}
+
+NB : Smart money fait souvent les meilleurs trades CONTRE le signal technique.
+Un SCCT élevé + TS faible = setup contrarian (Buffett, Klarman style).
+Un SCCT élevé + TS élevé = momentum confirmé (mouvement plus tardif).`;
+
+  return `<div style="display:inline-flex;align-items:center;gap:6px;background:${bg};border:1px solid ${border};border-radius:6px;padding:3px 10px;font-size:10px;color:${color};cursor:help" title="${tooltip.replace(/"/g, '&quot;')}">📊 <strong>TS: ${s}</strong> <span style="opacity:0.7">${t.label}</span></div>`;
+}
+
+// ============================================================
+// CHIP ANALYSTES — consensus + price target
+// Affiche rating (Buy/Hold/Sell), nb analystes, upside vs target
+// US-only via TwelveData ; renvoie "" si null (EU ou pas de couverture)
+// ============================================================
+function renderAnalystChip(r) {
+  const a = r.analystData;
+  if (!a) return "";
+  // Couleur selon consensus
+  const cons = a.consensus;
+  let color, bg, border;
+  if      (cons != null && cons >= 75) { color = "#2ed573"; bg = "#2ed57315"; border = "#2ed57344"; }
+  else if (cons != null && cons >= 60) { color = "#58a6ff"; bg = "#58a6ff15"; border = "#58a6ff44"; }
+  else if (cons != null && cons >= 40) { color = "#eccc68"; bg = "#eccc6815"; border = "#eccc6844"; }
+  else if (cons != null && cons >= 25) { color = "#ff8c42"; bg = "#ff8c4215"; border = "#ff8c4244"; }
+  else if (cons != null)               { color = "#ff4757"; bg = "#ff475715"; border = "#ff475744"; }
+  else                                  { color = "#8b949e"; bg = "#21262d";    border = "#30363d"; }
+
+  const upsideTxt = a.upside_pct != null ? `${a.upside_pct > 0 ? '+' : ''}${a.upside_pct}%` : "—";
+  const tgtTxt = a.target_avg != null ? `$${a.target_avg}` : "—";
+
+  // Lignes "récents changements" en texte (top 3 max)
+  const changes = (a.recent_changes || []).slice(0, 3).map(c => `  ${c.firm} : ${c.from || '?'} → ${c.to || '?'} (${c.date || '?'})`).join("\n");
+
+  const tooltip = `Analystes — ${a.label}
+${a.count > 0 ? `${a.count} couverture(s) : ${a.buy} Buy · ${a.hold} Hold · ${a.sell} Sell` : 'Couverture limitée'}
+
+PRICE TARGET :
+• Consensus : ${tgtTxt}${a.upside_pct != null ? '  (upside ' + upsideTxt + ')' : ''}
+• Range : ${a.target_low != null ? '$' + a.target_low : '?'} — ${a.target_high != null ? '$' + a.target_high : '?'}
+
+${changes ? 'RÉCENTS CHANGEMENTS :\n' + changes : ''}
+
+NB : Les analystes upgradent souvent APRÈS le mouvement de prix.
+Plus utile : changes récents > absolute rating.`;
+
+  return `<div style="display:inline-flex;align-items:center;gap:6px;background:${bg};border:1px solid ${border};border-radius:6px;padding:3px 10px;font-size:10px;color:${color};cursor:help" title="${tooltip.replace(/"/g, '&quot;')}">🎯 <strong>${a.label}</strong> <span style="opacity:0.7">${upsideTxt}${a.count > 0 ? ' · ' + a.count : ''}</span></div>`;
 }
 
 // ============================================================
@@ -2680,6 +2979,8 @@ function renderCard(r) {
       ${r.gammaScore ? `<div style="display:inline-flex;align-items:center;gap:6px;background:#a855f715;border:1px solid #a855f733;border-radius:6px;padding:3px 10px;font-size:10px;color:#a855f7">⚡ <strong>Gamma: ${r.gammaScore}</strong>${r.putCallRatio !== null && r.putCallRatio !== undefined ? ' · P/C: ' + parseFloat(r.putCallRatio).toFixed(2) : ''} <span style="color:#484f58">· Ortex ✓</span></div>` : ""}
       ${renderFloorChip(r)}
       ${renderFlowChip(r)}
+      ${renderTechnicalChip(r)}
+      ${renderAnalystChip(r)}
       ${(r.criteria?.catalysts || r.criteria?.biotech) && r.catalystDate ? (function() {
         const m = computeCatalystFreshness(r.catalystDate, r.catalystType);
         const d = new Date(r.catalystDate);
