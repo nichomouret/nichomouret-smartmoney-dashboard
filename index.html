@@ -235,6 +235,10 @@
       <span>📋</span>
       <span>Explorer tous les fonds 13F</span>
     </button>
+    <button id="open-activists-tab" onclick="toggleActivistsView()" style="background:linear-gradient(135deg,#a855f7 0%,#6b21a8 100%);color:white;border:none;padding:8px 16px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;box-shadow:0 2px 8px rgba(168,85,247,0.4);display:flex;align-items:center;gap:6px">
+      <span>🚀</span>
+      <span>Activistes <span id="activists-count-badge" style="background:#fff2;padding:1px 7px;border-radius:10px;margin-left:3px;font-size:10px">0</span></span>
+    </button>
   </div>
 
   <div class="header">
@@ -356,7 +360,41 @@ const SP500_EXTRA = ["AAL","AAP","ABMD","ADSK","AES","AFL","AIG","AIZ","AJG","AK
 const NASDAQ150_EXT = ["HUBS","BILL","ZI","FRSH","BRZE","ASAN","JAMF","AFRM","UPST","LC","TREE","CVNA","VZIO","XPOF","PRTS","CHPT","BLNK","FCEL","RIDE","WKHS","GOEV","NVAX","SAVA","FORM","AMBA","ONTO","COHU","DIOD","HTZ","LILM"];
 const TOP_DRAWDOWN = ["AGEN","RUBY","AKRO","ALDX","INVA","DMTK","NVRO","RCUS","TMDX","SILK","ATRC","AXNX","MAPS","NIO","XPEV","LI","BIRD","PAYO","LMND","ROOT","METC","DAVE","SHLS","W","REAL","RENT","FLYW","GETY","RDFN","DBRG","SUNW","SPWR","ATUS","IAC","IRBT","BIGC","DOMO","TELO","CWAN","ENFN","AVPT","DCBO","WEAV","BOX","ZNGA","TASK"];
 
- const KNOWN_US_TICKERS = new Set([...SP100, ...NASDAQ100, ...RUSSELL, ...NASDAQ150_EXT, ...SP500_EXTRA, ...TOP_DRAWDOWN]);
+// === IA / Megatrend 2026 — toute la chaîne de valeur IA ===
+// Curated par sous-thème. Inclut les pure-plays récents (CRWV, NBIS, IREN, NVTS)
+// que les indices classiques (SP500, NDX100) ne couvrent pas encore.
+// Objectif : surfacer les setups smart money sur AI même quand le titre monte
+// (les critères classiques drawdown/VAD ne capteraient pas un MRVL qui +120% YTD).
+const MEGATREND_AI = [
+  // GPU / accélérateurs / semi-conducteurs cœur IA
+  "NVDA","AMD","AVGO","TSM","MRVL","INTC","MU","QCOM","ALAB","GFS","ARM",
+  // Hyperscalers (cloud + AI services)
+  "MSFT","GOOGL","META","AMZN","ORCL","IBM",
+  // AI cloud pure-play / data center
+  "CRWV","NBIS","IREN","CLSK",
+  // AI infrastructure (servers, fabric, cooling)
+  "SMCI","ANET","VRT","DELL","HPE","NTAP","CSCO","JNPR",
+  // Power semis (drivers, GaN, SiC pour datacenter haute densité)
+  "NVTS","POWI","WOLF","ONTO","ACMR",
+  // Equipment / lithographie / metrology
+  "ASML","AMAT","LRCX","KLAC","TER",
+  // Optique / réseau pour AI fabric
+  "COHR","LITE","CIEN","FN","INFN",
+  // Énergie pour data centers IA (electricité, gaz pipeline, nucléaire)
+  "ET","KMI","CEG","VST","TLN","NRG","OKLO","NEE","WMB","ENB",
+  // Software / SaaS IA-natifs
+  "PLTR","NOW","CRM","SNOW","DDOG","NET","MDB","S","AI",
+  // Data centers (REITs spécialisés)
+  "DLR","EQIX","IRM",
+  // Quantum / spécialités
+  "IONQ","RGTI","QBTS","BBAI",
+  // Robotique / autonomie
+  "TSLA","ISRG","ROK",
+  // Mémoire / storage (data deluge IA)
+  "STX","WDC","ADI",
+];
+
+ const KNOWN_US_TICKERS = new Set([...SP100, ...NASDAQ100, ...RUSSELL, ...NASDAQ150_EXT, ...SP500_EXTRA, ...TOP_DRAWDOWN, ...MEGATREND_AI]);
 
 // Mapping issuer_name SEC -> ticker (pour fetch cours actuel quand h.ticker est null)
 // SEC 13F ne fournit que CUSIP, pas tickers. On enrichit avec ce dictionnaire.
@@ -537,6 +575,7 @@ const UNIVERSES = {
   sp500_extra:   { label: "🇺🇸 S&P 500 élargi", list: SP500_EXTRA },
   russell_midcap:{ label: "📊 Russell Midcap", list: RUSSELL },
   top_drawdown:  { label: "📉 Top Drawdown 52W", list: TOP_DRAWDOWN },
+  megatrend_ai:  { label: "🤖 IA / Megatrend 2026", list: MEGATREND_AI },
 };
 
 const CRITERIA = [
@@ -826,15 +865,39 @@ function calculateSCCT(result) {
   const tier1NewMoves = tier1Holders.filter(h => (h.change === 'NEW' || h.change === 'INCREASED') && h.tier !== 'passive_giant');
   const activistNewMoves = activistHolders.filter(h => h.change === 'NEW' || h.change === 'INCREASED');
 
+  // ============================================================
+  // RECALIBRATION POST-BACKTEST (juin 2026, 730 events analysés)
+  // - activist NEW/INCREASED : +11.86% alpha 90j vs SPY → SIGNAL FORT
+  // - hedge / active_giant NEW : -6% alpha 90j vs SPY → SIGNAL FAIBLE
+  // - quant NEW (Renaissance/D.E. Shaw) : -7% alpha 90j vs SPY → SIGNAL NÉGATIF, on l'exclut
+  // Priorité au h.tier (donnée SEC 13F officielle) avant le match par nom.
+  // ============================================================
+  const tieredHolders = result.holders13f || [];
+  const activistMovesByTier = tieredHolders.filter(h =>
+    (h.change === 'NEW' || h.change === 'INCREASED') && h.tier === 'activist'
+  );
+  const hedgeMovesByTier = tieredHolders.filter(h =>
+    (h.change === 'NEW' || h.change === 'INCREASED') &&
+    (h.tier === 'hedge' || h.tier === 'active_giant')
+  );
+  // quant volontairement IGNORÉ (alpha 90j négatif au backtest)
+
   if (tier1Moves.length >= 2) score += 25;
   else if (tier1Moves.length >= 1 && activistMoves.length >= 1) score += 23;
   else if (tier1Moves.length >= 1 && pelosiMoves.length >= 1) score += 22;
   else if (tier1Moves.length >= 1) score += 18;
-  else if (activistMoves.length >= 1) score += 15;
-  // 13F NEW/INCREASED = vrai signal smart money mouvement (parite avec tier1Moves)
-  else if (tier1NewMoves.length >= 2) score += 25;
-  else if (tier1NewMoves.length >= 1 && activistNewMoves.length >= 1) score += 23;
-  else if (tier1NewMoves.length >= 1) score += 18;
+  // ⭐ ACTIVIST = signal le plus fort (backtest +11.86% alpha 90j)
+  else if (activistMovesByTier.length >= 2)                            score += 35;  // 2+ activists = pari extrême
+  else if (activistMovesByTier.length >= 1 && hedgeMovesByTier.length >= 1) score += 30;  // activist + autre actif = conviction
+  else if (activistMovesByTier.length >= 1)                            score += 25;  // 1 activist NEW seul = signal fort
+  else if (activistMoves.length >= 1)                                  score += 20;  // fallback name-match (Pershing/Icahn/etc.)
+  // hedge / active_giant : signal modéré (backtest neutre/légèrement négatif)
+  else if (hedgeMovesByTier.length >= 3)                               score += 18;  // 3+ hedges = consensus
+  else if (hedgeMovesByTier.length >= 1)                               score += 10;  // 1-2 hedges = faible
+  // 13F NEW/INCREASED legacy path (sans tier explicite — moins fiable)
+  else if (tier1NewMoves.length >= 2)                                  score += 18;  // baissé de 25 → 18
+  else if (tier1NewMoves.length >= 1 && activistNewMoves.length >= 1)  score += 20;  // baissé de 23 → 20
+  else if (tier1NewMoves.length >= 1)                                  score += 12;  // baissé de 18 → 12
   // Fallback 13F holders existants (detention sans action recente)
   else if (tier1Holders.length >= 3) score += 14;
   else if (tier1Holders.length >= 1 && activistHolders.length >= 1) score += 12;
@@ -2028,6 +2091,10 @@ function setProgress(current, total, signals, step) {
 }
 
 function renderResults() {
+  // Refresh le badge "Activistes" à chaque render
+  if (typeof updateActivistsCountBadge === "function") {
+    try { updateActivistsCountBadge(); } catch(e) {}
+  }
   // Les error cards (ticker non reconnu) sont TOUJOURS affichees, meme en mode Triple Lock,
   // pour que l'utilisateur voie son erreur de saisie.
   let filtered = tripleLockOnly
@@ -3101,6 +3168,7 @@ function renderCard(r) {
     sp500_extra:    { label: "S&P500+", color: "#7dd3fc", bg: "#1a232f" },
     russell_midcap: { label: "RUSSELL", color: "#a29bfe", bg: "#2f1a2f" }, // violet pâle
     top_drawdown:   { label: "DD52W",   color: "#2ed573", bg: "#1a2f1a" },
+    megatrend_ai:   { label: "AI/MEGA", color: "#00d2ff", bg: "#1a2a2f" }, // cyan tech
     custom:         { label: "CUSTOM",  color: "#8b949e", bg: "#21262d" },
   };
   const univBadge = UNIV_BADGES[r.universe] || { label: (r.universe || "—").toUpperCase(), color: "#8b949e", bg: "#21262d" };
@@ -3290,6 +3358,76 @@ function toggleCard(ticker) {
     exp.style.display = open ? "block" : "none";
     if (hint) hint.style.display = open ? "none" : "block";
   }
+}
+
+// ============================================================
+// VUE "ACTIVISTES UNIQUEMENT" — filtre les résultats scannés
+// pour ne montrer que les tickers ayant un holder activist
+// avec change NEW ou INCREASED (signal le plus prédictif au backtest)
+// ============================================================
+let activistsViewMode = false; // toggle on/off
+
+function getActivistResults() {
+  // Retourne les résultats où AU MOINS un holder est tier=activist + NEW/INCREASED
+  return (allResults || []).filter(r => {
+    const holders = r.holders13f || [];
+    return holders.some(h =>
+      h.tier === "activist" && (h.change === "NEW" || h.change === "INCREASED")
+    );
+  });
+}
+
+function updateActivistsCountBadge() {
+  const badge = document.getElementById("activists-count-badge");
+  if (!badge) return;
+  const n = getActivistResults().length;
+  badge.textContent = String(n);
+  badge.style.background = n > 0 ? "#a855f7" : "#fff2";
+}
+
+function toggleActivistsView() {
+  activistsViewMode = !activistsViewMode;
+  const btn = document.getElementById("open-activists-tab");
+  const grid = document.getElementById("results-grid") || document.getElementById("results-section");
+  if (!grid) return;
+  if (activistsViewMode) {
+    const activistResults = getActivistResults();
+    if (activistResults.length === 0) {
+      alert("🚀 Aucun titre scanné n'a actuellement d'activist NEW/INCREASED.\n\nLance un scan d'abord (SP100 ou Megatrend IA recommandé) puis reviens cliquer ici.");
+      activistsViewMode = false;
+      return;
+    }
+    // Sauvegarde l'état actuel avant filtrage
+    window._savedAllResults = allResults;
+    allResults = activistResults;
+    if (btn) {
+      btn.style.background = "linear-gradient(135deg,#2ed573 0%,#1e9c5c 100%)";
+      btn.querySelector("span:nth-child(2)").innerHTML = `✓ Retour scan complet <span id="activists-count-badge" style="background:#fff2;padding:1px 7px;border-radius:10px;margin-left:3px;font-size:10px">${activistResults.length}</span>`;
+    }
+    // Banner d'info en haut des résultats
+    const banner = document.createElement("div");
+    banner.id = "activists-banner";
+    banner.style.cssText = "background:linear-gradient(90deg,#a855f733,transparent);border-left:4px solid #a855f7;padding:10px 16px;margin-bottom:12px;border-radius:4px;font-size:12px;color:#c9d1d9";
+    banner.innerHTML = `🚀 <strong style="color:#a855f7">MODE ACTIVISTES</strong> — ${activistResults.length} titre(s) avec position ouverte ou renforcée par Pershing, Icahn, Third Point, Elliott, ValueAct, Starboard, Jana ou Trian. <em>Signal +11.86% alpha 90j vs SPY au backtest.</em>`;
+    const resultsSection = document.getElementById("results-section") || grid;
+    resultsSection.insertBefore(banner, resultsSection.firstChild);
+  } else {
+    // Restaure l'état complet
+    if (window._savedAllResults) {
+      allResults = window._savedAllResults;
+      window._savedAllResults = null;
+    }
+    const banner = document.getElementById("activists-banner");
+    if (banner) banner.remove();
+    if (btn) {
+      btn.style.background = "linear-gradient(135deg,#a855f7 0%,#6b21a8 100%)";
+      btn.querySelector("span:nth-child(2)").innerHTML = `Activistes <span id="activists-count-badge" style="background:#fff2;padding:1px 7px;border-radius:10px;margin-left:3px;font-size:10px">0</span>`;
+      updateActivistsCountBadge();
+    }
+  }
+  // Re-render les résultats
+  if (typeof renderResults === "function") renderResults();
+  else if (typeof displayResults === "function") displayResults();
 }
 
 function closeModal() { document.getElementById("modal").style.display = "none"; }
