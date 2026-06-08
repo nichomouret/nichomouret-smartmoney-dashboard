@@ -2146,9 +2146,9 @@ async function runScan() {
               insiderData: data.insiderData || null,
               socialData: data.socialData || null,
             };
-            // Calcul du Lifecycle Stage APRÈS avoir construit base (utilise scct + ts + social)
-            base.lifecycleStage = computeLifecycleStage(base);
+            // IMPORTANT : ordre = SCCT d'abord, puis Lifecycle (qui dépend de scct)
             base.scct = calculateSCCT(base);
+            base.lifecycleStage = computeLifecycleStage(base);
             return base;
           });
           allResults = [...allResults, ...enriched];
