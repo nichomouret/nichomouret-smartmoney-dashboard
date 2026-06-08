@@ -239,6 +239,14 @@
       <span>🚀</span>
       <span>Activistes <span id="activists-count-badge" style="background:#fff2;padding:1px 7px;border-radius:10px;margin-left:3px;font-size:10px">0</span></span>
     </button>
+    <button id="open-hidden-gems-tab" onclick="toggleHiddenGemsView()" style="background:linear-gradient(135deg,#10b981 0%,#047857 100%);color:white;border:none;padding:8px 16px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;box-shadow:0 2px 8px rgba(16,185,129,0.4);display:flex;align-items:center;gap:6px">
+      <span>🌱</span>
+      <span>Hidden Gems <span id="hidden-gems-count-badge" style="background:#fff2;padding:1px 7px;border-radius:10px;margin-left:3px;font-size:10px">0</span></span>
+    </button>
+    <button id="open-sector-rotation-tab" onclick="openSectorRotation()" style="background:linear-gradient(135deg,#0ea5e9 0%,#0369a1 100%);color:white;border:none;padding:8px 16px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;box-shadow:0 2px 8px rgba(14,165,233,0.4);display:flex;align-items:center;gap:6px">
+      <span>🔄</span>
+      <span>Rotations sectorielles</span>
+    </button>
   </div>
 
   <div class="header">
@@ -1458,6 +1466,53 @@ async function fetchAmfBdif(ticker) {
 // Fail silently pour EU (renvoie null) — TwelveData /analyst_ratings/us US-only
 // ============================================================
 // ============================================================
+// fetchSocialBuzz : Reddit mentions + croissance 24h (Apewisdom proxy)
+// Renvoie { mentions_now, mentions_24h_ago, velocity_pct, rank, label }
+// Velocity = (now - 24h_ago) / 24h_ago * 100 → croissance retail
+//
+// Classification :
+//   COLD     : pas dans le top 100 OU velocity < 20%
+//   WARMING  : velocity 20-100%
+//   HOT      : velocity 100-300%
+//   CRAZY    : velocity > 300%  (FOMO retail)
+// ============================================================
+async function fetchSocialBuzz(ticker) {
+  try {
+    const sym = encodeURIComponent(ticker.replace(/\.[A-Z]+$/, ''));
+    const data = await proxyFetch(`/buzz?ticker=${sym}`);
+    if (!data || data.error) return null;
+    // Apewisdom shape : { total_mentions, mentions_24h_ago, sentiment_score, rank }
+    const mentionsNow = parseInt(data.total_mentions || 0, 10);
+    const mentions24h = parseInt(data.mentions_24h_ago || 0, 10);
+    // Velocity % growth — gérer division par zéro
+    let velocity = 0;
+    if (mentions24h > 0) {
+      velocity = ((mentionsNow - mentions24h) / mentions24h) * 100;
+    } else if (mentionsNow > 0) {
+      velocity = 100; // émergence depuis 0 mentions
+    }
+    // Classification
+    let label;
+    if (mentionsNow === 0)        label = "COLD";       // Pas dans le top 100 retail
+    else if (velocity < 20)       label = "QUIET";      // Mentions stables faibles
+    else if (velocity < 100)      label = "WARMING";    // Croissance modérée
+    else if (velocity < 300)      label = "HOT";        // Trend chaude
+    else                          label = "CRAZY";      // FOMO retail extrême
+    return {
+      mentions_now: mentionsNow,
+      mentions_24h_ago: mentions24h,
+      velocity_pct: Math.round(velocity),
+      rank: data.rank || null,
+      sentiment: data.sentiment_score || null,
+      label,
+    };
+  } catch (e) {
+    console.warn(`[fetchSocialBuzz] ${ticker}:`, e.message);
+    return null;
+  }
+}
+
+// ============================================================
 // fetchInsiderData : SEC Form 4 insider transactions (US-only)
 // Renvoie { n_buys, n_sells, unique_buyers, total_buy_usd, top_buyers, label }
 // Source : DB Postgres alimentée par sec/form4Worker.js
@@ -1820,18 +1875,20 @@ async function fetchTickerData(ticker) {
     }
   }
 
-  // ── ANALYSE TECHNIQUE + CONSENSUS ANALYSTES + INSIDER FORM 4 ──
+  // ── ANALYSE TECHNIQUE + CONSENSUS ANALYSTES + INSIDER FORM 4 + SOCIAL ──
   // - TS calculé local depuis ts.values (zéro call API supplémentaire)
   // - Analystes : 2 calls TwelveData (US-only, skip silencieux EU)
   // - Insider Form 4 : 1 call vers /sec-form4/ticker (US-only, skip EU)
+  // - Social buzz : 1 call /buzz (Apewisdom — Reddit mentions + velocity)
   const technicalScore = computeTechnicalScore(ts);
   const currentPriceNum = quote && quote.close ? parseFloat(quote.close) : null;
-  const [analystData, insiderData] = await Promise.all([
+  const [analystData, insiderData, socialData] = await Promise.all([
     fetchAnalystData(ticker, isEuropean, currentPriceNum),
     fetchInsiderData(ticker, isEuropean),
+    fetchSocialBuzz(ticker),
   ]);
 
-  return { realPrice, drawdown52w, priceChange, hasRealData, newsItems, edgarFilings, shortInterestReal, daysTocover, borrowRate, ortexScore, realFilings, realRaisonSociale, dataWarning, putCallRatio, callOI, totalOI, impliedVolatility, gammaScore, holders13f, realNextEarnings, realLastEarnings, marketCap, hasRealSources, realExchange, technicalScore, analystData, insiderData };
+  return { realPrice, drawdown52w, priceChange, hasRealData, newsItems, edgarFilings, shortInterestReal, daysTocover, borrowRate, ortexScore, realFilings, realRaisonSociale, dataWarning, putCallRatio, callOI, totalOI, impliedVolatility, gammaScore, holders13f, realNextEarnings, realLastEarnings, marketCap, hasRealSources, realExchange, technicalScore, analystData, insiderData, socialData };
 }
 
 async function analyzeBatch(batch, universe, customTicker = null) {
@@ -2083,11 +2140,14 @@ async function runScan() {
               catalystType: finalCatalystType,
               catalystDescription: finalCatalystDesc,
               catalystSource: catalystSource,
-              // Analyse technique + consensus analystes + insider Form 4 (calculés dashboard-side)
+              // Analyse technique + consensus analystes + insider Form 4 + social buzz
               technicalScore: data.technicalScore || null,
               analystData: data.analystData || null,
               insiderData: data.insiderData || null,
+              socialData: data.socialData || null,
             };
+            // Calcul du Lifecycle Stage APRÈS avoir construit base (utilise scct + ts + social)
+            base.lifecycleStage = computeLifecycleStage(base);
             base.scct = calculateSCCT(base);
             return base;
           });
@@ -2150,9 +2210,12 @@ function setProgress(current, total, signals, step) {
 }
 
 function renderResults() {
-  // Refresh le badge "Activistes" à chaque render
+  // Refresh les badges des filtres custom à chaque render
   if (typeof updateActivistsCountBadge === "function") {
     try { updateActivistsCountBadge(); } catch(e) {}
+  }
+  if (typeof updateHiddenGemsCountBadge === "function") {
+    try { updateHiddenGemsCountBadge(); } catch(e) {}
   }
   // Les error cards (ticker non reconnu) sont TOUJOURS affichees, meme en mode Triple Lock,
   // pour que l'utilisateur voie son erreur de saisie.
@@ -2758,6 +2821,38 @@ Plus utile : changes récents > absolute rating.`;
 // Affiche le signal "CEO BUY" / "C-SUITE BUY" / "CLUSTER BUY" / etc.
 // Tooltip détaille les insiders qui ont acheté avec montants
 // ============================================================
+// ============================================================
+// CHIP STAGE — affichage du lifecycle stage sur la carte
+// Tooltip détaillée avec dimensions + action recommandée
+// ============================================================
+function renderStageChip(r) {
+  const stage = r.lifecycleStage;
+  if (!stage || stage.stage === null) return ""; // pas de chip si NEUTRAL
+
+  // Tooltip détaillée
+  const tsScore = r.technicalScore?.score ?? "—";
+  const socialVel = r.socialData?.velocity_pct ?? "—";
+  const socialLabel = r.socialData?.label || "—";
+  const mentionsNow = r.socialData?.mentions_now ?? 0;
+  const tooltip = `LIFECYCLE STAGE ${stage.stage !== null ? stage.stage : 'N/A'} — ${stage.label}
+
+${stage.description}
+
+ACTION SUGGÉRÉE : ${stage.action}
+
+DIMENSIONS DÉTECTÉES :
+• 🏛️ Smart Money (SCCT) : ${r.scct || 0}/100
+• 📈 Technical Score    : ${tsScore}/100
+• 📊 Drawdown 52W      : ${r.drawdown52w || '—'}
+• 💹 Price change 1Y   : ${r.priceChange ? r.priceChange.toFixed(1) + '%' : '—'}
+• 🗣️ Social Reddit     : ${mentionsNow} mentions, vélocité ${socialVel}% (${socialLabel})
+
+NB : Stage 0/1 = entrée optimale (asymétrie positive)
+    Stage 3/4 = piège retail (asymétrie négative)`;
+
+  return `<div style="display:inline-flex;align-items:center;gap:6px;background:${stage.bg};border:1.5px solid ${stage.border};border-radius:6px;padding:3px 10px;font-size:10px;color:${stage.color};cursor:help;font-weight:700" title="${tooltip.replace(/"/g, '&quot;')}">${stage.icon} <strong>STAGE ${stage.stage} ${stage.label}</strong></div>`;
+}
+
 function renderInsiderChip(r) {
   const i = r.insiderData;
   if (!i || (i.n_buys === 0 && i.n_sells === 0)) return "";
@@ -3182,6 +3277,138 @@ function renderHolders13fPanel(r) {
 // Type de setup : CONTRARIAN / MOMENTUM_CONFIRMED / DIVERGENCE_BEARISH / WEAK / NEUTRAL
 // Objectif : éviter de devoir composer mentalement avec 6 scores éparpillés
 // ============================================================
+// ============================================================
+// LIFECYCLE STAGE — classification asymétrique en 5 phases
+// Croise 3 dimensions : Smart Money + Price Action + Social Buzz
+// Objectif : détecter dans QUELLE phase du cycle est le titre :
+//   STAGE 0 — HIDDEN GEM      : smart $ entre, prix calme, social silencieux
+//   STAGE 1 — AWAKENING       : smart $ stable, prix démarre, social warming
+//   STAGE 2 — PUBLIC DISCOVERY: prix monte, social hot
+//   STAGE 3 — TOP OF CYCLE    : smart $ sort, social CRAZY (FOMO retail)
+//   STAGE 4 — DISTRIBUTION    : smart $ sorti, prix plateau, social hyped
+//
+// Stages 0-1 = entrée optimale (asymétrie positive)
+// Stages 3-4 = piège retail (asymétrie négative, RED FLAG)
+// ============================================================
+function computeLifecycleStage(r) {
+  const scct = r.scct || 0;
+  const tsScore = r.technicalScore?.score ?? 50;
+  const drawdown = parseFloat(r.drawdown52w) || 0;  // typiquement négatif
+  const priceChange = parseFloat(r.priceChange) || 0;
+  const socialVelocity = r.socialData?.velocity_pct ?? 0;
+  const socialLabel = r.socialData?.label || "COLD";
+  const mentionsNow = r.socialData?.mentions_now ?? 0;
+
+  // Activist NEW présent ? signal de qualité smart money
+  const hasActivist = (r.holders13f || []).some(h =>
+    h.tier === "activist" && (h.change === "NEW" || h.change === "INCREASED")
+  );
+  // Insider CEO/CFO buy récent ?
+  const hasCEOBuy = r.insiderData?.has_ceo_buy || r.insiderData?.has_cfo_buy;
+
+  // === STAGE 4 — DISTRIBUTION (le pire pour acheter) ===
+  // Smart money est sortie, prix encore élevé, retail encore en train de fomo
+  if (priceChange > 30 && socialLabel === "CRAZY" && scct < 40 && !hasActivist) {
+    return {
+      stage: 4,
+      label: "DISTRIBUTION",
+      icon: "💀",
+      color: "#ff4757",
+      bg: "#ff475720",
+      border: "#ff475766",
+      description: "Smart money sortie, retail encore piégé. RED FLAG.",
+      action: "ÉVITER / VENDRE",
+    };
+  }
+
+  // === STAGE 3 — TOP OF CYCLE (warning) ===
+  // Prix très haut, retail CRAZY, smart money commence à sortir
+  if (priceChange > 50 && (socialLabel === "CRAZY" || socialLabel === "HOT") && scct < 60) {
+    return {
+      stage: 3,
+      label: "TOP OF CYCLE",
+      icon: "⚠️",
+      color: "#ff8c42",
+      bg: "#ff8c4215",
+      border: "#ff8c4244",
+      description: "Top probable. Smart money diminue position pendant que retail accumule.",
+      action: "DANGER / NE PAS RENTRER",
+    };
+  }
+
+  // === STAGE 0 — HIDDEN GEM (le meilleur entry) ===
+  // Smart money entre fortement, prix calme/baissier, personne ne sait
+  if (scct >= 70 && socialLabel === "COLD" && (drawdown < -10 || priceChange < 15)) {
+    return {
+      stage: 0,
+      label: "HIDDEN GEM",
+      icon: "🌱",
+      color: "#a855f7",
+      bg: "#a855f720",
+      border: "#a855f766",
+      description: "Smart money accumule en silence. Personne n'en parle. Setup contrarian idéal.",
+      action: "ENTRER (asymétrie maximale)",
+    };
+  }
+
+  // === STAGE 1 — AWAKENING (très bon entry, encore tôt) ===
+  // Smart money stable, prix démarre, social commence à parler
+  if (scct >= 60 && tsScore >= 55 && (socialLabel === "WARMING" || socialLabel === "QUIET") &&
+      priceChange >= 5 && priceChange < 40) {
+    return {
+      stage: 1,
+      label: "AWAKENING",
+      icon: "🚀",
+      color: "#2ed573",
+      bg: "#2ed57320",
+      border: "#2ed57366",
+      description: "Trend en formation. Smart money + prix qui démarre + retail qui se réveille.",
+      action: "ENTRER (encore tôt)",
+    };
+  }
+
+  // === STAGE 2 — PUBLIC DISCOVERY (encore tradable mais moins d'edge) ===
+  // Le grand public commence à découvrir, momentum confirmé
+  if (tsScore >= 65 && (socialLabel === "HOT" || socialLabel === "WARMING") && priceChange >= 20) {
+    return {
+      stage: 2,
+      label: "PUBLIC DISCOVERY",
+      icon: "📈",
+      color: "#58a6ff",
+      bg: "#58a6ff15",
+      border: "#58a6ff44",
+      description: "Trend public. Encore tradable mais R/R moins favorable. Surveiller volatilité.",
+      action: "SURVEILLER (momentum, exit défini)",
+    };
+  }
+
+  // === STAGE BONUS — Activist NEW + CEO Buy = setup spécial même hors stages ===
+  if (hasActivist && hasCEOBuy && socialLabel === "COLD") {
+    return {
+      stage: 0,
+      label: "TRIPLE LOCK GEM",
+      icon: "💎",
+      color: "#00d2ff",
+      bg: "#00d2ff20",
+      border: "#00d2ff66",
+      description: "Activist + CEO buy + social calme. Convergence rare et puissante.",
+      action: "ENTRER (signal ultra-fort)",
+    };
+  }
+
+  // === NEUTRAL — pas de classification claire ===
+  return {
+    stage: null,
+    label: "NEUTRAL",
+    icon: "○",
+    color: "#8b949e",
+    bg: "#21262d",
+    border: "#30363d",
+    description: "Pas de phase claire. Setup standard sans asymétrie marquée.",
+    action: "Pas d'edge particulier",
+  };
+}
+
 function computeVerdict(r) {
   const scct = r.scct || 0;
   const ts = r.technicalScore?.score ?? null;
@@ -3360,6 +3587,7 @@ function renderCard(r) {
       ${r.drawdown52w ? `<div class="drawdown-badge" style="margin-bottom:0">📊 Drawdown 52W: <strong>${r.drawdown52w}</strong>${r.dataSource === 'twelvedata' ? ' <span style="color:#484f58">· TwelveData ✓</span>' : ''}</div>` : ""}
       ${r.shortInterestReal ? `<div style="display:inline-flex;align-items:center;gap:6px;background:#ff475715;border:1px solid #ff475733;border-radius:6px;padding:3px 10px;font-size:10px;color:#ff4757">📉 <strong>VAD: ${r.shortInterestReal}</strong>${r.daysTocover ? ' · DTC: ' + r.daysTocover : ''} <span style="color:#484f58">· Ortex ✓</span></div>` : r.shortInterest ? `<div style="display:inline-flex;align-items:center;gap:6px;background:#ff475710;border:1px solid #ff475722;border-radius:6px;padding:3px 10px;font-size:10px;color:#ff6b3d">📉 <strong>VAD est.: ${r.shortInterest}</strong> <span style="color:#484f58">· Estimé</span></div>` : ""}
       ${r.gammaScore ? `<div style="display:inline-flex;align-items:center;gap:6px;background:#a855f715;border:1px solid #a855f733;border-radius:6px;padding:3px 10px;font-size:10px;color:#a855f7">⚡ <strong>Gamma: ${r.gammaScore}</strong>${r.putCallRatio !== null && r.putCallRatio !== undefined ? ' · P/C: ' + parseFloat(r.putCallRatio).toFixed(2) : ''} <span style="color:#484f58">· Ortex ✓</span></div>` : ""}
+      ${renderStageChip(r)}
       ${renderFloorChip(r)}
       ${renderFlowChip(r)}
       ${renderTechnicalChip(r)}
@@ -3555,6 +3783,236 @@ function toggleActivistsView() {
   // Re-render les résultats
   if (typeof renderResults === "function") renderResults();
   else if (typeof displayResults === "function") displayResults();
+}
+
+// ============================================================
+// MAPPING TICKER → SECTEUR (curated SP100 + NDX100 + SBF120 + IA)
+// Pour aggréger les Lifecycle Stages par secteur
+// ============================================================
+const TICKER_TO_SECTOR = {
+  // === MEGACAP TECH ===
+  "AAPL":"Tech Megacap","MSFT":"Tech Megacap","GOOGL":"Tech Megacap","GOOG":"Tech Megacap",
+  "AMZN":"Tech Megacap","META":"Tech Megacap","NVDA":"Semis","TSLA":"Auto",
+  // === SEMICONDUCTEURS / IA ===
+  "AVGO":"Semis","AMD":"Semis","INTC":"Semis","MU":"Semis","QCOM":"Semis","TXN":"Semis",
+  "MRVL":"Semis","ASML":"Semis","AMAT":"Semis","LRCX":"Semis","KLAC":"Semis","MCHP":"Semis",
+  "ON":"Semis","NXPI":"Semis","ADI":"Semis","GFS":"Semis","ARM":"Semis","NVTS":"Semis",
+  "POWI":"Semis","WOLF":"Semis","ONTO":"Semis","ACMR":"Semis","ALAB":"Semis","TER":"Semis",
+  // === AI INFRASTRUCTURE ===
+  "SMCI":"AI Infra","ANET":"AI Infra","VRT":"AI Infra","DELL":"AI Infra","HPE":"AI Infra",
+  "NTAP":"AI Infra","CSCO":"AI Infra","JNPR":"AI Infra","CRWV":"AI Infra","NBIS":"AI Infra",
+  "IREN":"AI Infra","CLSK":"AI Infra",
+  // === SOFTWARE / SAAS ===
+  "ORCL":"Software","CRM":"Software","ADBE":"Software","NOW":"Software","INTU":"Software",
+  "PLTR":"Software","SNOW":"Software","DDOG":"Software","CRWD":"Software","PANW":"Software",
+  "FTNT":"Software","WDAY":"Software","TEAM":"Software","ZS":"Software","NET":"Software",
+  "MDB":"Software","S":"Software","AI":"Software","CDNS":"Software","SNPS":"Software",
+  "ANSS":"Software","DSY.PA":"Software","CAP.PA":"Software","SAP":"Software",
+  // === FINTECH / PAYMENTS ===
+  "V":"Fintech","MA":"Fintech","PYPL":"Fintech","COIN":"Fintech","HOOD":"Fintech",
+  "TTD":"Adtech",
+  // === BANKS ===
+  "JPM":"Banks","BAC":"Banks","WFC":"Banks","C":"Banks","GS":"Banks","MS":"Banks",
+  "BLK":"Banks","BNP.PA":"Banks","GLE.PA":"Banks","ACA.PA":"Banks","CS.PA":"Banks","SCHW":"Banks",
+  // === HEALTHCARE ===
+  "UNH":"Healthcare","JNJ":"Healthcare","LLY":"Healthcare","ABBV":"Healthcare","MRK":"Healthcare",
+  "TMO":"Healthcare","ABT":"Healthcare","DHR":"Healthcare","BMY":"Healthcare","AMGN":"Healthcare",
+  "MDT":"Healthcare","SYK":"Healthcare","REGN":"Healthcare","ISRG":"Healthcare","CVS":"Healthcare",
+  "ZTS":"Healthcare","BIIB":"Healthcare","IDXX":"Healthcare","GEHC":"Healthcare","DXCM":"Healthcare",
+  "ILMN":"Healthcare","HOLX":"Healthcare","ELV":"Healthcare","SAN.PA":"Healthcare","BIM.PA":"Healthcare",
+  // === BIOTECH ===
+  "RXRX":"Biotech","ARWR":"Biotech","CRSP":"Biotech","BEAM":"Biotech","ALGN":"Biotech",
+  "DBV.PA":"Biotech","NK.PA":"Biotech","NANO.PA":"Biotech","VLA.PA":"Biotech",
+  // === ENERGY ===
+  "XOM":"Energy","CVX":"Energy","COP":"Energy","SLB":"Energy","EOG":"Energy","FANG":"Energy",
+  "TTE.PA":"Energy","ENGI.PA":"Energy","CEG":"Energy Utilities","NEE":"Energy Utilities",
+  "DUK":"Energy Utilities","SO":"Energy Utilities","EXC":"Energy Utilities","NRG":"Energy Utilities",
+  "VST":"Energy Utilities","TLN":"Energy Utilities","OKLO":"Nuclear","ENPH":"Solar",
+  // === CONSUMER ===
+  "WMT":"Consumer Staples","PG":"Consumer Staples","KO":"Consumer Staples","PEP":"Consumer Staples",
+  "COST":"Consumer Staples","MDLZ":"Consumer Staples","CL":"Consumer Staples","MO":"Consumer Staples",
+  "BN.PA":"Consumer Staples","CA.PA":"Consumer Staples",
+  "HD":"Consumer Disc","LOW":"Consumer Disc","NKE":"Consumer Disc","MCD":"Consumer Disc","SBUX":"Consumer Disc",
+  "TJX":"Consumer Disc","ROST":"Consumer Disc","ORLY":"Consumer Disc","RNO.PA":"Auto","UG.PA":"Auto",
+  // === LUXURY ===
+  "MC.PA":"Luxury","RMS.PA":"Luxury","KER.PA":"Luxury","OR.PA":"Luxury","EL.PA":"Luxury",
+  // === INDUSTRIALS ===
+  "CAT":"Industrials","HON":"Industrials","UPS":"Industrials","RTX":"Industrials","BA":"Industrials",
+  "DE":"Industrials","UNP":"Industrials","SAF.PA":"Industrials","AIR.PA":"Industrials",
+  "HO.PA":"Industrials","SU.PA":"Industrials","DG.PA":"Industrials","ALO.PA":"Industrials",
+  "AI.PA":"Industrials","ML.PA":"Industrials","BVI.PA":"Industrials",
+  // === COMMUNICATIONS ===
+  "DIS":"Media","NFLX":"Media","T":"Telecom","TMUS":"Telecom","ORA.PA":"Telecom","SIRI":"Media",
+  // === REITS ===
+  "PLD":"REIT","AMT":"REIT","EQR":"REIT","DLR":"REIT","EQIX":"REIT","IRM":"REIT",
+  // === DATA / RESEARCH ===
+  "SPGI":"Data","ICE":"Data","CME":"Data","MMC":"Data","FDS":"Data","MCO":"Data","VRSK":"Data",
+  // === AUTO / TRANSPORTATION ===
+  "ABNB":"Travel","BKNG":"Travel","UBER":"Mobility","LYFT":"Mobility","RIVN":"EV","LCID":"EV",
+  // === SP BENCHMARKS ===
+  "SPY":"Benchmark","CAC.PA":"Benchmark",
+};
+
+function tickerSector(t) {
+  if (!t) return "Other";
+  return TICKER_TO_SECTOR[t.toUpperCase()] || "Other";
+}
+
+// ============================================================
+// SECTOR ROTATION MODAL — agrège les Lifecycle Stages par secteur
+// Permet de voir quels secteurs sont majoritairement en Stage 0/1 (à entrer)
+// vs Stage 3/4 (à fuir).
+// ============================================================
+function openSectorRotation() {
+  if (!allResults || allResults.length === 0) {
+    alert("🔄 Lance d'abord un scan pour voir les rotations sectorielles.");
+    return;
+  }
+  // Aggrégation par secteur
+  const bySector = {};
+  for (const r of allResults) {
+    if (!r.ticker) continue;
+    const sec = tickerSector(r.ticker);
+    if (!bySector[sec]) bySector[sec] = { sector: sec, tickers: [], stages: { 0:0, 1:0, 2:0, 3:0, 4:0, null:0 } };
+    bySector[sec].tickers.push(r.ticker);
+    const st = r.lifecycleStage?.stage;
+    bySector[sec].stages[st === undefined ? null : st]++;
+  }
+  // Score par secteur : (Stage0 + Stage1) - (Stage3 + Stage4)
+  const sectors = Object.values(bySector).map(s => {
+    const positives = s.stages[0] + s.stages[1];
+    const negatives = s.stages[3] + s.stages[4];
+    const net = positives - negatives;
+    return { ...s, n: s.tickers.length, positives, negatives, net };
+  });
+  // Tri : plus fort signal d'entrée d'abord
+  sectors.sort((a, b) => b.net - a.net);
+
+  // Build HTML
+  const rowsHtml = sectors.map(s => {
+    let verdict, color;
+    if (s.net >= 3)       { verdict = "ACCUMULATION FORTE"; color = "#10b981"; }
+    else if (s.net >= 1)  { verdict = "ACCUMULATION";       color = "#2ed573"; }
+    else if (s.net === 0) { verdict = "NEUTRE";             color = "#8b949e"; }
+    else if (s.net >= -2) { verdict = "DISTRIBUTION";       color = "#ff8c42"; }
+    else                  { verdict = "DISTRIBUTION FORTE"; color = "#ff4757"; }
+    const stagesPills = `
+      ${s.stages[0] > 0 ? `<span style="color:#a855f7;font-weight:700" title="Hidden Gems">🌱${s.stages[0]}</span>` : ''}
+      ${s.stages[1] > 0 ? `<span style="color:#2ed573;font-weight:700" title="Awakening">🚀${s.stages[1]}</span>` : ''}
+      ${s.stages[2] > 0 ? `<span style="color:#58a6ff;font-weight:700" title="Public Discovery">📈${s.stages[2]}</span>` : ''}
+      ${s.stages[3] > 0 ? `<span style="color:#ff8c42;font-weight:700" title="Top of Cycle">⚠️${s.stages[3]}</span>` : ''}
+      ${s.stages[4] > 0 ? `<span style="color:#ff4757;font-weight:700" title="Distribution">💀${s.stages[4]}</span>` : ''}
+      ${s.stages[null] > 0 ? `<span style="color:#484f58" title="Neutre">○${s.stages[null]}</span>` : ''}
+    `;
+    return `<tr style="background:#21262d;border-bottom:1px solid #161b22">
+      <td style="padding:8px 10px;color:#e6edf3;font-weight:700;font-size:12px;font-family:'Courier New',monospace">${s.sector}</td>
+      <td style="padding:8px 10px;text-align:center;color:#8b949e;font-size:11px">${s.n}</td>
+      <td style="padding:8px 10px;text-align:center;font-size:14px;display:flex;gap:8px;align-items:center;justify-content:center">${stagesPills}</td>
+      <td style="padding:8px 10px;text-align:center"><span style="background:${color}22;color:${color};border:1px solid ${color}66;padding:3px 8px;border-radius:6px;font-size:10px;font-weight:700;letter-spacing:1px">${verdict}</span></td>
+      <td style="padding:8px 10px;text-align:center;color:${color};font-weight:700;font-family:'Courier New',monospace">${s.net > 0 ? '+' : ''}${s.net}</td>
+    </tr>`;
+  }).join("");
+
+  const modal = document.getElementById("modal");
+  if (!modal) {
+    alert("Modal element introuvable.");
+    return;
+  }
+  modal.innerHTML = `
+    <div class="modal-overlay" style="position:fixed;inset:0;background:#010409f2;display:flex;align-items:center;justify-content:center;z-index:200;padding:16px" onclick="if(event.target===this) closeModal()">
+      <div class="modal-box" style="background:#0d1117;border:1px solid #30363d;border-radius:16px;padding:22px;max-width:900px;width:100%;max-height:88vh;overflow-y:auto">
+        <div class="modal-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">
+          <div>
+            <div style="font-size:18px;font-weight:700;letter-spacing:2px;color:#e6edf3">🔄 ROTATIONS SECTORIELLES</div>
+            <div style="font-size:9px;color:#8b949e;letter-spacing:2px;margin-top:4px">DÉTECTION CONTRARIAN AVANT LES NEWS · BASÉ SUR LIFECYCLE STAGES</div>
+          </div>
+          <button onclick="closeModal()" style="background:#21262d;border:1px solid #30363d;color:#8b949e;border-radius:6px;padding:5px 11px;cursor:pointer">✕</button>
+        </div>
+        <div style="background:linear-gradient(90deg,#0ea5e933,transparent);border-left:4px solid #0ea5e9;padding:10px 14px;margin-bottom:16px;border-radius:4px;font-size:11px;color:#c9d1d9;line-height:1.6">
+          Score NET = (Stage 0 + Stage 1) − (Stage 3 + Stage 4). Positif = secteur en accumulation par le smart money. Négatif = secteur en distribution = à fuir.
+        </div>
+        <table style="width:100%;border-collapse:collapse;font-size:11px;font-family:'Courier New',monospace">
+          <thead>
+            <tr style="color:#8b949e;font-size:9px;text-transform:uppercase;letter-spacing:2px">
+              <th style="padding:6px 10px;text-align:left">Secteur</th>
+              <th style="padding:6px 10px;text-align:center">N</th>
+              <th style="padding:6px 10px;text-align:center">Distribution stages</th>
+              <th style="padding:6px 10px;text-align:center">Verdict</th>
+              <th style="padding:6px 10px;text-align:center">Net</th>
+            </tr>
+          </thead>
+          <tbody>${rowsHtml}</tbody>
+        </table>
+        <div style="margin-top:16px;padding:10px;background:#21262d;border-radius:6px;font-size:10px;color:#8b949e;line-height:1.6">
+          <strong style="color:#e6edf3">Légende stages :</strong>
+          🌱 Hidden Gem · 🚀 Awakening · 📈 Public Discovery · ⚠️ Top of Cycle · 💀 Distribution · ○ Neutre
+        </div>
+      </div>
+    </div>
+  `;
+  modal.style.display = "block";
+}
+
+// ============================================================
+// VUE "HIDDEN GEMS" — Lifecycle Stage 0 + 1 + TRIPLE LOCK
+// Filtre les résultats scannés pour ne montrer que les setups
+// avec asymétrie positive maximale.
+// ============================================================
+let hiddenGemsViewMode = false;
+
+function getHiddenGemsResults() {
+  return (allResults || []).filter(r => {
+    const s = r.lifecycleStage;
+    if (!s || s.stage === null) return false;
+    return s.stage === 0 || s.stage === 1; // Hidden Gem + Awakening + Triple Lock
+  });
+}
+
+function updateHiddenGemsCountBadge() {
+  const badge = document.getElementById("hidden-gems-count-badge");
+  if (!badge) return;
+  const n = getHiddenGemsResults().length;
+  badge.textContent = String(n);
+  badge.style.background = n > 0 ? "#10b981" : "#fff2";
+}
+
+function toggleHiddenGemsView() {
+  hiddenGemsViewMode = !hiddenGemsViewMode;
+  const btn = document.getElementById("open-hidden-gems-tab");
+  if (hiddenGemsViewMode) {
+    const gems = getHiddenGemsResults();
+    if (gems.length === 0) {
+      alert("🌱 Aucun titre scanné en Stage 0/1 (Hidden Gem / Awakening) actuellement.\n\nLance un scan d'abord puis reviens.");
+      hiddenGemsViewMode = false;
+      return;
+    }
+    window._savedAllResultsGems = allResults;
+    allResults = gems;
+    if (btn) {
+      btn.style.background = "linear-gradient(135deg,#2ed573 0%,#1e9c5c 100%)";
+      btn.querySelector("span:nth-child(2)").innerHTML = `✓ Retour scan complet <span id="hidden-gems-count-badge" style="background:#fff2;padding:1px 7px;border-radius:10px;margin-left:3px;font-size:10px">${gems.length}</span>`;
+    }
+    // Banner
+    const banner = document.createElement("div");
+    banner.id = "hidden-gems-banner";
+    banner.style.cssText = "background:linear-gradient(90deg,#10b98133,transparent);border-left:4px solid #10b981;padding:10px 16px;margin-bottom:12px;border-radius:4px;font-size:12px;color:#c9d1d9";
+    banner.innerHTML = `🌱 <strong style="color:#10b981">MODE HIDDEN GEMS</strong> — ${gems.length} titre(s) en Stage 0 (Hidden Gem) ou Stage 1 (Awakening). <em>Asymétrie positive maximale : smart money entre / momentum démarre / social pas encore au courant.</em>`;
+    const resultsSection = document.getElementById("results-section");
+    if (resultsSection) resultsSection.insertBefore(banner, resultsSection.firstChild);
+  } else {
+    if (window._savedAllResultsGems) {
+      allResults = window._savedAllResultsGems;
+      window._savedAllResultsGems = null;
+    }
+    const banner = document.getElementById("hidden-gems-banner");
+    if (banner) banner.remove();
+    if (btn) {
+      btn.style.background = "linear-gradient(135deg,#10b981 0%,#047857 100%)";
+      btn.querySelector("span:nth-child(2)").innerHTML = `Hidden Gems <span id="hidden-gems-count-badge" style="background:#fff2;padding:1px 7px;border-radius:10px;margin-left:3px;font-size:10px">0</span>`;
+      updateHiddenGemsCountBadge();
+    }
+  }
+  if (typeof renderResults === "function") renderResults();
 }
 
 function closeModal() { document.getElementById("modal").style.display = "none"; }
