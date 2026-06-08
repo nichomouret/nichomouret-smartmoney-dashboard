@@ -1457,6 +1457,60 @@ async function fetchAmfBdif(ticker) {
 // Renvoie { rating, count, target_avg, upside_pct, recent_changes }
 // Fail silently pour EU (renvoie null) — TwelveData /analyst_ratings/us US-only
 // ============================================================
+// ============================================================
+// fetchInsiderData : SEC Form 4 insider transactions (US-only)
+// Renvoie { n_buys, n_sells, unique_buyers, total_buy_usd, top_buyers, label }
+// Source : DB Postgres alimentée par sec/form4Worker.js
+// Signal le plus prédictif quand CEO/CFO achète au marché ouvert.
+// ============================================================
+async function fetchInsiderData(ticker, isEuropean) {
+  if (isEuropean) return null; // Form 4 US-only
+  const sym = encodeURIComponent(ticker);
+  try {
+    const data = await proxyFetch(`/sec-form4/ticker/${sym}?days=180`);
+    if (!data || data.error || !data.ok) return null;
+    const s = data.summary || {};
+    const txs = data.transactions || [];
+    // Top buyers (max 5)
+    const buyTxs = txs.filter(t => t.transaction_type === "BUY");
+    const top_buyers = buyTxs.slice(0, 5).map(t => ({
+      name: t.reporting_owner_name,
+      title: t.officer_title,
+      isOfficer: t.is_officer,
+      isDirector: t.is_director,
+      shares: t.shares,
+      value_usd: Number(t.total_value_usd) || 0,
+      date: t.transaction_date,
+    }));
+    // Signal qualité : C-suite buy = top tier
+    const has_ceo_buy = buyTxs.some(t =>
+      t.is_officer && /chief executive|^ceo$|president/i.test(t.officer_title || "")
+    );
+    const has_cfo_buy = buyTxs.some(t =>
+      t.is_officer && /chief financial|^cfo$/i.test(t.officer_title || "")
+    );
+    // Label qualitatif
+    let label = "—";
+    if (has_ceo_buy && has_cfo_buy)    label = "C-SUITE BUY";
+    else if (has_ceo_buy)               label = "CEO BUY";
+    else if (has_cfo_buy)               label = "CFO BUY";
+    else if (s.n_buys >= 3)             label = "CLUSTER BUY";
+    else if (s.n_buys >= 1)             label = "INSIDER BUY";
+    else if (s.n_sells > s.n_buys * 3)  label = "HEAVY SELL";
+    else if (s.n_sells >= 1)            label = "INSIDER SELL";
+    return {
+      ...s,
+      label,
+      has_ceo_buy,
+      has_cfo_buy,
+      top_buyers,
+    };
+  } catch (e) {
+    console.warn(`[fetchInsiderData] ${ticker}:`, e.message);
+    return null;
+  }
+}
+
 async function fetchAnalystData(ticker, isEuropean, currentPrice) {
   if (isEuropean) return null; // EU pas couvert par TwelveData US-only
   const sym = encodeURIComponent(ticker);
@@ -1766,14 +1820,18 @@ async function fetchTickerData(ticker) {
     }
   }
 
-  // ── ANALYSE TECHNIQUE + CONSENSUS ANALYSTES ──
-  // Calculée à partir du ts.values déjà fetché (pas de call API supplémentaire pour le TS)
-  // Analystes : 2 calls TwelveData (US-only, skip silencieux EU)
+  // ── ANALYSE TECHNIQUE + CONSENSUS ANALYSTES + INSIDER FORM 4 ──
+  // - TS calculé local depuis ts.values (zéro call API supplémentaire)
+  // - Analystes : 2 calls TwelveData (US-only, skip silencieux EU)
+  // - Insider Form 4 : 1 call vers /sec-form4/ticker (US-only, skip EU)
   const technicalScore = computeTechnicalScore(ts);
   const currentPriceNum = quote && quote.close ? parseFloat(quote.close) : null;
-  const analystData = await fetchAnalystData(ticker, isEuropean, currentPriceNum);
+  const [analystData, insiderData] = await Promise.all([
+    fetchAnalystData(ticker, isEuropean, currentPriceNum),
+    fetchInsiderData(ticker, isEuropean),
+  ]);
 
-  return { realPrice, drawdown52w, priceChange, hasRealData, newsItems, edgarFilings, shortInterestReal, daysTocover, borrowRate, ortexScore, realFilings, realRaisonSociale, dataWarning, putCallRatio, callOI, totalOI, impliedVolatility, gammaScore, holders13f, realNextEarnings, realLastEarnings, marketCap, hasRealSources, realExchange, technicalScore, analystData };
+  return { realPrice, drawdown52w, priceChange, hasRealData, newsItems, edgarFilings, shortInterestReal, daysTocover, borrowRate, ortexScore, realFilings, realRaisonSociale, dataWarning, putCallRatio, callOI, totalOI, impliedVolatility, gammaScore, holders13f, realNextEarnings, realLastEarnings, marketCap, hasRealSources, realExchange, technicalScore, analystData, insiderData };
 }
 
 async function analyzeBatch(batch, universe, customTicker = null) {
@@ -2025,9 +2083,10 @@ async function runScan() {
               catalystType: finalCatalystType,
               catalystDescription: finalCatalystDesc,
               catalystSource: catalystSource,
-              // Analyse technique + consensus analystes (calculés dashboard-side)
+              // Analyse technique + consensus analystes + insider Form 4 (calculés dashboard-side)
               technicalScore: data.technicalScore || null,
               analystData: data.analystData || null,
+              insiderData: data.insiderData || null,
             };
             base.scct = calculateSCCT(base);
             return base;
@@ -2695,6 +2754,73 @@ Plus utile : changes récents > absolute rating.`;
 }
 
 // ============================================================
+// CHIP INSIDER — SEC Form 4 transactions par les insiders
+// Affiche le signal "CEO BUY" / "C-SUITE BUY" / "CLUSTER BUY" / etc.
+// Tooltip détaille les insiders qui ont acheté avec montants
+// ============================================================
+function renderInsiderChip(r) {
+  const i = r.insiderData;
+  if (!i || (i.n_buys === 0 && i.n_sells === 0)) return "";
+
+  // Couleur selon qualité du signal
+  let color, bg, border, icon;
+  if (i.has_ceo_buy && i.has_cfo_buy) {
+    color = "#2ed573"; bg = "#2ed57320"; border = "#2ed57366"; icon = "🟢";
+  } else if (i.has_ceo_buy || i.has_cfo_buy) {
+    color = "#2ed573"; bg = "#2ed57315"; border = "#2ed57344"; icon = "🟢";
+  } else if (i.label === "CLUSTER BUY") {
+    color = "#58a6ff"; bg = "#58a6ff15"; border = "#58a6ff44"; icon = "🔵";
+  } else if (i.label === "INSIDER BUY") {
+    color = "#58a6ff"; bg = "#58a6ff10"; border = "#58a6ff33"; icon = "🔵";
+  } else if (i.label === "HEAVY SELL") {
+    color = "#ff4757"; bg = "#ff475720"; border = "#ff475766"; icon = "🔴";
+  } else if (i.label === "INSIDER SELL") {
+    color = "#ff8c42"; bg = "#ff8c4215"; border = "#ff8c4244"; icon = "🟠";
+  } else {
+    color = "#8b949e"; bg = "#21262d";    border = "#30363d";    icon = "⚪";
+  }
+
+  // Net value display
+  const netUsd = Number(i.net_value_usd) || 0;
+  const netSign = netUsd > 0 ? "+" : (netUsd < 0 ? "−" : "");
+  const netAbs = Math.abs(netUsd);
+  const netStr = netAbs >= 1e6 ? `${(netAbs / 1e6).toFixed(1)}M$` :
+                 netAbs >= 1e3 ? `${(netAbs / 1e3).toFixed(0)}K$` :
+                 `${netAbs.toFixed(0)}$`;
+
+  // Top buyers détaillés en tooltip
+  const buyersList = (i.top_buyers || []).map(b => {
+    const role = b.title || (b.isOfficer ? "Officer" : (b.isDirector ? "Director" : "Insider"));
+    const valStr = b.value_usd >= 1e6 ? `${(b.value_usd / 1e6).toFixed(1)}M$` : `${(b.value_usd / 1e3).toFixed(0)}K$`;
+    return `  • ${b.name} (${role}) — ${valStr} le ${b.date}`;
+  }).join("\n");
+
+  const tooltip = `Insider Transactions (SEC Form 4 — 180 derniers jours)
+
+LABEL : ${i.label}
+
+ACHATS :
+• ${i.n_buys} transactions
+• ${i.unique_buyers} insiders différents
+• Total : ${(Number(i.total_buy_value_usd) || 0).toLocaleString()}$
+
+VENTES :
+• ${i.n_sells} transactions
+• ${i.unique_sellers} insiders différents
+• Total : ${(Number(i.total_sell_value_usd) || 0).toLocaleString()}$
+
+NET : ${netSign}${netStr}
+
+${buyersList ? 'TOP ACHATS :\n' + buyersList : ''}
+
+NB : Code P (open-market purchase) par CEO/CFO = signal statistiquement fort
+(+5 à +10% alpha vs SPY sur 6-12 mois — études Lakonishok-Lee).
+Code A (grants) ignoré. Code M (option exercise) ignoré.`;
+
+  return `<div style="display:inline-flex;align-items:center;gap:6px;background:${bg};border:1px solid ${border};border-radius:6px;padding:3px 10px;font-size:10px;color:${color};cursor:help" title="${tooltip.replace(/"/g, '&quot;')}">🤵 <strong>${i.label}</strong> <span style="opacity:0.7">${netSign}${netStr}${i.n_buys > 0 ? ' · ' + i.n_buys + ' tx' : ''}</span></div>`;
+}
+
+// ============================================================
 // PHASE D — TRACKING POSITIONS PERSO (proto-backtest)
 // Stocke en localStorage les tickers marques avec etoile + entry price
 // Permet de mesurer la perf forward des signaux marques
@@ -3238,6 +3364,7 @@ function renderCard(r) {
       ${renderFlowChip(r)}
       ${renderTechnicalChip(r)}
       ${renderAnalystChip(r)}
+      ${renderInsiderChip(r)}
       ${(r.criteria?.catalysts || r.criteria?.biotech) && r.catalystDate ? (function() {
         const m = computeCatalystFreshness(r.catalystDate, r.catalystType);
         const d = new Date(r.catalystDate);
