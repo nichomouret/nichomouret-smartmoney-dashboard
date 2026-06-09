@@ -796,9 +796,120 @@ function computeCatalystFreshness(dateStr, type) {
   return 0.0; // mort
 }
 
+// ============================================================
+// SOVEREIGN TIER 1 — fonds souverains et institutions étatiques
+// Quand ils entrent au capital d'un titre (surtout via recap),
+// c'est un signal de "floor structurel" : l'État/sovereign ne
+// laissera pas couler le titre. Asymétrie upside massive.
+//
+// Cas d'usage : Worldline juin 2025 — BPI + CDC + BlackRock recapitalisent
+// pour 500M€ après -94% YTD. Signal manqué par 13F (sovereigns EU absents).
+// ============================================================
+const SOVEREIGN_TIER1 = [
+  // === France ===
+  "BPIFRANCE", "BPI FRANCE", "BPI ", "BANQUE PUBLIQUE D'INVESTISSEMENT",
+  "CAISSE DES DEPOTS", "CAISSE DES DÉPÔTS", "CDC", "CAISSE DEPOTS",
+  "FONDS STRATEGIQUE D'INVESTISSEMENT", "FSI",
+  // === Europe ===
+  "BANQUE EUROPEENNE", "EUROPEAN INVESTMENT BANK", "EIB", "BEI ",
+  "EUROPEAN INVESTMENT FUND", "EIF",
+  "KFW", "KREDITANSTALT FUR WIEDERAUFBAU",
+  "CASSA DEPOSITI E PRESTITI", "CDP ITALIA",
+  "INSTITUTO DE CREDITO OFICIAL", "ICO ESPAÑA",
+  // === Pays nordiques ===
+  "AP FONDEN", "AP FUND", "AP1", "AP2", "AP3", "AP4", "AP6", "AP7",
+  "FOLKSAM",
+  "NORGES BANK", "NORGES_BANK", "GOVERNMENT PENSION FUND OF NORWAY",
+  "FOLKETRYGDFONDET",
+  // === Asie ===
+  "GIC ", "GOVERNMENT OF SINGAPORE INVESTMENT",
+  "TEMASEK", "TEMASEK HOLDINGS",
+  "CHINA INVESTMENT CORPORATION", "CIC ",
+  "STATE ADMINISTRATION OF FOREIGN EXCHANGE", "SAFE INVESTMENT",
+  "KOREA INVESTMENT CORPORATION", "KIC ",
+  "HONG KONG MONETARY AUTHORITY", "HKMA",
+  "JAPAN GOVERNMENT PENSION INVESTMENT", "GPIF",
+  // === Moyen-Orient ===
+  "MUBADALA", "MUBADALA INVESTMENT",
+  "ABU DHABI INVESTMENT AUTHORITY", "ADIA",
+  "ABU DHABI INVESTMENT COUNCIL", "ADIC",
+  "QATAR INVESTMENT AUTHORITY", "QIA ",
+  "KUWAIT INVESTMENT AUTHORITY", "KIA ",
+  "PUBLIC INVESTMENT FUND", "PIF SAUDI",
+  "INVESTMENT CORPORATION OF DUBAI", "ICD DUBAI",
+  // === Océanie / Amériques ===
+  "FUTURE FUND", "AUSTRALIAN FUTURE FUND",
+  "CANADA PENSION PLAN", "CPP INVESTMENT", "CPPIB",
+  "CAISSE DE DEPOT QUEBEC", "CDPQ",
+  "ONTARIO TEACHERS", "OTPP",
+  "ALASKA PERMANENT FUND",
+  "NEW MEXICO STATE",
+  // === Sovereign-adjacent (banques publiques actives) ===
+  "BANCO NACIONAL DE DESENVOLVIMENTO", "BNDES",
+  "DEVELOPMENT BANK OF JAPAN", "DBJ",
+];
+
+// Helper : un nom de fonds matche-t-il un sovereign Tier 1 ?
+function isSovereign(fundName) {
+  if (!fundName) return false;
+  const upper = String(fundName).toUpperCase().trim();
+  return SOVEREIGN_TIER1.some(kw => upper.includes(kw));
+}
+
+// Extrait tous les sovereigns détectés dans les sources d'un ticker
+// (institutionalMoves + holders13f). Retourne array de { name, source, action }
+function detectSovereigns(result) {
+  const found = [];
+  // 1) Mouvements vérifiés AMF/BDIF/ESMA/13G
+  for (const m of (result.institutionalMoves || [])) {
+    if (m.verified && isSovereign(m.fund)) {
+      found.push({
+        name: m.fund,
+        source: m.source || "AMF",
+        action: m.direction || m.pct || "NEW",
+        pct: m.pct,
+        date: m.date,
+      });
+    }
+  }
+  // 2) Holders 13F US (peu probable pour EU sovereigns mais possible pour Norges/GIC)
+  for (const h of (result.holders13f || [])) {
+    if (isSovereign(h.fund)) {
+      found.push({
+        name: h.fund,
+        source: "13F",
+        action: h.change || "HOLD",
+        value: h.valueUsd,
+        period: h.period,
+      });
+    }
+  }
+  return found;
+}
+
 function calculateSCCT(result) {
   let score = 0;
   const moves = result.institutionalMoves || [];
+
+  // ============================================================
+  // SOVEREIGN BACKING BONUS (priorité haute, calculé en début)
+  // Quand un fonds souverain (BPI/CDC/EIB/Norges/GIC/Mubadala...)
+  // est présent au capital, le titre a un "floor structurel".
+  // C'est le signal le plus puissant après les activistes.
+  //
+  // +30 pts pour 1 sovereign
+  // +45 pts pour 2+ sovereigns (consortium type Worldline)
+  // +50 pts pour sovereign + activist combo (signal ultra-rare)
+  // ============================================================
+  const sovereigns = detectSovereigns(result);
+  const nSovereigns = sovereigns.length;
+  // Stocker pour usage downstream (chip, lifecycle)
+  result._sovereigns = sovereigns;
+  if (nSovereigns >= 2) {
+    score += 45;
+  } else if (nSovereigns >= 1) {
+    score += 30;
+  }
 
   if (result.drawdown52w) {
     const dd = Math.abs(parseFloat(result.drawdown52w));
@@ -2822,6 +2933,81 @@ Plus utile : changes récents > absolute rating.`;
 // Tooltip détaille les insiders qui ont acheté avec montants
 // ============================================================
 // ============================================================
+// CHIP 🏛️ SOVEREIGN BACKING — fonds souverains au capital
+// Affiché quand BPI/CDC/EIB/Norges/GIC/Mubadala/etc. détectés.
+// C'est le signal de "floor structurel" : risque de faillite plafonné.
+// ============================================================
+function renderSovereignChip(r) {
+  const sovs = r._sovereigns || detectSovereigns(r);
+  if (!sovs || sovs.length === 0) return "";
+
+  // Normaliser les noms pour affichage propre
+  const niceName = (raw) => {
+    const upper = String(raw || "").toUpperCase();
+    if (upper.includes("BPIFRANCE") || upper.includes("BPI FRANCE") || upper.includes("BPI ")) return "BPI";
+    if (upper.includes("CAISSE DES DE")) return "CDC";
+    if (upper.includes("EUROPEAN INVESTMENT BANK") || upper.includes("BANQUE EUROPEENNE") || upper.includes("EIB")) return "BEI";
+    if (upper.includes("KFW")) return "KFW";
+    if (upper.includes("CASSA DEPOSITI")) return "CDP";
+    if (upper.includes("NORGES")) return "Norges";
+    if (upper.includes("GIC ")) return "GIC";
+    if (upper.includes("TEMASEK")) return "Temasek";
+    if (upper.includes("MUBADALA")) return "Mubadala";
+    if (upper.includes("ADIA") || upper.includes("ABU DHABI INVEST")) return "ADIA";
+    if (upper.includes("QIA") || upper.includes("QATAR INVEST")) return "QIA";
+    if (upper.includes("PUBLIC INVESTMENT FUND") || upper.includes("PIF SAUDI")) return "PIF";
+    if (upper.includes("AP FOND") || /^AP[1-7]/.test(upper)) return upper.match(/AP[1-7]/)?.[0] || "AP";
+    if (upper.includes("FUTURE FUND")) return "Future Fund";
+    if (upper.includes("CPPIB") || upper.includes("CANADA PENSION")) return "CPPIB";
+    if (upper.includes("CDPQ") || upper.includes("CAISSE DE DEPOT QU")) return "CDPQ";
+    if (upper.includes("ONTARIO TEACHERS")) return "OTPP";
+    if (upper.includes("KIC")) return "KIC";
+    if (upper.includes("HKMA")) return "HKMA";
+    if (upper.includes("GPIF")) return "GPIF";
+    return String(raw || "").slice(0, 20);
+  };
+
+  const uniqueNames = [...new Set(sovs.map(s => niceName(s.name)))];
+  const nDistinct = uniqueNames.length;
+  // Color en fonction du nombre — plus de sovereigns = signal plus fort
+  let color, bg, border, label;
+  if (nDistinct >= 2) {
+    color = "#00d2ff"; bg = "#00d2ff25"; border = "#00d2ff77";
+    label = `CONSORTIUM ${nDistinct} SOUVERAINS`;
+  } else {
+    color = "#a855f7"; bg = "#a855f720"; border = "#a855f766";
+    label = "SOVEREIGN BACKING";
+  }
+
+  // Tooltip détaillée
+  const fundsList = sovs.slice(0, 5).map(s => {
+    const sourceTag = s.source || "?";
+    const actionTag = s.action || "—";
+    const pctTag = s.pct ? ` (${s.pct})` : "";
+    return `  • ${s.name} via ${sourceTag} — ${actionTag}${pctTag}`;
+  }).join("\n");
+
+  const tooltip = `🏛️ SOVEREIGN BACKING — ${nDistinct} fonds souverain(s) détecté(s)
+
+FONDS PRÉSENTS :
+${fundsList}
+
+POURQUOI C'EST IMPORTANT :
+Quand un sovereign (BPI/CDC/Norges/GIC/Mubadala/etc.) ou une banque publique d'État est au capital, le risque de faillite est plafonné. L'État/sovereign ne laissera pas tomber le titre sans intervenir (recapitalisation, plan stratégique, garantie).
+
+Cas d'usage classique : Worldline 2025 — BPI + CDC + BlackRock recapitalisent pour 500M€ après -94% YTD = floor structurel.
+
+CONSÉQUENCE :
+• Floor : downside limité par convention
+• Patience : trade 12-36 mois souvent rentable
+• Risque résiduel : exécution opérationnelle, pas faillite
+
+NB : signal CAPTÉ via AMF/BDIF franchissements + 13F US. Pour détecter une recapitalisation imminente, croiser avec news société.`;
+
+  return `<div style="display:inline-flex;align-items:center;gap:6px;background:${bg};border:1.5px solid ${border};border-radius:6px;padding:3px 10px;font-size:10px;color:${color};cursor:help;font-weight:700" title="${tooltip.replace(/"/g, '&quot;')}">🏛️ <strong>${label}</strong> <span style="opacity:0.85">${uniqueNames.slice(0, 3).join(' + ')}${uniqueNames.length > 3 ? '...' : ''}</span></div>`;
+}
+
+// ============================================================
 // CHIP STAGE — affichage du lifecycle stage sur la carte
 // Tooltip détaillée avec dimensions + action recommandée
 // ============================================================
@@ -3305,6 +3491,38 @@ function computeLifecycleStage(r) {
   );
   // Insider CEO/CFO buy récent ?
   const hasCEOBuy = r.insiderData?.has_ceo_buy || r.insiderData?.has_cfo_buy;
+  // Sovereign backing ?
+  const sovs = r._sovereigns || (typeof detectSovereigns === "function" ? detectSovereigns(r) : []);
+  const hasSovereign = sovs.length >= 1;
+  const hasConsortium = sovs.length >= 2;
+
+  // === STAGE 0 OVERRIDE — Sovereign backing prime sur tout ===
+  // Quand sovereign(s) au capital + drawdown sévère = signal contrarian souverain
+  // (cas Worldline 2025 — BPI+CDC+BlackRock recap 500M€ après -94%)
+  if (hasConsortium && drawdown < -30) {
+    return {
+      stage: 0,
+      label: "SOVEREIGN BAILOUT",
+      icon: "🏛️",
+      color: "#00d2ff",
+      bg: "#00d2ff20",
+      border: "#00d2ff77",
+      description: "Consortium souverain au capital après chute majeure. Floor garanti par État/sovereign, asymétrie upside extrême.",
+      action: "ENTRER (signal sovereign exceptionnel)",
+    };
+  }
+  if (hasSovereign && drawdown < -25) {
+    return {
+      stage: 0,
+      label: "HIDDEN GEM SOVEREIGN",
+      icon: "🏛️",
+      color: "#a855f7",
+      bg: "#a855f720",
+      border: "#a855f777",
+      description: "Sovereign au capital + correction sévère. Risque faillite plafonné par présence étatique.",
+      action: "ENTRER (signal contrarian fort)",
+    };
+  }
 
   // === STAGE 4 — DISTRIBUTION (le pire pour acheter) ===
   // Smart money est sortie, prix encore élevé, retail encore en train de fomo
@@ -3587,6 +3805,7 @@ function renderCard(r) {
       ${r.drawdown52w ? `<div class="drawdown-badge" style="margin-bottom:0">📊 Drawdown 52W: <strong>${r.drawdown52w}</strong>${r.dataSource === 'twelvedata' ? ' <span style="color:#484f58">· TwelveData ✓</span>' : ''}</div>` : ""}
       ${r.shortInterestReal ? `<div style="display:inline-flex;align-items:center;gap:6px;background:#ff475715;border:1px solid #ff475733;border-radius:6px;padding:3px 10px;font-size:10px;color:#ff4757">📉 <strong>VAD: ${r.shortInterestReal}</strong>${r.daysTocover ? ' · DTC: ' + r.daysTocover : ''} <span style="color:#484f58">· Ortex ✓</span></div>` : r.shortInterest ? `<div style="display:inline-flex;align-items:center;gap:6px;background:#ff475710;border:1px solid #ff475722;border-radius:6px;padding:3px 10px;font-size:10px;color:#ff6b3d">📉 <strong>VAD est.: ${r.shortInterest}</strong> <span style="color:#484f58">· Estimé</span></div>` : ""}
       ${r.gammaScore ? `<div style="display:inline-flex;align-items:center;gap:6px;background:#a855f715;border:1px solid #a855f733;border-radius:6px;padding:3px 10px;font-size:10px;color:#a855f7">⚡ <strong>Gamma: ${r.gammaScore}</strong>${r.putCallRatio !== null && r.putCallRatio !== undefined ? ' · P/C: ' + parseFloat(r.putCallRatio).toFixed(2) : ''} <span style="color:#484f58">· Ortex ✓</span></div>` : ""}
+      ${renderSovereignChip(r)}
       ${renderStageChip(r)}
       ${renderFloorChip(r)}
       ${renderFlowChip(r)}
