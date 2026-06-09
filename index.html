@@ -247,6 +247,10 @@
       <span>🔄</span>
       <span>Rotations sectorielles</span>
     </button>
+    <button id="open-reddit-boom-tab" onclick="openRedditBoom()" style="background:linear-gradient(135deg,#ff4500 0%,#a82a00 100%);color:white;border:none;padding:8px 16px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;box-shadow:0 2px 8px rgba(255,69,0,0.4);display:flex;align-items:center;gap:6px">
+      <span>🚀</span>
+      <span>Reddit Boom List</span>
+    </button>
   </div>
 
   <div class="header">
@@ -3838,6 +3842,7 @@ function renderCard(r) {
       <button class="action-btn" onclick="openReco('${r.ticker}')" style="background:linear-gradient(135deg,#2ed57318,#00d2ff18);border:1px solid #2ed57355;color:#2ed573">📈 Recommandation</button>
       <button class="action-btn" onclick="openDeepDive('${r.ticker}')" style="background:linear-gradient(135deg,#7c3aed18,#a29bfe18);border:1px solid #7c3aed55;color:#a29bfe">🔍 Deep Dive</button>
       <button class="action-btn" onclick="loadBuzzForTicker('${r.ticker}', ${JSON.stringify(r.name || '').replace(/"/g, '&quot;')})" style="background:linear-gradient(135deg,#dc262618,#f59e0b18);border:1px solid #dc262655;color:#f59e0b">📢 Buzz Social</button>
+      <button class="action-btn" onclick="openRedditDD('${r.ticker}', ${JSON.stringify(r.name || '').replace(/"/g, '&quot;')})" style="background:linear-gradient(135deg,#ff450018,#ff750018);border:1px solid #ff450055;color:#ff7500">💬 Reddit DD</button>
       <button class="action-btn" onclick="toggleTrackPosition('${r.ticker}')" title="${tracked ? 'Retirer du suivi' : 'Ajouter au suivi (proto-backtest)'}" style="background:${tracked ? 'linear-gradient(135deg,#eccc6833,#a1620733)' : 'linear-gradient(135deg,#eccc6818,#a1620718)'};border:1px solid ${tracked ? '#eccc68aa' : '#eccc6855'};color:#eccc68">${tracked ? '★ Suivi' : '☆ Suivre'}</button>
     </div>
     <div id="buzz-${r.ticker}" style="display:none;margin-top:8px"></div>
@@ -4082,6 +4087,254 @@ function tickerSector(t) {
 // Permet de voir quels secteurs sont majoritairement en Stage 0/1 (à entrer)
 // vs Stage 3/4 (à fuir).
 // ============================================================
+// ============================================================
+// REDDIT DD — Affiche les posts récents Reddit sur un ticker
+// Modal qui montre les 15 posts les plus récents dans les
+// subreddits financiers (WSB + stocks + investing + etc.)
+// ============================================================
+async function openRedditDD(ticker, name) {
+  const modal = document.getElementById("modal");
+  if (!modal) return;
+  // Show loading state
+  modal.innerHTML = `
+    <div class="modal-overlay" style="position:fixed;inset:0;background:#010409f2;display:flex;align-items:center;justify-content:center;z-index:200;padding:16px" onclick="if(event.target===this) closeModal()">
+      <div class="modal-box" style="background:#0d1117;border:1px solid #30363d;border-radius:16px;padding:22px;max-width:800px;width:100%;max-height:88vh;overflow-y:auto">
+        <div class="modal-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">
+          <div>
+            <div style="font-size:18px;font-weight:700;letter-spacing:2px;color:#e6edf3">💬 REDDIT DD — ${ticker}</div>
+            <div style="font-size:9px;color:#8b949e;letter-spacing:2px;margin-top:4px">${name || ''} · POSTS RÉCENTS DEPUIS WSB + STOCKS + INVESTING + DD SUBS</div>
+          </div>
+          <button onclick="closeModal()" style="background:#21262d;border:1px solid #30363d;color:#8b949e;border-radius:6px;padding:5px 11px;cursor:pointer">✕</button>
+        </div>
+        <div style="text-align:center;padding:40px;color:#8b949e">
+          <div style="font-size:14px;animation:fadeIn 0.3s ease">🔄 Recherche des posts Reddit...</div>
+        </div>
+      </div>
+    </div>
+  `;
+  modal.style.display = "block";
+
+  try {
+    const data = await proxyFetch(`/reddit/posts?ticker=${encodeURIComponent(ticker)}`);
+    if (!data || data.error || !data.ok) {
+      throw new Error(data?.error || "Reddit fetch failed");
+    }
+    renderRedditDDModal(ticker, name, data);
+  } catch (e) {
+    document.querySelector(".modal-box").innerHTML = `
+      <div class="modal-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">
+        <div style="font-size:18px;font-weight:700;color:#e6edf3">💬 REDDIT DD — ${ticker}</div>
+        <button onclick="closeModal()" style="background:#21262d;border:1px solid #30363d;color:#8b949e;border-radius:6px;padding:5px 11px;cursor:pointer">✕</button>
+      </div>
+      <div style="background:#ff475715;border:1px solid #ff475755;border-radius:8px;padding:14px;color:#ff4757;font-size:11px">
+        ⚠ Erreur Reddit : ${e.message}<br><br>
+        Causes possibles :
+        <ul style="margin-left:20px;margin-top:8px">
+          <li>Reddit a temporairement bloqué les requêtes du proxy (rate limit)</li>
+          <li>Le ticker n'a pas encore été indexé par Reddit search</li>
+          <li>Le proxy Railway est lent — retente dans 30 secondes</li>
+        </ul>
+      </div>
+    `;
+  }
+}
+
+function renderRedditDDModal(ticker, name, data) {
+  const posts = data.posts || [];
+  const modal = document.querySelector(".modal-box");
+  if (!modal) return;
+
+  if (posts.length === 0) {
+    modal.innerHTML = `
+      <div class="modal-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">
+        <div>
+          <div style="font-size:18px;font-weight:700;letter-spacing:2px;color:#e6edf3">💬 REDDIT DD — ${ticker}</div>
+          <div style="font-size:9px;color:#8b949e;letter-spacing:2px;margin-top:4px">${name || ''}</div>
+        </div>
+        <button onclick="closeModal()" style="background:#21262d;border:1px solid #30363d;color:#8b949e;border-radius:6px;padding:5px 11px;cursor:pointer">✕</button>
+      </div>
+      <div style="text-align:center;padding:40px;color:#8b949e;font-size:12px">
+        🤷 Aucun post Reddit récent (mois) sur ${ticker} dans les subreddits financiers.<br><br>
+        Soit le ticker n'intéresse pas la communauté retail (souvent un bon signe contrarian),<br>
+        soit Reddit search n'a pas encore indexé les posts récents.
+      </div>
+    `;
+    return;
+  }
+
+  const postsHtml = posts.map(p => {
+    const ago = formatTimeAgo(p.created_utc);
+    const ratio = Math.round((p.upvote_ratio || 0.5) * 100);
+    const ratioColor = ratio >= 80 ? "#2ed573" : ratio >= 60 ? "#eccc68" : "#ff4757";
+    const flairBadge = p.link_flair ? `<span style="background:#a855f722;color:#a855f7;border:1px solid #a855f755;padding:1px 6px;border-radius:4px;font-size:9px;font-weight:700;margin-left:6px">${p.link_flair}</span>` : '';
+    const preview = (p.selftext_preview || "").trim();
+    return `
+      <div style="background:#21262d;border:1px solid #30363d;border-radius:10px;padding:12px 14px;margin-bottom:10px">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:6px">
+          <a href="${p.permalink}" target="_blank" rel="noopener" style="color:#58a6ff;text-decoration:none;font-weight:700;font-size:13px;line-height:1.4;flex:1">${p.title} ${flairBadge}</a>
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px;flex-shrink:0;font-size:10px;font-family:'Courier New',monospace">
+            <span style="color:#2ed573;font-weight:700">▲ ${p.score}</span>
+            <span style="color:${ratioColor}">${ratio}% up</span>
+            <span style="color:#8b949e">💬 ${p.num_comments}</span>
+          </div>
+        </div>
+        <div style="display:flex;gap:10px;font-size:10px;color:#8b949e;margin-bottom:6px;font-family:'Courier New',monospace">
+          <span>r/${p.subreddit}</span>
+          <span>·</span>
+          <span>u/${p.author}</span>
+          <span>·</span>
+          <span>${ago}</span>
+        </div>
+        ${preview ? `<div style="color:#c9d1d9;font-size:11px;line-height:1.5;margin-top:6px;padding:8px;background:#0d1117;border-radius:6px;max-height:80px;overflow:hidden">${preview.slice(0,300)}${preview.length > 300 ? '…' : ''}</div>` : ''}
+      </div>
+    `;
+  }).join("");
+
+  modal.innerHTML = `
+    <div class="modal-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">
+      <div>
+        <div style="font-size:18px;font-weight:700;letter-spacing:2px;color:#e6edf3">💬 REDDIT DD — ${ticker}</div>
+        <div style="font-size:9px;color:#8b949e;letter-spacing:2px;margin-top:4px">${name || ''} · ${data.count} POSTS RÉCENTS · CACHE 30 MIN</div>
+      </div>
+      <button onclick="closeModal()" style="background:#21262d;border:1px solid #30363d;color:#8b949e;border-radius:6px;padding:5px 11px;cursor:pointer">✕</button>
+    </div>
+    <div style="background:linear-gradient(90deg,#ff450033,transparent);border-left:4px solid #ff4500;padding:10px 14px;margin-bottom:14px;border-radius:4px;font-size:11px;color:#c9d1d9;line-height:1.6">
+      <strong style="color:#ff7500">Lecture :</strong> regarde les posts avec score >100 et flair "DD" en priorité (vraie analyse). Les autres sont souvent du bruit. Clic sur un titre pour ouvrir Reddit dans un onglet.
+    </div>
+    ${postsHtml}
+  `;
+}
+
+// Helper : "il y a 3h", "il y a 2j", etc.
+function formatTimeAgo(utcSeconds) {
+  if (!utcSeconds) return "?";
+  const ms = Date.now() - utcSeconds * 1000;
+  const min = Math.floor(ms / 60000);
+  if (min < 60) return `il y a ${min}min`;
+  const h = Math.floor(min / 60);
+  if (h < 24) return `il y a ${h}h`;
+  const d = Math.floor(h / 24);
+  if (d < 7) return `il y a ${d}j`;
+  const w = Math.floor(d / 7);
+  return `il y a ${w}sem`;
+}
+
+// ============================================================
+// REDDIT BOOM LIST — Top 20 tickers anticipés comme "boom"
+// par la communauté Reddit. Détecte les meme stocks émergents
+// AVANT qu'ils explosent (parfois) en surface.
+// ============================================================
+async function openRedditBoom() {
+  const modal = document.getElementById("modal");
+  if (!modal) return;
+  modal.innerHTML = `
+    <div class="modal-overlay" style="position:fixed;inset:0;background:#010409f2;display:flex;align-items:center;justify-content:center;z-index:200;padding:16px" onclick="if(event.target===this) closeModal()">
+      <div class="modal-box" style="background:#0d1117;border:1px solid #30363d;border-radius:16px;padding:22px;max-width:900px;width:100%;max-height:88vh;overflow-y:auto">
+        <div class="modal-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">
+          <div>
+            <div style="font-size:18px;font-weight:700;letter-spacing:2px;color:#e6edf3">🚀 REDDIT BOOM LIST</div>
+            <div style="font-size:9px;color:#8b949e;letter-spacing:2px;margin-top:4px">TOP 20 TICKERS QUE REDDIT ANTICIPE COMME "IMMINENT RALLY"</div>
+          </div>
+          <button onclick="closeModal()" style="background:#21262d;border:1px solid #30363d;color:#8b949e;border-radius:6px;padding:5px 11px;cursor:pointer">✕</button>
+        </div>
+        <div style="text-align:center;padding:60px;color:#8b949e">
+          <div style="font-size:14px">🔄 Analyse des posts Reddit bullish en cours...</div>
+          <div style="font-size:10px;margin-top:10px">Cette première requête peut prendre 30-60s (cache 1h ensuite)</div>
+        </div>
+      </div>
+    </div>
+  `;
+  modal.style.display = "block";
+
+  try {
+    const data = await proxyFetch(`/reddit/bullish-trending`);
+    if (!data || data.error || !data.ok) {
+      throw new Error(data?.error || "Reddit boom fetch failed");
+    }
+    renderRedditBoomModal(data);
+  } catch (e) {
+    document.querySelector(".modal-box").innerHTML = `
+      <div class="modal-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">
+        <div style="font-size:18px;font-weight:700;color:#e6edf3">🚀 REDDIT BOOM LIST</div>
+        <button onclick="closeModal()" style="background:#21262d;border:1px solid #30363d;color:#8b949e;border-radius:6px;padding:5px 11px;cursor:pointer">✕</button>
+      </div>
+      <div style="background:#ff475715;border:1px solid #ff475755;border-radius:8px;padding:14px;color:#ff4757;font-size:11px">
+        ⚠ Erreur : ${e.message}<br><br>
+        Reddit a peut-être rate-limité le proxy. Réessaie dans 1-2 minutes.
+      </div>
+    `;
+  }
+}
+
+function renderRedditBoomModal(data) {
+  const top = data.top_20 || [];
+  const modal = document.querySelector(".modal-box");
+  if (!modal) return;
+
+  if (top.length === 0) {
+    modal.innerHTML = `
+      <div class="modal-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">
+        <div style="font-size:18px;font-weight:700;color:#e6edf3">🚀 REDDIT BOOM LIST</div>
+        <button onclick="closeModal()" style="background:#21262d;border:1px solid #30363d;color:#8b949e;border-radius:6px;padding:5px 11px;cursor:pointer">✕</button>
+      </div>
+      <div style="text-align:center;padding:40px;color:#8b949e">🤷 Aucun ticker dominant détecté ce coup-ci.</div>
+    `;
+    return;
+  }
+
+  const rowsHtml = top.map((s, idx) => {
+    const certainty = s.n_posts_sure >= 2 ? "🔥" : (s.n_posts_sure >= 1 ? "✓" : "?");
+    const certaintyColor = s.n_posts_sure >= 2 ? "#ff4500" : (s.n_posts_sure >= 1 ? "#2ed573" : "#8b949e");
+    const subsList = (s.subreddits || []).slice(0, 3).join(", ");
+    const topPostTitle = s.top_post?.title?.slice(0, 70) || "?";
+    const topPostLink = s.top_post?.permalink;
+    const flair = s.top_post?.flair ? ` [${s.top_post.flair}]` : '';
+    return `
+      <tr style="background:#21262d;border-bottom:1px solid #161b22">
+        <td style="padding:8px 10px;text-align:center;color:#8b949e;font-family:'Courier New',monospace;font-size:11px">#${idx + 1}</td>
+        <td style="padding:8px 10px"><span style="color:#e6edf3;font-weight:700;font-size:13px;letter-spacing:1px;font-family:'Courier New',monospace">${s.ticker}</span></td>
+        <td style="padding:8px 10px;text-align:center;font-size:14px" title="${s.n_posts_sure} mention(s) certaine(s) ($TICKER explicite), ${s.n_posts} total">
+          <span style="color:${certaintyColor};font-weight:700">${certainty}</span>
+        </td>
+        <td style="padding:8px 10px;text-align:center;color:#58a6ff;font-weight:700;font-family:'Courier New',monospace">${s.n_posts}</td>
+        <td style="padding:8px 10px;text-align:center;color:#2ed573;font-family:'Courier New',monospace">${s.avg_score}</td>
+        <td style="padding:8px 10px;text-align:center;color:#8b949e;font-family:'Courier New',monospace;font-size:10px">${s.n_subreddits} subs</td>
+        <td style="padding:8px 10px;font-size:11px"><a href="${topPostLink || '#'}" target="_blank" rel="noopener" style="color:#58a6ff;text-decoration:none">${topPostTitle}…${flair}</a></td>
+      </tr>
+    `;
+  }).join("");
+
+  modal.innerHTML = `
+    <div class="modal-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">
+      <div>
+        <div style="font-size:18px;font-weight:700;letter-spacing:2px;color:#e6edf3">🚀 REDDIT BOOM LIST</div>
+        <div style="font-size:9px;color:#8b949e;letter-spacing:2px;margin-top:4px">${data.n_posts_analyzed} POSTS ANALYSÉS · ${data.n_queries} QUERIES BULLISH · CACHE 1H</div>
+      </div>
+      <button onclick="closeModal()" style="background:#21262d;border:1px solid #30363d;color:#8b949e;border-radius:6px;padding:5px 11px;cursor:pointer">✕</button>
+    </div>
+    <div style="background:linear-gradient(90deg,#ff450033,transparent);border-left:4px solid #ff4500;padding:10px 14px;margin-bottom:14px;border-radius:4px;font-size:11px;color:#c9d1d9;line-height:1.6">
+      <strong style="color:#ff7500">Signal :</strong> tickers mentionnés sur Reddit avec un contexte bullish (squeeze, moon, breakout, imminent rally...). 🔥 = mentions $TICKER explicites (très fiable). ✓ = au moins 1 mention sûre. ? = mention extraite par regex (à valider).
+    </div>
+    <div style="background:#21262d;padding:12px;border-radius:8px;margin-bottom:10px;font-size:11px;color:#8b949e;line-height:1.6">
+      <strong style="color:#e6edf3">⚠ Filtrage anti-bruit :</strong> les mégacaps connus (AAPL, MSFT, NVDA, TSLA, etc.) sont exclus pour éviter les faux positifs. Tu vois donc les pépites émergentes que Reddit pousse, pas le mainstream.
+    </div>
+    <table style="width:100%;border-collapse:collapse;font-family:'Courier New',monospace">
+      <thead>
+        <tr style="color:#8b949e;font-size:9px;text-transform:uppercase;letter-spacing:2px">
+          <th style="padding:6px 10px;text-align:center">#</th>
+          <th style="padding:6px 10px;text-align:left">Ticker</th>
+          <th style="padding:6px 10px;text-align:center" title="🔥 = >=2 mentions $TICKER, ✓ = 1 mention sûre, ? = regex extraction">Certitude</th>
+          <th style="padding:6px 10px;text-align:center">N posts</th>
+          <th style="padding:6px 10px;text-align:center">Avg score</th>
+          <th style="padding:6px 10px;text-align:center">Subs</th>
+          <th style="padding:6px 10px;text-align:left">Top post</th>
+        </tr>
+      </thead>
+      <tbody>${rowsHtml}</tbody>
+    </table>
+  `;
+}
+
 function openSectorRotation() {
   if (!allResults || allResults.length === 0) {
     alert("🔄 Lance d'abord un scan pour voir les rotations sectorielles.");
