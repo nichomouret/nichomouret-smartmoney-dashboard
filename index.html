@@ -4140,68 +4140,124 @@ async function openRedditDD(ticker, name) {
 }
 
 function renderRedditDDModal(ticker, name, data) {
-  const posts = data.posts || [];
   const modal = document.querySelector(".modal-box");
   if (!modal) return;
 
-  if (posts.length === 0) {
+  const mentions = data.total_mentions || 0;
+  const mentionsAgo = data.mentions_24h_ago || 0;
+  const trend = mentionsAgo > 0 ? ((mentions - mentionsAgo) / mentionsAgo * 100) : null;
+  const upvotes = data.total_upvotes || 0;
+  const sentimentLabel = data.sentiment_label;
+  const sentimentScore = data.sentiment_score;
+  const rank = data.rank;
+  const bySubreddit = data.by_subreddit || [];
+  const links = data.reddit_links || {};
+
+  // Cas : aucune mention trouvée
+  if (mentions === 0 && bySubreddit.length === 0) {
     modal.innerHTML = `
       <div class="modal-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">
         <div>
           <div style="font-size:18px;font-weight:700;letter-spacing:2px;color:#e6edf3">💬 REDDIT DD — ${ticker}</div>
-          <div style="font-size:9px;color:#8b949e;letter-spacing:2px;margin-top:4px">${name || ''}</div>
+          <div style="font-size:9px;color:#8b949e;letter-spacing:2px;margin-top:4px">${name || ''} · APEWISDOM (AGRÉGATION REDDIT 24H)</div>
         </div>
         <button onclick="closeModal()" style="background:#21262d;border:1px solid #30363d;color:#8b949e;border-radius:6px;padding:5px 11px;cursor:pointer">✕</button>
       </div>
-      <div style="text-align:center;padding:40px;color:#8b949e;font-size:12px">
-        🤷 Aucun post Reddit récent (mois) sur ${ticker} dans les subreddits financiers.<br><br>
-        Soit le ticker n'intéresse pas la communauté retail (souvent un bon signe contrarian),<br>
-        soit Reddit search n'a pas encore indexé les posts récents.
+      <div style="text-align:center;padding:30px;color:#8b949e;font-size:12px;line-height:1.7">
+        🤷 <strong>${ticker} n'est pas dans le top 100 des tickers mentionnés sur Reddit (24h).</strong><br><br>
+        Soit le ticker n'intéresse pas la communauté retail (souvent un <strong style="color:#2ed573">bon signe contrarian</strong>),<br>
+        soit c'est trop niche / hors radar WSB.<br><br>
+        Tu peux quand même chercher manuellement sur Reddit :
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:16px">
+        <a href="${links.all_financial_subs}" target="_blank" rel="noopener" style="background:linear-gradient(135deg,#ff4500,#a82a00);color:white;text-decoration:none;padding:8px 14px;border-radius:8px;font-size:11px;font-weight:700;display:inline-flex;align-items:center;gap:6px">🔍 Chercher sur tous les subs financiers</a>
+        <a href="${links.wallstreetbets}" target="_blank" rel="noopener" style="background:#21262d;border:1px solid #30363d;color:#c9d1d9;text-decoration:none;padding:8px 14px;border-radius:8px;font-size:11px;font-weight:700">r/wallstreetbets</a>
+        <a href="${links.stocks}" target="_blank" rel="noopener" style="background:#21262d;border:1px solid #30363d;color:#c9d1d9;text-decoration:none;padding:8px 14px;border-radius:8px;font-size:11px;font-weight:700">r/stocks</a>
       </div>
     `;
     return;
   }
 
-  const postsHtml = posts.map(p => {
-    const ago = formatTimeAgo(p.created_utc);
-    const ratio = Math.round((p.upvote_ratio || 0.5) * 100);
-    const ratioColor = ratio >= 80 ? "#2ed573" : ratio >= 60 ? "#eccc68" : "#ff4757";
-    const flairBadge = p.link_flair ? `<span style="background:#a855f722;color:#a855f7;border:1px solid #a855f755;padding:1px 6px;border-radius:4px;font-size:9px;font-weight:700;margin-left:6px">${p.link_flair}</span>` : '';
-    const preview = (p.selftext_preview || "").trim();
-    return `
-      <div style="background:#21262d;border:1px solid #30363d;border-radius:10px;padding:12px 14px;margin-bottom:10px">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:6px">
-          <a href="${p.permalink}" target="_blank" rel="noopener" style="color:#58a6ff;text-decoration:none;font-weight:700;font-size:13px;line-height:1.4;flex:1">${p.title} ${flairBadge}</a>
-          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px;flex-shrink:0;font-size:10px;font-family:'Courier New',monospace">
-            <span style="color:#2ed573;font-weight:700">▲ ${p.score}</span>
-            <span style="color:${ratioColor}">${ratio}% up</span>
-            <span style="color:#8b949e">💬 ${p.num_comments}</span>
-          </div>
-        </div>
-        <div style="display:flex;gap:10px;font-size:10px;color:#8b949e;margin-bottom:6px;font-family:'Courier New',monospace">
-          <span>r/${p.subreddit}</span>
-          <span>·</span>
-          <span>u/${p.author}</span>
-          <span>·</span>
-          <span>${ago}</span>
-        </div>
-        ${preview ? `<div style="color:#c9d1d9;font-size:11px;line-height:1.5;margin-top:6px;padding:8px;background:#0d1117;border-radius:6px;max-height:80px;overflow:hidden">${preview.slice(0,300)}${preview.length > 300 ? '…' : ''}</div>` : ''}
-      </div>
-    `;
-  }).join("");
+  // Cas : mentions présentes — affichage stats
+  const sentimentColor = sentimentLabel === "Bullish" ? "#2ed573" : (sentimentLabel === "Bearish" ? "#ff4757" : "#8b949e");
+  const sentimentEmoji = sentimentLabel === "Bullish" ? "🚀" : (sentimentLabel === "Bearish" ? "🐻" : "😐");
+  const trendColor = trend === null ? "#8b949e" : (trend > 50 ? "#ff4500" : (trend > 0 ? "#2ed573" : "#ff4757"));
+  const trendIcon = trend === null ? "—" : (trend > 50 ? "🔥" : (trend > 0 ? "↑" : "↓"));
+  const trendStr = trend === null ? "N/A" : `${trend > 0 ? "+" : ""}${Math.round(trend)}%`;
+
+  const subredditRows = bySubreddit.map(s => `
+    <tr style="border-bottom:1px solid #21262d">
+      <td style="padding:6px 10px;color:#c9d1d9;font-family:'Courier New',monospace;font-size:11px">r/${s.sub}</td>
+      <td style="padding:6px 10px;text-align:right;color:#58a6ff;font-weight:700;font-family:'Courier New',monospace">${s.count}</td>
+      <td style="padding:6px 10px;text-align:right;color:#2ed573;font-family:'Courier New',monospace">▲ ${s.score_total}</td>
+      <td style="padding:6px 10px;text-align:right">
+        <a href="https://www.reddit.com/r/${s.sub}/search/?q=${encodeURIComponent(data.clean_ticker || ticker)}&restrict_sr=1&sort=new" target="_blank" rel="noopener" style="color:#ff7500;text-decoration:none;font-size:10px">🔍 Voir</a>
+      </td>
+    </tr>
+  `).join("");
 
   modal.innerHTML = `
     <div class="modal-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">
       <div>
         <div style="font-size:18px;font-weight:700;letter-spacing:2px;color:#e6edf3">💬 REDDIT DD — ${ticker}</div>
-        <div style="font-size:9px;color:#8b949e;letter-spacing:2px;margin-top:4px">${name || ''} · ${data.count} POSTS RÉCENTS · CACHE 30 MIN</div>
+        <div style="font-size:9px;color:#8b949e;letter-spacing:2px;margin-top:4px">${name || ''} · APEWISDOM · 24H · CACHE 30 MIN</div>
       </div>
       <button onclick="closeModal()" style="background:#21262d;border:1px solid #30363d;color:#8b949e;border-radius:6px;padding:5px 11px;cursor:pointer">✕</button>
     </div>
-    <div style="background:linear-gradient(90deg,#ff450033,transparent);border-left:4px solid #ff4500;padding:10px 14px;margin-bottom:14px;border-radius:4px;font-size:11px;color:#c9d1d9;line-height:1.6">
-      <strong style="color:#ff7500">Lecture :</strong> regarde les posts avec score >100 et flair "DD" en priorité (vraie analyse). Les autres sont souvent du bruit. Clic sur un titre pour ouvrir Reddit dans un onglet.
+
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px">
+      <div style="background:#21262d;border:1px solid #30363d;border-radius:10px;padding:12px;text-align:center">
+        <div style="color:#8b949e;font-size:9px;letter-spacing:2px;margin-bottom:6px">MENTIONS 24H</div>
+        <div style="color:#58a6ff;font-size:22px;font-weight:700;font-family:'Courier New',monospace">${mentions}</div>
+        <div style="color:#8b949e;font-size:9px;margin-top:4px">vs ${mentionsAgo} hier</div>
+      </div>
+      <div style="background:#21262d;border:1px solid #30363d;border-radius:10px;padding:12px;text-align:center">
+        <div style="color:#8b949e;font-size:9px;letter-spacing:2px;margin-bottom:6px">TENDANCE</div>
+        <div style="color:${trendColor};font-size:22px;font-weight:700;font-family:'Courier New',monospace">${trendIcon} ${trendStr}</div>
+        <div style="color:#8b949e;font-size:9px;margin-top:4px">${trend !== null && trend > 50 ? "EXPLOSION" : (trend !== null && trend > 0 ? "HAUSSE" : "STABLE/BAS")}</div>
+      </div>
+      <div style="background:#21262d;border:1px solid #30363d;border-radius:10px;padding:12px;text-align:center">
+        <div style="color:#8b949e;font-size:9px;letter-spacing:2px;margin-bottom:6px">SENTIMENT</div>
+        <div style="color:${sentimentColor};font-size:22px;font-weight:700">${sentimentEmoji} ${sentimentLabel || 'N/A'}</div>
+        ${sentimentScore !== null ? `<div style="color:#8b949e;font-size:9px;margin-top:4px">score ${sentimentScore.toFixed(2)}/4</div>` : ''}
+      </div>
+      <div style="background:#21262d;border:1px solid #30363d;border-radius:10px;padding:12px;text-align:center">
+        <div style="color:#8b949e;font-size:9px;letter-spacing:2px;margin-bottom:6px">RANK GLOBAL</div>
+        <div style="color:#eccc68;font-size:22px;font-weight:700;font-family:'Courier New',monospace">#${rank || '—'}</div>
+        <div style="color:#8b949e;font-size:9px;margin-top:4px">sur top 100</div>
+      </div>
     </div>
-    ${postsHtml}
+
+    <div style="background:linear-gradient(90deg,#ff450033,transparent);border-left:4px solid #ff4500;padding:10px 14px;margin-bottom:14px;border-radius:4px;font-size:11px;color:#c9d1d9;line-height:1.6">
+      <strong style="color:#ff7500">Lecture :</strong>
+      tendance <strong>+50% et +</strong> = explosion d'attention (signal fort, parfois pump organisé).
+      <strong>Sentiment Bullish + mentions stables</strong> = conviction soutenue.
+      <strong>Mentions élevées + Bearish</strong> = ticker contesté (court attaqué ou flop annoncé).
+    </div>
+
+    ${bySubreddit.length > 0 ? `
+    <div style="background:#21262d;border-radius:10px;overflow:hidden;margin-bottom:14px">
+      <table style="width:100%;border-collapse:collapse">
+        <thead>
+          <tr style="background:#0d1117;color:#8b949e;font-size:9px;text-transform:uppercase;letter-spacing:2px">
+            <th style="padding:8px 10px;text-align:left">Subreddit</th>
+            <th style="padding:8px 10px;text-align:right">Mentions</th>
+            <th style="padding:8px 10px;text-align:right">Upvotes</th>
+            <th style="padding:8px 10px;text-align:right"></th>
+          </tr>
+        </thead>
+        <tbody>${subredditRows}</tbody>
+      </table>
+    </div>` : ''}
+
+    <div style="background:#0d1117;border:1px solid #30363d;border-radius:10px;padding:12px;text-align:center">
+      <div style="color:#8b949e;font-size:10px;letter-spacing:1px;margin-bottom:10px">📖 LIRE LES POSTS DIRECTEMENT SUR REDDIT</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center">
+        <a href="${links.all_financial_subs}" target="_blank" rel="noopener" style="background:linear-gradient(135deg,#ff4500,#a82a00);color:white;text-decoration:none;padding:8px 14px;border-radius:8px;font-size:11px;font-weight:700">🔥 Tous les subs financiers</a>
+        <a href="${links.wallstreetbets}" target="_blank" rel="noopener" style="background:#21262d;border:1px solid #30363d;color:#c9d1d9;text-decoration:none;padding:8px 14px;border-radius:8px;font-size:11px;font-weight:700">r/wallstreetbets</a>
+        <a href="${links.stocks}" target="_blank" rel="noopener" style="background:#21262d;border:1px solid #30363d;color:#c9d1d9;text-decoration:none;padding:8px 14px;border-radius:8px;font-size:11px;font-weight:700">r/stocks</a>
+      </div>
+    </div>
   `;
 }
 
