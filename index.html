@@ -344,7 +344,7 @@
 </div>
 
 <script>
-const PROXY = "https://nichomouret-smartmoney-proxy-production.up.railway.app";
+const PROXY = "https://smartmoney.up.railway.app";
 const BATCH_SIZE = 15;
 const BATCH_DELAY = 4000;
 
@@ -4143,47 +4143,67 @@ function renderRedditDDModal(ticker, name, data) {
   const modal = document.querySelector(".modal-box");
   if (!modal) return;
 
-  const mentions = data.total_mentions || 0;
-  const mentionsAgo = data.mentions_24h_ago || 0;
+  // Données Reddit (Apewisdom)
+  const reddit = data.reddit || {};
+  const mentions = reddit.total_mentions ?? data.total_mentions ?? 0;
+  const mentionsAgo = reddit.mentions_24h_ago ?? data.mentions_24h_ago ?? 0;
   const trend = mentionsAgo > 0 ? ((mentions - mentionsAgo) / mentionsAgo * 100) : null;
-  const upvotes = data.total_upvotes || 0;
-  const sentimentLabel = data.sentiment_label;
-  const sentimentScore = data.sentiment_score;
-  const rank = data.rank;
-  const bySubreddit = data.by_subreddit || [];
-  const links = data.reddit_links || {};
+  const rank = reddit.rank ?? data.rank;
+  const bySubreddit = reddit.by_subreddit ?? data.by_subreddit ?? [];
 
-  // Cas : aucune mention trouvée
-  if (mentions === 0 && bySubreddit.length === 0) {
+  // Données StockTwits (sentiment Bullish/Bearish + sample messages)
+  const stwt = data.stocktwits || {};
+  const stTotalVotes = (stwt.bullish || 0) + (stwt.bearish || 0) + (stwt.neutral || 0);
+  const stBullPct = stwt.bullish_pct;
+  const stBearPct = stwt.bearish_pct;
+  const stNeutPct = stwt.neutral_pct;
+  const stVerdict = stwt.verdict;
+  const stSamples = stwt.sample_messages || [];
+
+  const links = data.links || data.reddit_links || {};
+
+  // Compat links (ancien front)
+  const linksReddit = links.reddit_all || links.all_financial_subs;
+  const linksWSB = links.reddit_wsb || links.wallstreetbets;
+  const linksStocks = links.reddit_stocks || links.stocks;
+  const linksStocktwits = links.stocktwits || `https://stocktwits.com/symbol/${data.clean_ticker || ticker}`;
+
+  // Cas : aucune donnée nulle part — vraiment muet
+  if (mentions === 0 && bySubreddit.length === 0 && stTotalVotes === 0) {
     modal.innerHTML = `
       <div class="modal-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">
         <div>
-          <div style="font-size:18px;font-weight:700;letter-spacing:2px;color:#e6edf3">💬 REDDIT DD — ${ticker}</div>
-          <div style="font-size:9px;color:#8b949e;letter-spacing:2px;margin-top:4px">${name || ''} · APEWISDOM (AGRÉGATION REDDIT 24H)</div>
+          <div style="font-size:18px;font-weight:700;letter-spacing:2px;color:#e6edf3">💬 SOCIAL DD — ${ticker}</div>
+          <div style="font-size:9px;color:#8b949e;letter-spacing:2px;margin-top:4px">${name || ''} · APEWISDOM + STOCKTWITS · CACHE 30 MIN</div>
         </div>
         <button onclick="closeModal()" style="background:#21262d;border:1px solid #30363d;color:#8b949e;border-radius:6px;padding:5px 11px;cursor:pointer">✕</button>
       </div>
       <div style="text-align:center;padding:30px;color:#8b949e;font-size:12px;line-height:1.7">
-        🤷 <strong>${ticker} n'est pas dans le top 100 des tickers mentionnés sur Reddit (24h).</strong><br><br>
-        Soit le ticker n'intéresse pas la communauté retail (souvent un <strong style="color:#2ed573">bon signe contrarian</strong>),<br>
-        soit c'est trop niche / hors radar WSB.<br><br>
-        Tu peux quand même chercher manuellement sur Reddit :
+        🤷 <strong>${ticker} : zéro signal social (Reddit ni StockTwits).</strong><br><br>
+        Soit le ticker n'intéresse pas la communauté retail (<strong style="color:#2ed573">bon signe contrarian</strong>),<br>
+        soit c'est trop niche / hors radar US.<br><br>
+        Recherche manuelle :
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:16px">
-        <a href="${links.all_financial_subs}" target="_blank" rel="noopener" style="background:linear-gradient(135deg,#ff4500,#a82a00);color:white;text-decoration:none;padding:8px 14px;border-radius:8px;font-size:11px;font-weight:700;display:inline-flex;align-items:center;gap:6px">🔍 Chercher sur tous les subs financiers</a>
-        <a href="${links.wallstreetbets}" target="_blank" rel="noopener" style="background:#21262d;border:1px solid #30363d;color:#c9d1d9;text-decoration:none;padding:8px 14px;border-radius:8px;font-size:11px;font-weight:700">r/wallstreetbets</a>
-        <a href="${links.stocks}" target="_blank" rel="noopener" style="background:#21262d;border:1px solid #30363d;color:#c9d1d9;text-decoration:none;padding:8px 14px;border-radius:8px;font-size:11px;font-weight:700">r/stocks</a>
+        <a href="${linksReddit}" target="_blank" rel="noopener" style="background:linear-gradient(135deg,#ff4500,#a82a00);color:white;text-decoration:none;padding:8px 14px;border-radius:8px;font-size:11px;font-weight:700">🔥 Reddit (tous subs)</a>
+        <a href="${linksStocktwits}" target="_blank" rel="noopener" style="background:linear-gradient(135deg,#2ed573,#1e8449);color:white;text-decoration:none;padding:8px 14px;border-radius:8px;font-size:11px;font-weight:700">📈 StockTwits</a>
       </div>
     `;
     return;
   }
 
-  // Cas : mentions présentes — affichage stats
-  const sentimentColor = sentimentLabel === "Bullish" ? "#2ed573" : (sentimentLabel === "Bearish" ? "#ff4757" : "#8b949e");
-  const sentimentEmoji = sentimentLabel === "Bullish" ? "🚀" : (sentimentLabel === "Bearish" ? "🐻" : "😐");
+  // ── Data présente — affichage 2 sections : Reddit + StockTwits ──
   const trendColor = trend === null ? "#8b949e" : (trend > 50 ? "#ff4500" : (trend > 0 ? "#2ed573" : "#ff4757"));
   const trendIcon = trend === null ? "—" : (trend > 50 ? "🔥" : (trend > 0 ? "↑" : "↓"));
   const trendStr = trend === null ? "N/A" : `${trend > 0 ? "+" : ""}${Math.round(trend)}%`;
+
+  // StockTwits verdict color
+  const stVerdictColor = stVerdict?.includes("TRÈS BULLISH") ? "#2ed573"
+    : stVerdict?.includes("BULLISH") ? "#7bed9f"
+    : stVerdict?.includes("TRÈS BEARISH") ? "#ff4757"
+    : stVerdict?.includes("BEARISH") ? "#ff7675"
+    : "#8b949e";
+  const stVerdictEmoji = stVerdict?.includes("BULLISH") ? "🚀" : (stVerdict?.includes("BEARISH") ? "🐻" : "🤷");
 
   const subredditRows = bySubreddit.map(s => `
     <tr style="border-bottom:1px solid #21262d">
@@ -4196,47 +4216,93 @@ function renderRedditDDModal(ticker, name, data) {
     </tr>
   `).join("");
 
+  // Sample messages StockTwits
+  const stSamplesHtml = stSamples.map(m => {
+    const senCol = m.sentiment === "Bullish" ? "#2ed573" : (m.sentiment === "Bearish" ? "#ff4757" : "#8b949e");
+    const senIcon = m.sentiment === "Bullish" ? "🚀" : (m.sentiment === "Bearish" ? "🐻" : "·");
+    const ago = m.created_at ? formatTimeAgo(new Date(m.created_at).getTime() / 1000) : "?";
+    return `
+      <div style="background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:10px;margin-bottom:6px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;font-size:10px;color:#8b949e;font-family:'Courier New',monospace">
+          <span style="color:${senCol};font-weight:700">${senIcon} ${m.sentiment || 'neutre'}</span>
+          <span>${ago}</span>
+        </div>
+        <div style="color:#c9d1d9;font-size:11px;line-height:1.5">${m.body}</div>
+      </div>
+    `;
+  }).join("");
+
   modal.innerHTML = `
     <div class="modal-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">
       <div>
-        <div style="font-size:18px;font-weight:700;letter-spacing:2px;color:#e6edf3">💬 REDDIT DD — ${ticker}</div>
-        <div style="font-size:9px;color:#8b949e;letter-spacing:2px;margin-top:4px">${name || ''} · APEWISDOM · 24H · CACHE 30 MIN</div>
+        <div style="font-size:18px;font-weight:700;letter-spacing:2px;color:#e6edf3">💬 SOCIAL DD — ${ticker}</div>
+        <div style="font-size:9px;color:#8b949e;letter-spacing:2px;margin-top:4px">${name || ''} · APEWISDOM (REDDIT) + STOCKTWITS · CACHE 30 MIN</div>
       </div>
       <button onclick="closeModal()" style="background:#21262d;border:1px solid #30363d;color:#8b949e;border-radius:6px;padding:5px 11px;cursor:pointer">✕</button>
     </div>
 
-    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px">
-      <div style="background:#21262d;border:1px solid #30363d;border-radius:10px;padding:12px;text-align:center">
-        <div style="color:#8b949e;font-size:9px;letter-spacing:2px;margin-bottom:6px">MENTIONS 24H</div>
-        <div style="color:#58a6ff;font-size:22px;font-weight:700;font-family:'Courier New',monospace">${mentions}</div>
-        <div style="color:#8b949e;font-size:9px;margin-top:4px">vs ${mentionsAgo} hier</div>
+    <!-- ═══════════ SECTION 1 : STOCKTWITS (sentiment explicite) ═══════════ -->
+    ${stTotalVotes > 0 ? `
+    <div style="background:linear-gradient(135deg,#1e8449 0%,#0d4f2c 100%);border-radius:12px;padding:14px;margin-bottom:14px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <div>
+          <div style="color:white;font-size:13px;font-weight:700;letter-spacing:2px">📈 STOCKTWITS — VOTE TRADERS</div>
+          <div style="color:#a8e6cf;font-size:9px;margin-top:2px">${stTotalVotes} votes explicites sur 7j · ${stwt.messages_24h || 0} msg/24h · ${stwt.messages_7d || 0} msg/7j</div>
+        </div>
+        <div style="background:#010409aa;padding:8px 14px;border-radius:8px;text-align:center">
+          <div style="color:${stVerdictColor};font-size:14px;font-weight:700">${stVerdictEmoji} ${stVerdict || 'MIXTE'}</div>
+        </div>
       </div>
-      <div style="background:#21262d;border:1px solid #30363d;border-radius:10px;padding:12px;text-align:center">
-        <div style="color:#8b949e;font-size:9px;letter-spacing:2px;margin-bottom:6px">TENDANCE</div>
-        <div style="color:${trendColor};font-size:22px;font-weight:700;font-family:'Courier New',monospace">${trendIcon} ${trendStr}</div>
-        <div style="color:#8b949e;font-size:9px;margin-top:4px">${trend !== null && trend > 50 ? "EXPLOSION" : (trend !== null && trend > 0 ? "HAUSSE" : "STABLE/BAS")}</div>
+      <!-- Barre de sentiment -->
+      <div style="display:flex;height:24px;border-radius:6px;overflow:hidden;margin-bottom:8px;background:#21262d">
+        ${stBullPct > 0 ? `<div style="width:${stBullPct}%;background:#2ed573;display:flex;align-items:center;justify-content:center;color:white;font-size:11px;font-weight:700">${stBullPct}% 🚀</div>` : ''}
+        ${stNeutPct > 0 ? `<div style="width:${stNeutPct}%;background:#586069;display:flex;align-items:center;justify-content:center;color:white;font-size:10px;font-weight:700">${stNeutPct}%</div>` : ''}
+        ${stBearPct > 0 ? `<div style="width:${stBearPct}%;background:#ff4757;display:flex;align-items:center;justify-content:center;color:white;font-size:11px;font-weight:700">🐻 ${stBearPct}%</div>` : ''}
       </div>
-      <div style="background:#21262d;border:1px solid #30363d;border-radius:10px;padding:12px;text-align:center">
-        <div style="color:#8b949e;font-size:9px;letter-spacing:2px;margin-bottom:6px">SENTIMENT</div>
-        <div style="color:${sentimentColor};font-size:22px;font-weight:700">${sentimentEmoji} ${sentimentLabel || 'N/A'}</div>
-        ${sentimentScore !== null ? `<div style="color:#8b949e;font-size:9px;margin-top:4px">score ${sentimentScore.toFixed(2)}/4</div>` : ''}
-      </div>
-      <div style="background:#21262d;border:1px solid #30363d;border-radius:10px;padding:12px;text-align:center">
-        <div style="color:#8b949e;font-size:9px;letter-spacing:2px;margin-bottom:6px">RANK GLOBAL</div>
-        <div style="color:#eccc68;font-size:22px;font-weight:700;font-family:'Courier New',monospace">#${rank || '—'}</div>
-        <div style="color:#8b949e;font-size:9px;margin-top:4px">sur top 100</div>
+      <div style="display:flex;justify-content:space-between;font-size:10px;color:#a8e6cf">
+        <span><strong style="color:#2ed573">${stwt.bullish}</strong> bullish</span>
+        <span><strong style="color:#c9d1d9">${stwt.neutral}</strong> neutre</span>
+        <span><strong style="color:#ff7675">${stwt.bearish}</strong> bearish</span>
       </div>
     </div>
 
-    <div style="background:linear-gradient(90deg,#ff450033,transparent);border-left:4px solid #ff4500;padding:10px 14px;margin-bottom:14px;border-radius:4px;font-size:11px;color:#c9d1d9;line-height:1.6">
-      <strong style="color:#ff7500">Lecture :</strong>
-      tendance <strong>+50% et +</strong> = explosion d'attention (signal fort, parfois pump organisé).
-      <strong>Sentiment Bullish + mentions stables</strong> = conviction soutenue.
-      <strong>Mentions élevées + Bearish</strong> = ticker contesté (court attaqué ou flop annoncé).
+    ${stSamples.length > 0 ? `
+    <div style="margin-bottom:14px">
+      <div style="color:#8b949e;font-size:9px;letter-spacing:2px;margin-bottom:8px">📝 EXTRAITS DE MESSAGES STOCKTWITS</div>
+      ${stSamplesHtml}
+    </div>` : ''}
+    ` : `
+    <div style="background:#21262d;border:1px dashed #30363d;border-radius:10px;padding:14px;margin-bottom:14px;color:#8b949e;font-size:11px;text-align:center">
+      📈 StockTwits : aucun message sur 7j pour ${ticker} (ticker hors radar US ou non listé).
+    </div>
+    `}
+
+    <!-- ═══════════ SECTION 2 : REDDIT (Apewisdom — volume mentions) ═══════════ -->
+    <div style="background:linear-gradient(135deg,#a82a00 0%,#5c1700 100%);border-radius:12px;padding:14px;margin-bottom:14px">
+      <div style="color:white;font-size:13px;font-weight:700;letter-spacing:2px;margin-bottom:12px">🔥 REDDIT — VOLUME DE MENTIONS</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
+        <div style="background:#010409aa;border-radius:8px;padding:10px;text-align:center">
+          <div style="color:#ffb380;font-size:9px;letter-spacing:2px;margin-bottom:4px">MENTIONS 24H</div>
+          <div style="color:#58a6ff;font-size:20px;font-weight:700;font-family:'Courier New',monospace">${mentions}</div>
+          <div style="color:#ffb380;font-size:9px;margin-top:2px">vs ${mentionsAgo} hier</div>
+        </div>
+        <div style="background:#010409aa;border-radius:8px;padding:10px;text-align:center">
+          <div style="color:#ffb380;font-size:9px;letter-spacing:2px;margin-bottom:4px">TENDANCE 24H</div>
+          <div style="color:${trendColor};font-size:20px;font-weight:700;font-family:'Courier New',monospace">${trendIcon} ${trendStr}</div>
+          <div style="color:#ffb380;font-size:9px;margin-top:2px">${trend !== null && trend > 50 ? "EXPLOSION" : (trend !== null && trend > 0 ? "HAUSSE" : "STABLE/BAS")}</div>
+        </div>
+        <div style="background:#010409aa;border-radius:8px;padding:10px;text-align:center">
+          <div style="color:#ffb380;font-size:9px;letter-spacing:2px;margin-bottom:4px">RANK GLOBAL</div>
+          <div style="color:#eccc68;font-size:20px;font-weight:700;font-family:'Courier New',monospace">${rank ? `#${rank}` : 'HORS TOP 100'}</div>
+          <div style="color:#ffb380;font-size:9px;margin-top:2px">sur top 100</div>
+        </div>
+      </div>
+      ${!rank ? `<div style="margin-top:10px;color:#ffb380;font-size:10px;font-style:italic;text-align:center">⚠ Apewisdom ne suit que le top 100 — pour ${ticker}, fie-toi à StockTwits ci-dessus.</div>` : ''}
     </div>
 
     ${bySubreddit.length > 0 ? `
     <div style="background:#21262d;border-radius:10px;overflow:hidden;margin-bottom:14px">
+      <div style="background:#0d1117;padding:8px 12px;color:#8b949e;font-size:9px;letter-spacing:2px">RÉPARTITION PAR SUBREDDIT</div>
       <table style="width:100%;border-collapse:collapse">
         <thead>
           <tr style="background:#0d1117;color:#8b949e;font-size:9px;text-transform:uppercase;letter-spacing:2px">
@@ -4250,12 +4316,24 @@ function renderRedditDDModal(ticker, name, data) {
       </table>
     </div>` : ''}
 
+    <!-- ═══════════ COMMENT LIRE ═══════════ -->
+    <div style="background:linear-gradient(90deg,#7c3aed33,transparent);border-left:4px solid #7c3aed;padding:10px 14px;margin-bottom:14px;border-radius:4px;font-size:11px;color:#c9d1d9;line-height:1.6">
+      <strong style="color:#a29bfe">Comment lire :</strong><br>
+      <strong>StockTwits = QUI dit quoi</strong> (vote explicite trader pro/retail).
+      Bullish ≥70% = conviction forte. Bearish ≥70% = short consensus.<br>
+      <strong>Reddit = COMBIEN de bruit</strong> (volume mentions).
+      Tendance +50% = explosion d'attention (parfois pump organisé).<br>
+      <strong>Combo idéal :</strong> StockTwits BULLISH + Reddit tendance↑ + Rank top 30 = momentum retail confirmé.
+    </div>
+
+    <!-- ═══════════ LIENS DIRECTS ═══════════ -->
     <div style="background:#0d1117;border:1px solid #30363d;border-radius:10px;padding:12px;text-align:center">
-      <div style="color:#8b949e;font-size:10px;letter-spacing:1px;margin-bottom:10px">📖 LIRE LES POSTS DIRECTEMENT SUR REDDIT</div>
+      <div style="color:#8b949e;font-size:10px;letter-spacing:1px;margin-bottom:10px">📖 LIRE LES POSTS DIRECTEMENT</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center">
-        <a href="${links.all_financial_subs}" target="_blank" rel="noopener" style="background:linear-gradient(135deg,#ff4500,#a82a00);color:white;text-decoration:none;padding:8px 14px;border-radius:8px;font-size:11px;font-weight:700">🔥 Tous les subs financiers</a>
-        <a href="${links.wallstreetbets}" target="_blank" rel="noopener" style="background:#21262d;border:1px solid #30363d;color:#c9d1d9;text-decoration:none;padding:8px 14px;border-radius:8px;font-size:11px;font-weight:700">r/wallstreetbets</a>
-        <a href="${links.stocks}" target="_blank" rel="noopener" style="background:#21262d;border:1px solid #30363d;color:#c9d1d9;text-decoration:none;padding:8px 14px;border-radius:8px;font-size:11px;font-weight:700">r/stocks</a>
+        <a href="${linksStocktwits}" target="_blank" rel="noopener" style="background:linear-gradient(135deg,#2ed573,#1e8449);color:white;text-decoration:none;padding:8px 14px;border-radius:8px;font-size:11px;font-weight:700">📈 StockTwits</a>
+        <a href="${linksReddit}" target="_blank" rel="noopener" style="background:linear-gradient(135deg,#ff4500,#a82a00);color:white;text-decoration:none;padding:8px 14px;border-radius:8px;font-size:11px;font-weight:700">🔥 Reddit (tous subs)</a>
+        <a href="${linksWSB}" target="_blank" rel="noopener" style="background:#21262d;border:1px solid #30363d;color:#c9d1d9;text-decoration:none;padding:8px 14px;border-radius:8px;font-size:11px;font-weight:700">r/wallstreetbets</a>
+        <a href="${linksStocks}" target="_blank" rel="noopener" style="background:#21262d;border:1px solid #30363d;color:#c9d1d9;text-decoration:none;padding:8px 14px;border-radius:8px;font-size:11px;font-weight:700">r/stocks</a>
       </div>
     </div>
   `;
@@ -6249,7 +6327,7 @@ init();
 <!-- ============================================================ -->
 <script>
 (function() {
-  const PROXY_BASE = "https://nichomouret-smartmoney-proxy-production.up.railway.app";
+  const PROXY_BASE = "https://smartmoney.up.railway.app";
   const BANNER_DAYS = 30; // elargi de 7 a 30 pour voir tous les fonds ingeres recemment
   const STORAGE_KEY = "sec13f_banner_dismissed_at";
   const REFRESH_INTERVAL_MS = 30 * 60 * 1000;
