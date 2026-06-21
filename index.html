@@ -3634,54 +3634,125 @@ function computeLifecycleStage(r) {
 function computeVerdict(r) {
   const scct = r.scct || 0;
   const ts = r.technicalScore?.score ?? null;
+  const stage = r.lifecycleStage?.stage ?? null;
+
+  // ── Détecter tous les signaux contextuels ──
   // Catalyseur proche ?
-  let catalystSoon = null; // null | "imminent" (<30j) | "court_terme" (<90j)
+  let catalystSoon = null;
   if (r.catalystDate) {
     const days = Math.round((new Date(r.catalystDate) - new Date()) / 86400000);
     if (days >= 0 && days <= 30) catalystSoon = "imminent";
     else if (days > 30 && days <= 90) catalystSoon = "court_terme";
   }
-  // Activist NEW dans les holders ?
+  // Activist NEW/INCREASED
   const activistNew = (r.holders13f || []).some(h =>
     (h.tier === "activist") && (h.change === "NEW" || h.change === "INCREASED")
   );
-  // Setup detection
-  let type, sentence, color, icon;
+  // Sovereign backing ?
+  const nSovereigns = (r._sovereigns || []).length;
+  // Insider buy (Form 4) ?
+  const insiderBuy = r.insiderBuyings90d?.total_value_usd
+    || r.form4?.buys_total_value_usd
+    || (r.form4?.n_buys_ceo_cfo > 0 ? 1 : 0);
+  const insiderBuyValue = r.insiderBuyings90d?.total_value_usd
+    || r.form4?.buys_total_value_usd
+    || 0;
+  // Drawdown profond ?
+  const dd = r.drawdown_52w ?? r.drawdown52w ?? null;
+  const deepCorrection = (dd !== null && dd <= -25);
+  // Sentiment social (StockTwits via Reddit DD si présent dans r)
+  const stocktwitsBull = r.stocktwitsBullPct || null;
+  const stocktwitsBear = r.stocktwitsBearPct || null;
+
+  // ── 1. Setup principal (matrix SCCT × TS) ──
+  let type, sentence, color, icon, baseAction;
   if (scct >= 70 && ts != null && ts <= 40) {
     type = "CONTRARIAN";
     color = "#a855f7"; icon = "🎯";
     sentence = `Smart money entre alors que la technique est cassée (TS:${ts}). Setup contrarian Buffett/Klarman style.`;
+    baseAction = "Entrée par paliers possible si tu crois au retournement LT — patience requise.";
   } else if (scct >= 70 && ts != null && ts >= 65) {
     type = "MOMENTUM CONFIRMÉ";
     color = "#2ed573"; icon = "🚀";
-    sentence = `Smart money + technique alignés (TS:${ts}). Mouvement confirmé mais peut-être déjà avancé — R/R modéré.`;
+    sentence = `Smart money + technique alignés (TS:${ts}). Mouvement confirmé mais peut-être déjà avancé.`;
+    baseAction = "Bon timing si pullback. Attention au R/R si déjà en hausse forte récente.";
   } else if (scct <= 40 && ts != null && ts >= 70) {
     type = "DIVERGENCE BAISSIÈRE";
     color = "#ff4757"; icon = "⚠️";
-    sentence = `Technique haussière (TS:${ts}) mais smart money absent/sortant. Méfiance — possible piège retail.`;
+    sentence = `Technique haussière (TS:${ts}) mais smart money absent/sortant. Possible piège retail.`;
+    baseAction = "Éviter d'acheter. Si déjà en portefeuille, réduire ou stop serré.";
   } else if (scct <= 35 && ts != null && ts <= 40) {
     type = "ALIGNEMENT NÉGATIF";
     color = "#ff4757"; icon = "✗";
-    sentence = `Ni smart money (${scct}) ni technique (TS:${ts}) en faveur. Pas d'edge — éviter.`;
+    sentence = `Ni smart money (${scct}) ni technique (TS:${ts}) en faveur. Pas d'edge.`;
+    baseAction = "Éviter — pas de raison d'être positionné ici.";
   } else if (scct >= 70) {
     type = "SMART MONEY FORT";
     color = "#58a6ff"; icon = "🏛️";
-    sentence = `Conviction smart money élevée (${scct}). Technique mitigée (TS:${ts ?? '?'}) — surveiller le timing.`;
+    sentence = `Conviction smart money élevée (${scct}). Technique mitigée (TS:${ts ?? '?'}).`;
+    baseAction = "Watchlist. Attendre confirmation technique avant d'entrer.";
   } else if (ts != null && ts >= 70) {
     type = "MOMENTUM PUR";
     color = "#eccc68"; icon = "📈";
-    sentence = `Setup technique fort (TS:${ts}) mais smart money tiède (${scct}). Trade de momentum, pas de conviction LT.`;
+    sentence = `Setup technique fort (TS:${ts}) mais smart money tiède (${scct}).`;
+    baseAction = "Trade de momentum, pas de conviction LT. Stops serrés.";
   } else {
     type = "À SURVEILLER";
     color = "#8b949e"; icon = "👀";
-    sentence = `Setup banal (SCCT:${scct}, TS:${ts ?? '?'}). Pas de signal fort, sans plus.`;
+    sentence = `Setup banal (SCCT:${scct}, TS:${ts ?? '?'}). Pas de signal fort.`;
+    baseAction = "Pas d'edge particulier. Skip ou watchlist passive.";
   }
-  // Modifiers — catalyseur + activist
+
+  // ── 2. Modifiers contextuels (boost ou caveat) ──
   const mods = [];
+  if (nSovereigns >= 2) mods.push(`🏛️ ${nSovereigns} fonds souverains (consortium étatique)`);
+  else if (nSovereigns >= 1) mods.push("🏛️ fonds souverain présent");
+  if (activistNew) mods.push("⚔️ activiste entré");
   if (catalystSoon === "imminent") mods.push("⚡ catalyseur imminent (<30j)");
   else if (catalystSoon === "court_terme") mods.push("⏳ catalyseur <90j");
-  if (activistNew) mods.push("⚔️ activiste entré");
-  return { type, sentence, color, icon, mods };
+  if (insiderBuyValue >= 1_000_000) {
+    const m = Math.round(insiderBuyValue / 1e6);
+    mods.push(`💰 insider buy ${m}M$ (90j)`);
+  } else if (insiderBuy) {
+    mods.push("💰 insider buy récent");
+  }
+  if (deepCorrection) mods.push(`📉 correction profonde ${Math.round(dd)}%`);
+  if (stage === 0) mods.push("🌱 Stage 0 (hidden gem)");
+  else if (stage === 1) mods.push("🌅 Stage 1 (réveil)");
+  else if (stage === 4) mods.push("🌅 Stage 4 (distribution)");
+
+  // ── 3. Override action si signaux puissants ──
+  let action = baseAction;
+  let actionTone = "neutral"; // good | warn | bad | neutral
+  if (nSovereigns >= 2 && scct >= 60) {
+    action = `Consortium étatique = filet de protection rare. Entrée par paliers avec patience LT.`;
+    actionTone = "good";
+  } else if (insiderBuyValue >= 1_000_000 && scct >= 60) {
+    action = `Insider buy ${Math.round(insiderBuyValue/1e6)}M$ + conviction smart money = signal très solide.`;
+    actionTone = "good";
+  } else if (activistNew && scct >= 60) {
+    action = `Activist entré récemment — momentum action probable dans les 6-18 mois.`;
+    actionTone = "good";
+  } else if (stage === 4 && scct < 50) {
+    action = `Stage 4 (distribution) + smart money tiède = top de cycle. Éviter ou réduire.`;
+    actionTone = "bad";
+  } else if (type === "CONTRARIAN" && deepCorrection && (nSovereigns >= 1 || insiderBuy)) {
+    action = `Correction profonde + smart money/insiders/sovereign = setup contrarian classique. Patience.`;
+    actionTone = "good";
+  } else if (type === "MOMENTUM CONFIRMÉ" || type === "CONTRARIAN") {
+    actionTone = "good";
+  } else if (type === "DIVERGENCE BAISSIÈRE" || type === "ALIGNEMENT NÉGATIF") {
+    actionTone = "bad";
+  } else if (type === "SMART MONEY FORT" || type === "MOMENTUM PUR") {
+    actionTone = "warn";
+  }
+
+  // ── 4. Sentiment social (si data présente) ──
+  let socialNote = null;
+  if (stocktwitsBull && stocktwitsBull >= 70) socialNote = `🚀 StockTwits ${stocktwitsBull}% bullish`;
+  else if (stocktwitsBear && stocktwitsBear >= 70) socialNote = `🐻 StockTwits ${stocktwitsBear}% bearish (contesté)`;
+
+  return { type, sentence, color, icon, mods, action, actionTone, socialNote };
 }
 
 function renderVerdictBanner(r) {
@@ -3689,14 +3760,28 @@ function renderVerdictBanner(r) {
   if ((!r.scct || r.scct === 0) && !r.technicalScore) return "";
   const v = computeVerdict(r);
   const modsHtml = v.mods.length
-    ? `<div style="color:#8b949e;font-size:10px;margin-top:4px">${v.mods.join(" · ")}</div>`
+    ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">${v.mods.map(m => `<span style="background:${v.color}18;border:1px solid ${v.color}55;color:${v.color};font-size:10px;padding:2px 8px;border-radius:4px;font-weight:600">${m}</span>`).join("")}</div>`
     : "";
-  return `<div style="background:linear-gradient(90deg, ${v.color}15, transparent);border-left:3px solid ${v.color};padding:8px 12px;margin:8px 0 10px 0;border-radius:4px">
-    <div style="display:flex;align-items:center;gap:8px;font-family:monospace">
-      <span style="font-size:14px">${v.icon}</span>
-      <span style="color:${v.color};font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase">${v.type}</span>
+  // Action color
+  const actionColor = v.actionTone === "good" ? "#2ed573"
+    : v.actionTone === "warn" ? "#eccc68"
+    : v.actionTone === "bad" ? "#ff4757"
+    : "#8b949e";
+  const actionIcon = v.actionTone === "good" ? "✅"
+    : v.actionTone === "warn" ? "⚠"
+    : v.actionTone === "bad" ? "🚫"
+    : "·";
+  return `<div style="background:linear-gradient(135deg, ${v.color}22 0%, ${v.color}08 50%, transparent 100%);border-left:4px solid ${v.color};padding:12px 16px;margin:10px 0;border-radius:6px">
+    <div style="display:flex;align-items:center;gap:10px;font-family:monospace;margin-bottom:6px">
+      <span style="font-size:18px">${v.icon}</span>
+      <span style="color:${v.color};font-size:13px;font-weight:700;letter-spacing:2px;text-transform:uppercase">${v.type}</span>
     </div>
-    <div style="color:#c9d1d9;font-size:12px;margin-top:4px;line-height:1.4">${v.sentence}</div>
+    <div style="color:#e6edf3;font-size:12.5px;line-height:1.5;margin-bottom:8px">${v.sentence}</div>
+    <div style="display:flex;align-items:flex-start;gap:6px;background:${actionColor}10;border:1px solid ${actionColor}33;border-radius:4px;padding:6px 10px;font-size:11.5px;color:#c9d1d9;line-height:1.5">
+      <span style="color:${actionColor};flex-shrink:0">${actionIcon} <strong style="font-size:9px;letter-spacing:2px;text-transform:uppercase">Action :</strong></span>
+      <span>${v.action}</span>
+    </div>
+    ${v.socialNote ? `<div style="color:#8b949e;font-size:10.5px;margin-top:6px;font-family:monospace">${v.socialNote}</div>` : ""}
     ${modsHtml}
   </div>`;
 }
@@ -4115,11 +4200,18 @@ async function openRedditDD(ticker, name) {
   modal.style.display = "block";
 
   try {
-    const data = await proxyFetch(`/reddit/posts?ticker=${encodeURIComponent(ticker)}`);
-    if (!data || data.error || !data.ok) {
-      throw new Error(data?.error || "Reddit fetch failed");
+    // PARALLEL fetch : Reddit/StockTwits (existing) + ADANOS X (new)
+    const [redditData, xData] = await Promise.all([
+      proxyFetch(`/reddit/posts?ticker=${encodeURIComponent(ticker)}`).catch(e => ({ ok: false, error: e.message })),
+      proxyFetch(`/x/mentions?ticker=${encodeURIComponent(ticker)}&days=7`).catch(e => ({ ok: false, error: e.message })),
+    ]);
+    if (!redditData || redditData.error || !redditData.ok) {
+      throw new Error(redditData?.error || "Reddit fetch failed");
     }
-    renderRedditDDModal(ticker, name, data);
+    // Attacher les data ADANOS X au payload Reddit pour passage unique au renderer
+    redditData.adanos_x = (xData && xData.ok) ? xData : null;
+    redditData.adanos_x_error = (xData && !xData.ok) ? xData.error : null;
+    renderRedditDDModal(ticker, name, redditData);
   } catch (e) {
     document.querySelector(".modal-box").innerHTML = `
       <div class="modal-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">
@@ -4137,6 +4229,106 @@ async function openRedditDD(ticker, name) {
       </div>
     `;
   }
+}
+
+// ── ADANOS X (Twitter) — section dans le modal Social DD ──
+function renderAdanosXSection(adanos, errorMsg, ticker) {
+  // Cas erreur (ex: clé pas configurée ou plan expiré)
+  if (!adanos && errorMsg) {
+    return `<div style="background:#21262d;border:1px dashed #30363d;border-radius:10px;padding:12px;margin-bottom:14px;color:#8b949e;font-size:11px;text-align:center">
+      🐦 X (ADANOS) indisponible : ${errorMsg}
+    </div>`;
+  }
+  // Cas pas de data du tout
+  if (!adanos) return '';
+
+  const total = adanos.total_mentions || 0;
+  // Cas aucune mention
+  if (total === 0) {
+    return `<div style="background:#0d1117;border:1px solid #30363d;border-radius:10px;padding:12px;margin-bottom:14px;color:#8b949e;font-size:11px;text-align:center">
+      🐦 X (ADANOS) · 0 mention sur 7j pour ${ticker} — ticker hors radar FinTwit
+    </div>`;
+  }
+
+  const bullPct = adanos.bullish_pct || 0;
+  const bearPct = adanos.bearish_pct || 0;
+  const neutPct = adanos.neutral_pct || 0;
+  const verdict = adanos.verdict || 'MIXTE';
+  const verdictColor = verdict.includes("TRÈS BULLISH") ? "#2ed573"
+    : verdict.includes("BULLISH") ? "#7bed9f"
+    : verdict.includes("TRÈS BEARISH") ? "#ff4757"
+    : verdict.includes("BEARISH") ? "#ff7675"
+    : "#8b949e";
+  const verdictEmoji = verdict.includes("BULLISH") ? "🚀" : (verdict.includes("BEARISH") ? "🐻" : "🤷");
+
+  const bullishSamplesHtml = (adanos.bullish_samples || []).map(s => {
+    const ago = s.created_utc ? formatTimeAgo(new Date(s.created_utc).getTime() / 1000) : "?";
+    return `
+      <div style="background:#0d1117;border:1px solid #2ed57333;border-left:3px solid #2ed573;border-radius:6px;padding:8px 10px;margin-bottom:6px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;font-size:10px;font-family:'Courier New',monospace">
+          <span style="color:#2ed573;font-weight:700">🚀 @${s.author} · score ${(s.sentiment_score >= 0 ? "+" : "")}${s.sentiment_score.toFixed(2)}</span>
+          <span style="color:#8b949e">${ago}</span>
+        </div>
+        <div style="color:#c9d1d9;font-size:11px;line-height:1.5">${(s.text || '').replace(/</g, '&lt;')}</div>
+      </div>`;
+  }).join("");
+
+  const bearishSamplesHtml = (adanos.bearish_samples || []).map(s => {
+    const ago = s.created_utc ? formatTimeAgo(new Date(s.created_utc).getTime() / 1000) : "?";
+    return `
+      <div style="background:#0d1117;border:1px solid #ff475733;border-left:3px solid #ff4757;border-radius:6px;padding:8px 10px;margin-bottom:6px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;font-size:10px;font-family:'Courier New',monospace">
+          <span style="color:#ff4757;font-weight:700">🐻 @${s.author} · score ${s.sentiment_score.toFixed(2)}</span>
+          <span style="color:#8b949e">${ago}</span>
+        </div>
+        <div style="color:#c9d1d9;font-size:11px;line-height:1.5">${(s.text || '').replace(/</g, '&lt;')}</div>
+      </div>`;
+  }).join("");
+
+  const topAuthorsHtml = (adanos.top_authors || []).map(a =>
+    `<span style="background:#1e8a3622;border:1px solid #1e8a3655;color:#7bed9f;padding:3px 8px;border-radius:4px;font-size:10px;font-family:'Courier New',monospace">@${a.author} <span style="color:#8b949e">×${a.count}</span></span>`
+  ).join("");
+
+  return `
+    <!-- ═══════════ SECTION 0 : ADANOS X (Twitter) — Premium signal ═══════════ -->
+    <div style="background:linear-gradient(135deg,#1a1a40 0%,#0a0a25 100%);border-radius:12px;padding:14px;margin-bottom:14px;border:1px solid #2d2d5f">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <div>
+          <div style="color:white;font-size:13px;font-weight:700;letter-spacing:2px">🐦 X (ADANOS) — FINTWIT 7 JOURS</div>
+          <div style="color:#a8b8e8;font-size:9px;margin-top:2px">${total} mentions · ${adanos.n_unique_authors || 0} auteurs uniques · ${adanos.window?.from || ''} → ${adanos.window?.to || ''}</div>
+        </div>
+        <div style="background:#010409aa;padding:8px 14px;border-radius:8px;text-align:center">
+          <div style="color:${verdictColor};font-size:14px;font-weight:700">${verdictEmoji} ${verdict}</div>
+        </div>
+      </div>
+      <!-- Barre sentiment -->
+      <div style="display:flex;height:24px;border-radius:6px;overflow:hidden;margin-bottom:8px;background:#21262d">
+        ${bullPct > 0 ? `<div style="width:${bullPct}%;background:#2ed573;display:flex;align-items:center;justify-content:center;color:white;font-size:11px;font-weight:700">${bullPct}% 🚀</div>` : ''}
+        ${neutPct > 0 ? `<div style="width:${neutPct}%;background:#586069;display:flex;align-items:center;justify-content:center;color:white;font-size:10px;font-weight:700">${neutPct}%</div>` : ''}
+        ${bearPct > 0 ? `<div style="width:${bearPct}%;background:#ff4757;display:flex;align-items:center;justify-content:center;color:white;font-size:11px;font-weight:700">🐻 ${bearPct}%</div>` : ''}
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:10px;color:#a8b8e8;margin-bottom:10px">
+        <span><strong style="color:#2ed573">${adanos.bullish || 0}</strong> bullish (≥+0.15)</span>
+        <span><strong style="color:#c9d1d9">${adanos.neutral || 0}</strong> neutre</span>
+        <span><strong style="color:#ff7675">${adanos.bearish || 0}</strong> bearish (≤-0.15)</span>
+      </div>
+      ${topAuthorsHtml ? `
+      <div style="margin-top:10px;padding-top:10px;border-top:1px solid #2d2d5f">
+        <div style="color:#a8b8e8;font-size:9px;letter-spacing:2px;margin-bottom:6px">TOP AUTEURS (PAR VOLUME)</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px">${topAuthorsHtml}</div>
+      </div>` : ''}
+    </div>
+
+    ${(bullishSamplesHtml || bearishSamplesHtml) ? `
+    <div style="margin-bottom:14px">
+      ${bullishSamplesHtml ? `
+        <div style="color:#8b949e;font-size:9px;letter-spacing:2px;margin-bottom:6px">📝 TWEETS BULLISH RÉCENTS</div>
+        ${bullishSamplesHtml}` : ''}
+      ${bearishSamplesHtml ? `
+        <div style="color:#8b949e;font-size:9px;letter-spacing:2px;margin:10px 0 6px 0">📝 TWEETS BEARISH RÉCENTS</div>
+        ${bearishSamplesHtml}` : ''}
+    </div>` : ''}
+  `;
 }
 
 function renderRedditDDModal(ticker, name, data) {
@@ -4236,10 +4428,12 @@ function renderRedditDDModal(ticker, name, data) {
     <div class="modal-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">
       <div>
         <div style="font-size:18px;font-weight:700;letter-spacing:2px;color:#e6edf3">💬 SOCIAL DD — ${ticker}</div>
-        <div style="font-size:9px;color:#8b949e;letter-spacing:2px;margin-top:4px">${name || ''} · APEWISDOM (REDDIT) + STOCKTWITS · CACHE 30 MIN</div>
+        <div style="font-size:9px;color:#8b949e;letter-spacing:2px;margin-top:4px">${name || ''} · X (ADANOS) + REDDIT (APEWISDOM) + STOCKTWITS · CACHE 30 MIN</div>
       </div>
       <button onclick="closeModal()" style="background:#21262d;border:1px solid #30363d;color:#8b949e;border-radius:6px;padding:5px 11px;cursor:pointer">✕</button>
     </div>
+
+    ${renderAdanosXSection(data.adanos_x, data.adanos_x_error, ticker)}
 
     <!-- ═══════════ SECTION 1 : STOCKTWITS (sentiment explicite) ═══════════ -->
     ${stTotalVotes > 0 ? `
