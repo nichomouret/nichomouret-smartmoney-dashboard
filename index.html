@@ -4417,23 +4417,43 @@ function renderRedditBoomModal(data) {
   }
 
   const rowsHtml = top.map((s, idx) => {
-    const certainty = s.n_posts_sure >= 2 ? "🔥" : (s.n_posts_sure >= 1 ? "✓" : "?");
-    const certaintyColor = s.n_posts_sure >= 2 ? "#ff4500" : (s.n_posts_sure >= 1 ? "#2ed573" : "#8b949e");
-    const subsList = (s.subreddits || []).slice(0, 3).join(", ");
-    const topPostTitle = s.top_post?.title?.slice(0, 70) || "?";
+    const certainty = s.sureness || "?"; // 🔥 / ✓ / ?
+    const certaintyColor = certainty === "🔥" ? "#ff4500" : (certainty === "✓" ? "#2ed573" : "#8b949e");
+    const certaintyTitle = certainty === "🔥" ? "Explosion mentions (>+100%) ou rank a gagné 20+ places en 24h"
+      : certainty === "✓" ? "Trend positive et volume >= 5 mentions"
+      : "Présent dans top 100 Apewisdom mais signal faible (trend nul/négatif)";
+    const name = s.name || "?";
+    const trendVal = s.trend_pct;
+    const trendStr = trendVal === null || trendVal === undefined ? "—" : `${trendVal > 0 ? "+" : ""}${trendVal}%`;
+    const trendColor = trendVal === null || trendVal === undefined ? "#8b949e"
+      : trendVal > 100 ? "#ff4500"
+      : trendVal > 0 ? "#2ed573"
+      : "#ff4757";
+    const rankCell = s.rank ? `#${s.rank}` : "—";
+    const rankPrev = s.rank_24h_ago;
+    const rankDelta = (s.rank && rankPrev) ? (rankPrev - s.rank) : null;
+    const rankDeltaStr = rankDelta === null ? "" : (rankDelta > 0 ? `<span style="color:#2ed573;font-size:9px"> +${rankDelta}</span>` : rankDelta < 0 ? `<span style="color:#ff4757;font-size:9px"> ${rankDelta}</span>` : `<span style="color:#8b949e;font-size:9px"> =</span>`);
     const topPostLink = s.top_post?.permalink;
-    const flair = s.top_post?.flair ? ` [${s.top_post.flair}]` : '';
     return `
       <tr style="background:#21262d;border-bottom:1px solid #161b22">
         <td style="padding:8px 10px;text-align:center;color:#8b949e;font-family:'Courier New',monospace;font-size:11px">#${idx + 1}</td>
-        <td style="padding:8px 10px"><span style="color:#e6edf3;font-weight:700;font-size:13px;letter-spacing:1px;font-family:'Courier New',monospace">${s.ticker}</span></td>
-        <td style="padding:8px 10px;text-align:center;font-size:14px" title="${s.n_posts_sure} mention(s) certaine(s) ($TICKER explicite), ${s.n_posts} total">
+        <td style="padding:8px 10px">
+          <div style="color:#e6edf3;font-weight:700;font-size:13px;letter-spacing:1px;font-family:'Courier New',monospace">${s.ticker}</div>
+          <div style="color:#8b949e;font-size:10px;margin-top:2px">${name}</div>
+        </td>
+        <td style="padding:8px 10px;text-align:center;font-size:14px" title="${certaintyTitle}">
           <span style="color:${certaintyColor};font-weight:700">${certainty}</span>
         </td>
-        <td style="padding:8px 10px;text-align:center;color:#58a6ff;font-weight:700;font-family:'Courier New',monospace">${s.n_posts}</td>
-        <td style="padding:8px 10px;text-align:center;color:#2ed573;font-family:'Courier New',monospace">${s.avg_score}</td>
-        <td style="padding:8px 10px;text-align:center;color:#8b949e;font-family:'Courier New',monospace;font-size:10px">${s.n_subreddits} subs</td>
-        <td style="padding:8px 10px;font-size:11px"><a href="${topPostLink || '#'}" target="_blank" rel="noopener" style="color:#58a6ff;text-decoration:none">${topPostTitle}…${flair}</a></td>
+        <td style="padding:8px 10px;text-align:center;color:#58a6ff;font-weight:700;font-family:'Courier New',monospace">${s.mentions}</td>
+        <td style="padding:8px 10px;text-align:center;color:${trendColor};font-weight:700;font-family:'Courier New',monospace" title="Mentions 24h vs mentions 24h précédentes">
+          ${trendStr}
+        </td>
+        <td style="padding:8px 10px;text-align:center;color:#eccc68;font-family:'Courier New',monospace;font-size:11px" title="Rank Apewisdom actuel + variation 24h">
+          ${rankCell}${rankDeltaStr}
+        </td>
+        <td style="padding:8px 10px;text-align:center">
+          <a href="${topPostLink || '#'}" target="_blank" rel="noopener" style="color:#ff7500;text-decoration:none;font-size:11px;font-weight:700">🔍 Reddit</a>
+        </td>
       </tr>
     `;
   }).join("");
@@ -4442,26 +4462,29 @@ function renderRedditBoomModal(data) {
     <div class="modal-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">
       <div>
         <div style="font-size:18px;font-weight:700;letter-spacing:2px;color:#e6edf3">🚀 REDDIT BOOM LIST</div>
-        <div style="font-size:9px;color:#8b949e;letter-spacing:2px;margin-top:4px">${data.n_posts_analyzed} POSTS ANALYSÉS · ${data.n_queries} QUERIES BULLISH · CACHE 1H</div>
+        <div style="font-size:9px;color:#8b949e;letter-spacing:2px;margin-top:4px">SOURCE APEWISDOM · TOP 100 TICKERS MENTIONNÉS REDDIT · CACHE 1H</div>
       </div>
       <button onclick="closeModal()" style="background:#21262d;border:1px solid #30363d;color:#8b949e;border-radius:6px;padding:5px 11px;cursor:pointer">✕</button>
     </div>
     <div style="background:linear-gradient(90deg,#ff450033,transparent);border-left:4px solid #ff4500;padding:10px 14px;margin-bottom:14px;border-radius:4px;font-size:11px;color:#c9d1d9;line-height:1.6">
-      <strong style="color:#ff7500">Signal :</strong> tickers mentionnés sur Reddit avec un contexte bullish (squeeze, moon, breakout, imminent rally...). 🔥 = mentions $TICKER explicites (très fiable). ✓ = au moins 1 mention sûre. ? = mention extraite par regex (à valider).
+      <strong style="color:#ff7500">Lecture :</strong>
+      <strong style="color:#ff4500">🔥</strong> = explosion (mentions +100% en 24h, OU rank a gagné 20+ places). Signal le plus chaud.
+      <strong style="color:#2ed573">✓</strong> = mentions en hausse avec volume ≥ 5. Signal solide.
+      <strong style="color:#8b949e">?</strong> = présent dans le top mais signal stable/déclin. À surveiller mais pas urgent.
     </div>
     <div style="background:#21262d;padding:12px;border-radius:8px;margin-bottom:10px;font-size:11px;color:#8b949e;line-height:1.6">
-      <strong style="color:#e6edf3">⚠ Filtrage anti-bruit :</strong> les mégacaps connus (AAPL, MSFT, NVDA, TSLA, etc.) sont exclus pour éviter les faux positifs. Tu vois donc les pépites émergentes que Reddit pousse, pas le mainstream.
+      <strong style="color:#e6edf3">⚠ Filtrage anti-bruit :</strong> mégacaps US/EU (AAPL, MSFT, LLY, MU, SNAP, NESN…), ETFs (SPY, QQQ…), acronymes et mots anglais courants sont exclus pour ne montrer que les vraies pépites émergentes.
     </div>
     <table style="width:100%;border-collapse:collapse;font-family:'Courier New',monospace">
       <thead>
         <tr style="color:#8b949e;font-size:9px;text-transform:uppercase;letter-spacing:2px">
           <th style="padding:6px 10px;text-align:center">#</th>
-          <th style="padding:6px 10px;text-align:left">Ticker</th>
-          <th style="padding:6px 10px;text-align:center" title="🔥 = >=2 mentions $TICKER, ✓ = 1 mention sûre, ? = regex extraction">Certitude</th>
-          <th style="padding:6px 10px;text-align:center">N posts</th>
-          <th style="padding:6px 10px;text-align:center">Avg score</th>
-          <th style="padding:6px 10px;text-align:center">Subs</th>
-          <th style="padding:6px 10px;text-align:left">Top post</th>
+          <th style="padding:6px 10px;text-align:left">Ticker · Nom</th>
+          <th style="padding:6px 10px;text-align:center" title="🔥 = explosion réelle, ✓ = trend + ≥5 mentions, ? = signal faible">Signal</th>
+          <th style="padding:6px 10px;text-align:center" title="Nombre de mentions sur 24h">Mentions</th>
+          <th style="padding:6px 10px;text-align:center" title="Variation mentions vs hier (+% = chaud, -% = froid)">Tendance</th>
+          <th style="padding:6px 10px;text-align:center" title="Rank Apewisdom + variation 24h">Rank</th>
+          <th style="padding:6px 10px;text-align:center">Action</th>
         </tr>
       </thead>
       <tbody>${rowsHtml}</tbody>
